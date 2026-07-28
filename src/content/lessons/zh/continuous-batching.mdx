@@ -1,0 +1,83 @@
+---
+title: "Continuous Batching:让 GPU 不空等"
+description: "LLM 推理服务吞吐提升的第一课:调度粒度从「一整批」细化到「一个 iteration」,空泡消失,长尾场景下总耗时直降近四成。"
+order: 1
+concepts:
+  - iteration-level scheduling
+  - prefill / decode
+  - GPU 利用率
+  - ORCA
+tryOnSglang: "https://sgl-project-sglang-93.mintlify.app/concepts/continuous-batching"
+references:
+  - label: "ORCA: A Distributed Serving System for Transformer-Based Generative Models(OSDI '22,continuous batching 的出处)"
+    url: "https://www.usenix.org/conference/osdi22/presentation/yu"
+  - label: "Anyscale:How continuous batching enables 23x throughput in LLM inference"
+    url: "https://www.anyscale.com/blog/continuous-batching-llm-inference"
+  - label: "SGLang(高性能 LLM 推理引擎,本站的实践载体)"
+    url: "https://github.com/sgl-project/sglang"
+  - label: "Awesome-ML-SYS-Tutorial(本站配套的中文文字讲解库)"
+    url: "https://github.com/zhaochenyang20/Awesome-ML-SYS-Tutorial"
+---
+
+import BatchingViz from "../../../viz/continuous-batching/BatchingViz";
+import RaceViz from "../../../viz/continuous-batching/RaceViz";
+
+> **一句话**:static batching 必须等一整批请求里最慢的那个跑完,才能换下一批;
+> continuous batching 在**每个 iteration** 结束时都可以让完成的请求下车、排队的请求上车。
+> GPU 从此不空等。
+
+## 先看问题:整批进,整批出
+
+LLM 的生成是自回归的:每个 iteration(一次 forward)为批内每个请求生成一个 token。
+而一批请求的输出长度天差地别——短的四五个 token 就结束,长的要写二十多个。
+
+static batching 把一批请求绑死在一起。先写完的请求不能走,它的槽位只能空转
+(下图的斜纹格,我们称为**空泡**),直到整批里最慢的请求完成;中途到达的新请求,
+哪怕眼前就有空槽也只能排队。点击播放,数一数浪费了多少格:
+
+<BatchingViz client:visible mode="static" scenario="steady" />
+
+网格里能看到两种空泡:请求已完成、但槽位被整批锁住(斜纹格,悬停可见是哪个请求);
+以及组批时没凑满、整批期间一直锁死的空槽。
+
+## Continuous batching:每个 iteration 都能换人
+
+把调度粒度从「一整批」细化到「一个 iteration」(ORCA 提出的 iteration-level
+scheduling,如今 SGLang 等主流推理引擎都这么做):每一步结束,完成的请求
+立刻释放槽位,队首请求下一步就顶上。同样的请求流:
+
+<BatchingViz client:visible mode="continuous" scenario="steady" />
+
+几乎看不到空格——只要队列里还有请求,槽位就不会闲着(work-conserving)。
+
+## 同场对决
+
+同一批请求,同一条时间轴,直接赛跑。切换场景,观察差距什么时候最大:
+
+<RaceViz client:visible scenario="longtail" />
+
+- **长尾输出**:差距最大。static 的每一批都被批内最长的请求拖住(head-of-line
+  blocking),而真实 LLM 流量恰恰是长尾的。
+- **一波突发**(等长、同时到达):static 也不算差——但线上流量从来不长这样。
+
+## 三个值得咀嚼的细节
+
+1. **为什么可以中途换人?** decode 时每个请求只依赖自己的 KV cache,batch
+   维度上各请求本就互不相干;attention 之外的算子把不同请求的 token 摊平到一个
+   维度即可同批执行(ORCA 的 selective batching)。
+2. **显存成为新瓶颈**:随时能上车之后,"车上能坐多少人"取决于 KV cache
+   占用的显存——这正是 KV cache 分页管理(PagedAttention)要解决的问题,
+   适合作为下一课。
+3. **prefill 会抢占 decode**:新请求上车要先跑 prefill(图中浅色格;真实系统里
+   它比一步 decode 重得多),会拖慢同批其他请求的出词速度——chunked prefill
+   与 PD 分离由此而来。
+
+## 图 ↔ 真实系统对照
+
+| 图里的元素 | 真实系统里的含义 |
+| --- | --- |
+| 一列 | 一次 forward(一个 iteration) |
+| 一行(槽位 S1–S4) | batch 里的一个序列位置;真实上限由 KV cache 显存决定 |
+| 浅色格 | prefill(一次读入整段 prompt;实际耗时远不止一格,此处简化) |
+| 实色格 | decode 生成的一个 token,颜色代表所属请求 |
+| 斜纹格(空泡) | 被调度策略浪费的算力 |

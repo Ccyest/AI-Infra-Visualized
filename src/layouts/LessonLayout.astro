@@ -1,0 +1,106 @@
+---
+import { render } from "astro:content";
+import type { CollectionEntry } from "astro:content";
+import { CHROME, lessonNo } from "../lib/i18n";
+import type { Locale } from "../lib/i18n";
+import { lessonPath, publishedLessons } from "../lib/lessons";
+import { withBase } from "../lib/paths";
+import { SITE } from "../site.config";
+import Base from "./Base.astro";
+
+interface Props {
+  entry: CollectionEntry<"lessons">;
+  locale: Locale;
+}
+const { entry, locale } = Astro.props;
+const { Content } = await render(entry);
+const { title, description, order, concepts, references, tryOnSglang } = entry.data;
+
+const all = await publishedLessons(locale);
+const idx = all.findIndex((l) => l.entry.id === entry.id);
+const prev = idx > 0 ? all[idx - 1] : null;
+const next = idx >= 0 && idx < all.length - 1 ? all[idx + 1] : null;
+
+// 语言切换目标:找另一语言的同 slug 课程;没写对应译文时退回该语言首页(避免 404)
+const slug = entry.id.slice(locale.length + 1);
+const other: Locale = locale === "zh" ? "en" : "zh";
+const twin = (await publishedLessons(other)).find((l) => l.slug === slug);
+const altPath = twin ? lessonPath(other, twin.slug) : other === "zh" ? "/" : "/en/";
+---
+
+<Base
+  title={`${title} · ${SITE.title}`}
+  description={description}
+  locale={locale}
+  altPath={altPath}
+  altIsTranslation={Boolean(twin)}
+>
+  <article>
+    <header class="lesson-header reveal">
+      <span class="lesson-order">{lessonNo(locale, order)}</span>
+      <h1>{title}</h1>
+      <p class="lesson-desc">{description}</p>
+      {
+        concepts.length > 0 && (
+          <div class="concept-chips">
+            {concepts.map((c) => (
+              <span class="concept-chip">{c}</span>
+            ))}
+          </div>
+        )
+      }
+    </header>
+
+    <div class="prose"><Content /></div>
+
+    {
+      tryOnSglang && (
+        <a class="sglang-cta" href={tryOnSglang} target="_blank" rel="noopener">
+          <span>
+            <span class="sglang-cta-title">{CHROME.tryOnSglang[locale]}</span>
+            <span class="sglang-cta-sub">{CHROME.tryOnSglangSub[locale]}</span>
+          </span>
+          <span class="sglang-cta-arrow" aria-hidden="true">→</span>
+        </a>
+      )
+    }
+
+    {
+      references.length > 0 && (
+        <section class="references">
+          <h2>{CHROME.furtherReading[locale]}</h2>
+          <ul>
+            {references.map((r) => (
+              <li>
+                <a href={r.url} target="_blank" rel="noopener">
+                  {r.label}
+                </a>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )
+    }
+
+    <nav class="lesson-nav">
+      <span>
+        {
+          prev && (
+            <a href={withBase(lessonPath(locale, prev.slug))}>
+              ← {prev.entry.data.title}
+            </a>
+          )
+        }
+      </span>
+      <span>
+        {
+          next && (
+            <a href={withBase(lessonPath(locale, next.slug))}>
+              {next.entry.data.title} →
+            </a>
+          )
+        }
+      </span>
+    </nav>
+  </article>
+</Base>

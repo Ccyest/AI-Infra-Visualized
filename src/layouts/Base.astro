@@ -1,0 +1,147 @@
+---
+import { CHROME, HTML_LANG } from "../lib/i18n";
+import type { Locale } from "../lib/i18n";
+import { withBase } from "../lib/paths";
+import { SITE } from "../site.config";
+import "../styles/global.css";
+
+interface Props {
+  title: string;
+  description?: string;
+  locale?: Locale;
+  /** 语言切换按钮的目标路径(未拼 base);不传则按当前路径推导(适用于 zh/en 镜像路由) */
+  altPath?: string;
+  /** altPath 是否指向本页的对应译文;false 时不输出 hreflang alternate */
+  altIsTranslation?: boolean;
+}
+const {
+  title,
+  locale = "zh",
+  description = CHROME.tagline[locale],
+  altPath: altPathProp,
+  altIsTranslation = true,
+} = Astro.props;
+
+// 语言切换:同一路径在 zh(无前缀)与 en(/en 前缀)之间互跳
+const base = import.meta.env.BASE_URL.replace(/\/$/, "");
+const path = Astro.url.pathname.startsWith(base)
+  ? Astro.url.pathname.slice(base.length) || "/"
+  : Astro.url.pathname;
+const derivedAltPath =
+  locale === "en"
+    ? path.replace(/^\/en\/?/, "/") || "/"
+    : path === "/"
+      ? "/en/"
+      : `/en${path}`;
+const altHref = withBase(altPathProp ?? derivedAltPath);
+const otherLang = locale === "en" ? "zh-CN" : "en";
+---
+
+<!doctype html>
+<html lang={HTML_LANG[locale]}>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <link rel="icon" href={withBase("/favicon.svg")} type="image/svg+xml" />
+    {
+      Astro.site && altIsTranslation && (
+        <>
+          <link rel="alternate" hreflang={otherLang} href={new URL(altHref, Astro.site).href} />
+          <link rel="alternate" hreflang={HTML_LANG[locale]} href={new URL(Astro.url.pathname, Astro.site).href} />
+          <link rel="alternate" hreflang="x-default" href={new URL(withBase("/"), Astro.site).href} />
+        </>
+      )
+    }
+    <script is:inline>
+      // 防主题闪烁:在渲染前应用用户手动选择的主题(无选择则跟随系统)
+      (() => {
+        document.documentElement.classList.add("js");
+        const saved = localStorage.getItem("theme");
+        if (saved === "light" || saved === "dark") {
+          document.documentElement.dataset.theme = saved;
+        }
+      })();
+    </script>
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="site-header-inner">
+        <a class="site-brand" href={withBase(locale === "en" ? "/en/" : "/")}>
+          {SITE.title}
+        </a>
+        <nav class="site-nav">
+          <a class="sglang-link" href={SITE.sglangUrl} target="_blank" rel="noopener">
+            {CHROME.buildWithSglang[locale]}
+          </a>
+          <a href={SITE.tutorialUrl} target="_blank" rel="noopener">
+            {CHROME.navReferences[locale]}
+          </a>
+          <a href={SITE.repoUrl} target="_blank" rel="noopener">GitHub</a>
+          <a
+            class="lang-switch"
+            href={altHref}
+            hreflang={otherLang}
+            aria-label={CHROME.langSwitchAria[locale]}
+          >
+            <span lang={otherLang}>{CHROME.langSwitch[locale]}</span>
+          </a>
+          <button
+            class="theme-toggle"
+            id="theme-toggle"
+            type="button"
+            aria-label={CHROME.themeToggle[locale]}
+          >
+            ◐
+          </button>
+        </nav>
+      </div>
+    </header>
+    <main><slot /></main>
+    <footer class="site-footer">
+      <div class="site-footer-inner">
+        <a class="sglang-link" href={SITE.sglangUrl} target="_blank" rel="noopener">
+          {CHROME.buildWithSglang[locale]}
+        </a>
+        <span>
+          {CHROME.heroCredit[locale]}
+          <a href={SITE.author.url} target="_blank" rel="noopener">{SITE.author.name}</a>{CHROME.heroCreditTail[locale]}
+        </span>
+        <a href={SITE.repoUrl} target="_blank" rel="noopener">{CHROME.contribute[locale]}</a>
+      </div>
+    </footer>
+    <script is:inline>
+      // 主题三态循环:跟随系统 → 亮 → 暗
+      document.getElementById("theme-toggle")?.addEventListener("click", () => {
+        const cur = localStorage.getItem("theme");
+        const next = cur === null ? "light" : cur === "light" ? "dark" : null;
+        if (next === null) {
+          localStorage.removeItem("theme");
+          delete document.documentElement.dataset.theme;
+        } else {
+          localStorage.setItem("theme", next);
+          document.documentElement.dataset.theme = next;
+        }
+      });
+      // 滚动淡入(参考 yichizhang.dev 的 reveal 动画;prefers-reduced-motion 时由 CSS 关闭)
+      const revealed = document.querySelectorAll(".reveal");
+      if ("IntersectionObserver" in window && revealed.length > 0) {
+        const io = new IntersectionObserver(
+          (entries) => {
+            for (const entry of entries) {
+              if (entry.isIntersecting) {
+                entry.target.classList.add("visible");
+                io.unobserve(entry.target);
+              }
+            }
+          },
+          { threshold: 0.08 },
+        );
+        revealed.forEach((el) => io.observe(el));
+      } else {
+        revealed.forEach((el) => el.classList.add("visible"));
+      }
+    </script>
+  </body>
+</html>

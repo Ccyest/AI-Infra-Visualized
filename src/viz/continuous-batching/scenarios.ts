@@ -1,0 +1,88 @@
+import type { Localized } from "../../lib/i18n";
+import type { RequestSpec } from "./engine";
+
+/**
+ * 请求场景(手工设计,保证确定性与教学效果)。
+ * 每个请求:{ id, arrival 到达时刻, output 需生成的 token 数 }。
+ */
+export interface Scenario {
+  id: ScenarioId;
+  label: Localized;
+  description: Localized;
+  numSlots: number;
+  requests: RequestSpec[];
+}
+
+export type ScenarioId = "steady" | "longtail" | "burst";
+
+function req(id: number, arrival: number, output: number): RequestSpec {
+  return { id, arrival, output };
+}
+
+export const SCENARIOS: Record<ScenarioId, Scenario> = {
+  steady: {
+    id: "steady",
+    label: { zh: "稳定到达", en: "Steady arrivals" },
+    description: {
+      zh: "请求陆续到达,输出长度中等且各不相同 —— 最贴近日常在线流量",
+      en: "Requests trickle in with varied medium lengths — closest to everyday online traffic",
+    },
+    numSlots: 4,
+    requests: [
+      req(1, 0, 6),
+      req(2, 0, 9),
+      req(3, 0, 4),
+      req(4, 0, 7),
+      req(5, 2, 5),
+      req(6, 5, 8),
+      req(7, 7, 4),
+      req(8, 9, 6),
+      req(9, 11, 7),
+      req(10, 13, 5),
+    ],
+  },
+  longtail: {
+    id: "longtail",
+    label: { zh: "长尾输出", en: "Long-tail outputs" },
+    description: {
+      zh: "大多数请求很短,少数请求特别长 —— 真实 LLM 流量的典型形态",
+      en: "Most requests are short, a few are very long — the typical shape of real LLM traffic",
+    },
+    numSlots: 4,
+    requests: [
+      req(1, 0, 5),
+      req(2, 0, 21),
+      req(3, 0, 4),
+      req(4, 0, 6),
+      req(5, 3, 5),
+      req(6, 5, 4),
+      req(7, 7, 5),
+      req(8, 9, 16),
+      req(9, 11, 5),
+      req(10, 13, 4),
+    ],
+  },
+  burst: {
+    id: "burst",
+    label: { zh: "一波突发", en: "One burst" },
+    description: {
+      zh: "所有请求同时到达且长度接近 —— static batching 表现最好的情况",
+      en: "All requests arrive at once with similar lengths — static batching at its best",
+    },
+    numSlots: 4,
+    requests: [
+      req(1, 0, 6),
+      req(2, 0, 8),
+      req(3, 0, 5),
+      req(4, 0, 7),
+      req(5, 0, 6),
+      req(6, 0, 7),
+      req(7, 0, 8),
+      req(8, 0, 5),
+      req(9, 0, 7),
+      req(10, 0, 6),
+      req(11, 0, 5),
+      req(12, 0, 8),
+    ],
+  },
+};

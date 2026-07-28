@@ -1,0 +1,70 @@
+/**
+ * 双语支持:zh 为默认语言(路由无前缀),en 挂在 /en/ 下。
+ * - 站点骨架文案:CHROME
+ * - 播放器控件文案:PLAYER_UI
+ * - 课程可视化内部文案:各课自己的 strings.ts(参考 src/viz/continuous-batching/strings.ts)
+ * - 课程正文:src/content/lessons/<locale>/<slug>.mdx,两种语言各一份
+ */
+
+export type Locale = "zh" | "en";
+
+/** 一段双语文案 */
+export type Localized = { zh: string; en: string };
+
+export const HTML_LANG: Record<Locale, string> = { zh: "zh-CN", en: "en" };
+
+export function lessonNo(locale: Locale, n: number): string {
+  return locale === "zh" ? `第 ${n} 课` : `Lesson ${n}`;
+}
+
+export const CHROME = {
+  tagline: {
+    zh: "用交互式可视化,把 AI Infra 的核心机制讲明白",
+    en: "Interactive visualizations that make AI infra mechanisms click",
+  },
+  buildWithSglang: { zh: "Build with SGLang.", en: "Build with SGLang." },
+  navReferences: { zh: "参考文献库", en: "References" },
+  themeToggle: { zh: "切换亮暗主题", en: "Toggle color theme" },
+  /** 可见文案显示「切换到」的语言(用目标语言书写,配合 span[lang] 标注);
+      aria-label 则用页面自身的语言,读屏器才能正确发音 */
+  langSwitch: { zh: "EN", en: "中文" },
+  langSwitchAria: { zh: "切换到英文版", en: "Switch to Chinese" },
+  heroTitle: { zh: "用可视化,学 AI Infra", en: "Learn AI Infra, visually" },
+  heroBody: {
+    zh: "LLM 推理与训练系统里的核心机制 —— continuous batching、KV cache、并行策略……与其读十页文字,不如亲手播放一遍。每一课都是可暂停、可单步、可拖动时间轴的交互式动画。",
+    en: "The core mechanisms inside LLM serving and training systems — continuous batching, KV cache, parallelism… Instead of reading ten pages, press play. Every lesson is an interactive animation you can pause, step through, and scrub.",
+  },
+  heroCompanion: {
+    zh: "深入的文字讲解请配合",
+    en: "For in-depth written material, pair each lesson with",
+  },
+  heroCompanionTail: {
+    zh: ";这里负责让机制“动起来”。灵感来自",
+    en: "; this site makes the mechanisms move. Inspired by",
+  },
+  period: { zh: "。", en: "." },
+  heroCredit: {
+    zh: "本站为 SGLang 社区而建,由",
+    en: "Built for the SGLang community, maintained by",
+  },
+  heroCreditTail: { zh: "维护。", en: "." },
+  furtherReading: { zh: "延伸阅读", en: "Further reading" },
+  tryOnSglang: { zh: "上手试试 · Try on SGLang", en: "Try on SGLang" },
+  tryOnSglangSub: {
+    zh: "打开 SGLang Cookbook,在真实推理引擎里观察这一机制",
+    en: "Open the SGLang cookbook and watch this mechanism in a real inference engine",
+  },
+  contribute: { zh: "贡献一课", en: "Contribute a lesson" },
+} satisfies Record<string, Localized>;
+
+/** 播放器控件(VizStage)文案 */
+export const PLAYER_UI = {
+  play: { zh: "▶ 播放", en: "▶ Play" },
+  pause: { zh: "⏸ 暂停", en: "⏸ Pause" },
+  replay: { zh: "↻ 重播", en: "↻ Replay" },
+  stepBack: { zh: "上一步", en: "Step back" },
+  stepForward: { zh: "下一步", en: "Step forward" },
+  toStart: { zh: "回到开头", en: "Back to start" },
+  timeline: { zh: "时间轴", en: "Timeline" },
+  speed: { zh: "播放速度", en: "Playback speed" },
+} satisfies Record<string, Localized>;

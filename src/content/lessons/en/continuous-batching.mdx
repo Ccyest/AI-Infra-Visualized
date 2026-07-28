@@ -1,0 +1,96 @@
+---
+title: "Continuous Batching: Keep the GPU Busy"
+description: "Lesson one of LLM serving throughput: refine scheduling from whole-batch to per-iteration, bubbles vanish, and long-tail wall time drops by nearly 40%."
+order: 1
+concepts:
+  - iteration-level scheduling
+  - prefill / decode
+  - GPU utilization
+  - ORCA
+tryOnSglang: "https://sgl-project-sglang-93.mintlify.app/concepts/continuous-batching"
+references:
+  - label: "ORCA: A Distributed Serving System for Transformer-Based Generative Models (OSDI '22, where continuous batching was introduced)"
+    url: "https://www.usenix.org/conference/osdi22/presentation/yu"
+  - label: "Anyscale: How continuous batching enables 23x throughput in LLM inference"
+    url: "https://www.anyscale.com/blog/continuous-batching-llm-inference"
+  - label: "SGLang (the high-performance LLM inference engine this site is built around)"
+    url: "https://github.com/sgl-project/sglang"
+  - label: "Awesome-ML-SYS-Tutorial (companion written tutorials)"
+    url: "https://github.com/zhaochenyang20/Awesome-ML-SYS-Tutorial"
+---
+
+import BatchingViz from "../../../viz/continuous-batching/BatchingViz";
+import RaceViz from "../../../viz/continuous-batching/RaceViz";
+
+> **In one sentence**: static batching must wait for the slowest request in a
+> batch before swapping in the next batch; continuous batching lets finished
+> requests get off — and queued requests get on — at the end of **every
+> iteration**. The GPU never idles again.
+
+## The problem: whole batch in, whole batch out
+
+LLM generation is autoregressive: each iteration (one forward pass) produces one
+token for every request in the batch. But output lengths vary wildly — some
+requests finish after four or five tokens, others write twenty-plus.
+
+Static batching ties a batch together. A request that finishes early cannot
+leave; its slot just spins (the hatched cells below — we call them **bubbles**)
+until the slowest request in the batch completes. Requests arriving mid-batch
+can only queue, even with empty slots in plain sight. Press play and count the
+wasted cells:
+
+<BatchingViz client:visible mode="static" scenario="steady" lang="en" />
+
+You can spot two kinds of bubbles: a finished request whose slot stays locked by
+the batch (hatched, hover to see which request), and slots that were never
+filled when the batch formed, locked for the whole run.
+
+## Continuous batching: swap riders every iteration
+
+Refine the scheduling granularity from "one batch" down to "one iteration"
+(ORCA's iteration-level scheduling — how SGLang and other mainstream engines
+work today): the moment a request completes, its slot frees up, and the request
+at the head of the queue takes it on the very next step. Same request stream:
+
+<BatchingViz client:visible mode="continuous" scenario="steady" lang="en" />
+
+Almost no blank cells — as long as the queue is non-empty, no slot sits idle
+(work-conserving).
+
+## Head-to-head
+
+Same requests, same timeline, straight race. Switch scenarios and watch when the
+gap is widest:
+
+<RaceViz client:visible scenario="longtail" lang="en" />
+
+- **Long-tail outputs**: the widest gap. Every static batch is dragged by its
+  longest request (head-of-line blocking) — and real LLM traffic is exactly
+  long-tailed.
+- **One burst** (equal lengths, simultaneous arrival): static isn't bad — but
+  production traffic never looks like this.
+
+## Three details worth chewing on
+
+1. **Why can riders swap mid-ride?** During decode each request only depends on
+   its own KV cache; requests are independent along the batch dimension. For the
+   non-attention operators, flatten every request's tokens into one dimension
+   and they batch together regardless of length (ORCA's selective batching).
+2. **Memory becomes the new bottleneck**: once anyone can hop on, "how many
+   seats the bus has" is decided by KV cache memory — exactly what paged KV
+   cache management (PagedAttention) addresses, a great topic for the next
+   lesson.
+3. **Prefill preempts decode**: a new rider must run prefill first (the light
+   cells; far heavier than one decode step in real systems), slowing down
+   everyone else's token cadence — which is where chunked prefill and
+   prefill/decode disaggregation come from.
+
+## Diagram ↔ real system
+
+| In the diagram | In a real system |
+| --- | --- |
+| One column | One forward pass (one iteration) |
+| One row (slot S1–S4) | One sequence position in the batch; the real limit is KV cache memory |
+| Light cell | Prefill (ingests the whole prompt; takes far more than one cell in reality — simplified here) |
+| Solid cell | One decoded token; color identifies the request |
+| Hatched cell (bubble) | Compute wasted by the scheduling policy |

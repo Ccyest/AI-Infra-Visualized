@@ -1,0 +1,16 @@
+---
+import LessonLayout from "../../../layouts/LessonLayout.astro";
+import { publishedLessons } from "../../../lib/lessons";
+
+export async function getStaticPaths() {
+  const lessons = await publishedLessons("en");
+  return lessons.map(({ entry, slug }) => ({
+    params: { slug },
+    props: { entry },
+  }));
+}
+
+const { entry } = Astro.props;
+---
+
+<LessonLayout entry={entry} locale="en" />
