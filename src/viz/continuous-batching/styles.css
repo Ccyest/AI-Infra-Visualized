@@ -1,36 +1,5 @@
-/* Continuous batching 课程专用样式(通用样式见 src/styles/global.css) */
-
-.cb-grid-wrap {
-  position: relative;
-  margin-top: 0.4rem;
-  /* 窄屏时横向滚动,避免格子缩到不可辨认 */
-  overflow-x: auto;
-}
-
-.cb-grid {
-  width: 100%;
-  min-width: 520px;
-  height: auto;
-  display: block;
-}
-
-.cb-cell {
-  transform-box: fill-box;
-  transform-origin: center;
-}
-
-@media (prefers-reduced-motion: no-preference) {
-  .cb-cell {
-    animation: cb-cell-in 0.16s ease-out;
-  }
-}
-
-@keyframes cb-cell-in {
-  from {
-    opacity: 0;
-    transform: scale(0.5);
-  }
-}
+/* Continuous batching 课程专用样式
+   (网格/分段/结论条等通用可视化样式见 src/styles/global.css) */
 
 .cb-queue {
   display: flex;
@@ -66,58 +35,4 @@
 .cb-chip-len {
   color: var(--muted);
   font-variant-numeric: tabular-nums;
-}
-
-.cb-dot {
-  width: 9px;
-  height: 9px;
-  border-radius: 3px;
-  flex: none;
-}
-
-.cb-race-section {
-  margin: 0.7rem 0 0.2rem;
-}
-
-.cb-race-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 0.4rem 0.9rem;
-  font-size: 0.85rem;
-  color: var(--ink-2);
-}
-
-.cb-race-head b {
-  color: var(--ink);
-  font-size: 0.92rem;
-}
-
-.cb-race-stats {
-  font-variant-numeric: tabular-nums;
-}
-
-.cb-race-done {
-  color: var(--good);
-  font-weight: 600;
-}
-
-.cb-verdict {
-  font-size: 0.88rem;
-  color: var(--ink-2);
-  background: color-mix(in srgb, var(--accent) 7%, transparent);
-  border-radius: 8px;
-  padding: 0.5rem 0.8rem;
-  flex-basis: 100%;
-}
-
-.cb-verdict b {
-  color: var(--ink);
-  font-variant-numeric: tabular-nums;
-}
-
-.cb-presets {
-  display: flex;
-  gap: 0.35rem;
-  flex-wrap: wrap;
 }

@@ -757,6 +757,94 @@ main {
   transition: width 0.2s ease;
 }
 
+/* 网格画布与单元格(所有课程通用) */
+.viz-grid-wrap {
+  position: relative;
+  margin-top: 0.4rem;
+  /* 窄屏时横向滚动,避免格子缩到不可辨认 */
+  overflow-x: auto;
+}
+
+.viz-grid {
+  width: 100%;
+  min-width: 520px;
+  height: auto;
+  display: block;
+}
+
+.viz-cell {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .viz-cell {
+    animation: viz-cell-in 0.16s ease-out;
+  }
+}
+
+@keyframes viz-cell-in {
+  from {
+    opacity: 0;
+    transform: scale(0.5);
+  }
+}
+
+/* 对比视图的分段(如 static vs continuous、TP vs PP) */
+.viz-section {
+  margin: 0.7rem 0 0.2rem;
+}
+
+.viz-section-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.4rem 0.9rem;
+  font-size: 0.85rem;
+  color: var(--ink-2);
+}
+
+.viz-section-head b {
+  color: var(--ink);
+  font-size: 0.92rem;
+}
+
+.viz-section-stats {
+  font-variant-numeric: tabular-nums;
+}
+
+.viz-done {
+  color: var(--good);
+  font-weight: 600;
+}
+
+.viz-verdict {
+  font-size: 0.88rem;
+  color: var(--ink-2);
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+  border-radius: var(--radius-sm);
+  padding: 0.5rem 0.8rem;
+  flex-basis: 100%;
+}
+
+.viz-verdict b {
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.viz-presets {
+  display: flex;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.viz-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 3px;
+  flex: none;
+}
+
 /* 提示浮层 */
 .viz-tooltip {
   position: absolute;

@@ -19,6 +19,7 @@ built for the [SGLang](https://github.com/sgl-project/sglang) community.
 | # | 课程 | 你会看到 | Try on SGLang |
 | - | --- | --- | --- |
 | 1 | [Continuous Batching](src/content/lessons/zh/continuous-batching.mdx) | static vs continuous 同场赛跑,空泡如何吃掉 GPU 利用率 | [cookbook](https://sgl-project-sglang-93.mintlify.app/concepts/continuous-batching) |
+| 2 | [Kimi K3 Day-0 Support](src/content/lessons/zh/kimi-k3-day0-support.mdx) | 双状态统一显存池、chunked PP prefill、DCP decode——SGLang 伺候 2.8T 混合架构的三条战线 | [cookbook](https://sgl-project-sglang-93.mintlify.app/developer/memory-management) |
 
 ## 本地运行
 
@@ -42,9 +43,9 @@ npm run check    # 类型与内容 schema 校验
 
 ## Roadmap(欢迎认领)
 
+- **DSpark 投机解码**(第三课,筹备中:semi-autoregressive block drafter + confidence-scheduled verification)
 - KV cache 分页管理(PagedAttention)
 - Chunked prefill 与 PD(prefill/decode)分离
-- Speculative decoding
 - Radix cache / prefix caching
 - TP / PP / EP 并行策略
 - ZeRO 与显存优化

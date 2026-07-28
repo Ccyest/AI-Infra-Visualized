@@ -62,9 +62,9 @@ export default function BatchGrid({
   for (let i = 0; i <= xIters; i += 5) ticks.push(i);
 
   return (
-    <div className="cb-grid-wrap" ref={wrapRef}>
+    <div className="viz-grid-wrap" ref={wrapRef}>
       <svg
-        className="cb-grid"
+        className="viz-grid"
         viewBox={`0 0 ${width} ${height}`}
         role="img"
         aria-label={gridAria(lang, result.mode, numSlots, totalIterations)}
@@ -125,7 +125,7 @@ export default function BatchGrid({
             const x = LABEL_W + iter * PITCH;
             const y = s * PITCH;
             const common = {
-              className: "cb-cell",
+              className: "viz-cell",
               x,
               y,
               width: CELL,

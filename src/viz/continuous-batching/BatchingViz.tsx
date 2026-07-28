@@ -51,7 +51,7 @@ export function TimingTable({
             <tr key={spec.id}>
               <td>
                 <span
-                  className="cb-dot"
+                  className="viz-dot"
                   style={{
                     background: seriesColor(spec.id),
                     display: "inline-block",

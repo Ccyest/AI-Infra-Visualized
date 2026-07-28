@@ -50,10 +50,10 @@ function RaceSection({
   const m = result.metrics[Math.min(t, result.totalIterations)];
   const done = t >= result.totalIterations;
   return (
-    <div className="cb-race-section">
-      <div className="cb-race-head">
+    <div className="viz-section">
+      <div className="viz-section-head">
         <b>{label}</b>
-        <span className="cb-race-stats">
+        <span className="viz-section-stats">
           {raceStats(lang, m.queued, m.completed, result.timings.length, m.bubbleCells)}
         </span>
         <Meter
@@ -61,7 +61,7 @@ function RaceSection({
           value={utilization(m, result.numSlots)}
         />
         {done && (
-          <span className="cb-race-done">
+          <span className="viz-done">
             {finishedAt(lang, result.totalIterations)}
           </span>
         )}
@@ -118,7 +118,7 @@ function RaceInner({
       lang={lang}
       headExtra={
         presets && (
-          <span className="cb-presets" role="group" aria-label={RACE.presetsAria[lang]}>
+          <span className="viz-presets" role="group" aria-label={RACE.presetsAria[lang]}>
             {Object.values(SCENARIOS).map((s) => (
               <button
                 key={s.id}
@@ -135,7 +135,7 @@ function RaceInner({
       footer={
         <>
           <Legend items={legendItems("both", lang)} />
-          <div className="cb-verdict">{verdict(lang, rStatic, rCont)}</div>
+          <div className="viz-verdict">{verdict(lang, rStatic, rCont)}</div>
           <TimingTable
             result={rStatic}
             lang={lang}

@@ -32,7 +32,7 @@ export default function QueueLane({
           className="cb-chip"
           title={chipTitle(lang, spec.id, spec.arrival, spec.output)}
         >
-          <span className="cb-dot" style={{ background: seriesColor(spec.id) }} />
+          <span className="viz-dot" style={{ background: seriesColor(spec.id) }} />
           R{spec.id}
           <span className="cb-chip-len">{spec.output}t</span>
         </span>
