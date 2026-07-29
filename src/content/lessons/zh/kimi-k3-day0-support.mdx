@@ -22,6 +22,7 @@ references:
 import PoolViz from "../../../viz/kimi-k3-day0/PoolViz";
 import PipelineViz from "../../../viz/kimi-k3-day0/PipelineViz";
 import DcpViz from "../../../viz/kimi-k3-day0/DcpViz";
+import Mapping from "../../../viz/kimi-k3-day0/Mapping";
 
 > **TL;DR** K3 在 attention、MoE、量化上同时偏离常规,serving 栈里的很多默认
 > 假设都不再成立。SGLang 的 day-0 支持主要是三件事:显存改统一池,prefill 改
@@ -104,11 +105,4 @@ KDA 层仍按 TP 切分,所以混合架构的并行策略也是按层混合的�
 
 ## 图 ↔ 真实系统对照
 
-| 图里的元素 | 真实系统里的含义 |
-| --- | --- |
-| 显存池的一页 | 若干 MB 显存;真实 KDA 块 ≈ 54 MB,MLA 每 token ≈ 27 KB,比例远比图上悬殊 |
-| 内存条动画的一格 KDA | 固定大小递归状态,每步原地覆写(图中未画覆写动作) |
-| 流水线的一列 | 一个调度节拍;真实 P2P 交接 91% 与计算重叠,图中省略 |
-| 上排 "TP8" 网格 | 教学上简化为纯 tensor 并行;博客的实测基线是 TEP8(tensor + expert 并行) |
-| AllReduce 灰格 | 关键路径上的通信,真实占比随互联拓扑变化 |
-| DCP 网格的一格 | 一个 token 位置的 MLA KV;真实系统按页管理且 N=8 |
+<Mapping client:visible />

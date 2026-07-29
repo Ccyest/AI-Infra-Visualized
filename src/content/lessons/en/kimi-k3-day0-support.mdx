@@ -22,6 +22,7 @@ references:
 import PoolViz from "../../../viz/kimi-k3-day0/PoolViz";
 import PipelineViz from "../../../viz/kimi-k3-day0/PipelineViz";
 import DcpViz from "../../../viz/kimi-k3-day0/DcpViz";
+import Mapping from "../../../viz/kimi-k3-day0/Mapping";
 
 > **TL;DR** K3 departs from convention in attention, MoE, and quantization at
 > the same time, which breaks many default assumptions in a serving stack.
@@ -118,11 +119,4 @@ user. One line from the blog worth remembering:
 
 ## Diagram ↔ real system
 
-| In the diagram | In a real system |
-| --- | --- |
-| One memory-pool page | Several MB; a real KDA block ≈ 54 MB while MLA is ~27 KB/token, far more lopsided than drawn |
-| A KDA cell in the pool bar | Fixed-size recurrent state, overwritten every step (the overwrite isn't animated) |
-| One pipeline column | One scheduling beat; real P2P hand-offs are 91% overlapped and omitted here |
-| The upper "TP8" grid | Simplified to plain tensor parallelism; the blog's measured baseline is TEP8 (tensor + expert parallelism) |
-| Gray AllReduce cell | Critical-path communication; its real share depends on the interconnect |
-| One DCP grid cell | One token position's MLA KV; real systems manage pages and use N=8 |
+<Mapping client:visible lang="en" />

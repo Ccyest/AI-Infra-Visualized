@@ -22,6 +22,7 @@ references:
 import SpecRaceViz from "../../../viz/dspark/SpecRaceViz";
 import TrimViz from "../../../viz/dspark/TrimViz";
 import PackViz from "../../../viz/dspark/PackViz";
+import Mapping from "../../../viz/dspark/Mapping";
 
 > **TL;DR** Speculative decoding drafts with a small model and verifies a whole
 > block per target forward. At small batches verification is nearly free; at
@@ -94,10 +95,4 @@ device-side barriers, iterations run without bubbles, about 1.5× tighter.
 
 ## Diagram ↔ real system
 
-| In the diagram | In a real system |
-| --- | --- |
-| One timeline step | One target-model forward; drafter time isn't drawn (a small fraction of it) |
-| The draft row | Shows only the block just verified; real systems pipeline drafting with verification |
-| Confidence shading | The confidence head's per-position survival probability |
-| The trim threshold | Calibrated per load from the θ(M) cost staircase; simplified to a single cutoff here |
-| CUDA graph tiers | The set of pre-captured fixed shapes; real tier tables are denser |
+<Mapping client:visible lang="en" />

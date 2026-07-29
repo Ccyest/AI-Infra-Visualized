@@ -839,6 +839,72 @@ main {
   flex: none;
 }
 
+/* 「图 ↔ 真实系统」交互对照(DiagramMap) */
+.map-cards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0.6rem 0;
+}
+
+.map-card {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--ink-2);
+  border-radius: var(--radius-sm);
+  padding: 0.45rem 0.7rem;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: border-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease,
+    color 0.2s ease;
+}
+
+.map-card:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-sm);
+}
+
+.map-card.active {
+  border-color: var(--accent);
+  color: var(--ink);
+  box-shadow: var(--shadow-sm);
+}
+
+.map-visual {
+  display: inline-flex;
+  align-items: center;
+}
+
+.map-detail {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.5rem;
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+  border-radius: var(--radius-sm);
+  padding: 0.6rem 0.9rem;
+  font-size: 0.9rem;
+  color: var(--ink-2);
+}
+
+.map-detail b {
+  color: var(--ink);
+}
+
+.map-arrow {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .map-card {
+    transition: none;
+  }
+}
+
 /* 提示浮层 */
 .viz-tooltip {
   position: absolute;

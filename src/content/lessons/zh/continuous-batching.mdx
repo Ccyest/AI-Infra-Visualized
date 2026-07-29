@@ -21,6 +21,7 @@ references:
 
 import BatchingViz from "../../../viz/continuous-batching/BatchingViz";
 import RaceViz from "../../../viz/continuous-batching/RaceViz";
+import Mapping from "../../../viz/continuous-batching/Mapping";
 
 > **TL;DR** static batching 要等一整批里最慢的请求跑完才能换批;continuous
 > batching 在每个 iteration 结束时都可以放走完成的请求、放进排队的请求。
@@ -75,10 +76,4 @@ ORCA 提出把调度粒度从一整批细化到一个 iteration,SGLang 等主流
 
 ## 图 ↔ 真实系统对照
 
-| 图里的元素 | 真实系统里的含义 |
-| --- | --- |
-| 一列 | 一次 forward(一个 iteration) |
-| 一行(槽位 S1–S4) | batch 里的一个序列位置;真实上限由 KV cache 显存决定 |
-| 浅色格 | prefill(一次读入整段 prompt;实际耗时远不止一格,此处简化) |
-| 实色格 | decode 生成的一个 token,颜色代表所属请求 |
-| 斜纹格(空泡) | 被调度策略浪费的算力 |
+<Mapping client:visible />

@@ -22,6 +22,7 @@ references:
 import SpecRaceViz from "../../../viz/dspark/SpecRaceViz";
 import TrimViz from "../../../viz/dspark/TrimViz";
 import PackViz from "../../../viz/dspark/PackViz";
+import Mapping from "../../../viz/dspark/Mapping";
 
 > **TL;DR** 投机解码用小模型起草、大模型一次 forward 验证一整块。小 batch 时
 > 验证近乎免费;batch 大了之后每个 verify token 都有实际成本。DSpark 用
@@ -84,10 +85,4 @@ ReplaySSM 是 K3 特有的问题:KDA 递归状态原地覆写,投机被拒时需
 
 ## 图 ↔ 真实系统对照
 
-| 图里的元素 | 真实系统里的含义 |
-| --- | --- |
-| 时间轴一格 | 一次大模型 forward;小模型起草的耗时未画(约为其零头) |
-| 草稿行 | 只画了最近验证完的一块;真实系统草稿与验证流水重叠 |
-| 置信度深浅 | confidence head 的逐位置存活概率 |
-| 裁剪阈值 | 由成本模型 θ(M) 的台阶逐负载标定,图中简化为单一阈值 |
-| CUDA graph 档位 | 预捕获的固定形状集合,真实档位表更密 |
+<Mapping client:visible />

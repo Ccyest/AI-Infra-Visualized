@@ -21,6 +21,7 @@ references:
 
 import BatchingViz from "../../../viz/continuous-batching/BatchingViz";
 import RaceViz from "../../../viz/continuous-batching/RaceViz";
+import Mapping from "../../../viz/continuous-batching/Mapping";
 
 > **TL;DR** Static batching waits for the slowest request in a batch before
 > admitting the next one. Continuous batching releases finished requests and
@@ -85,10 +86,4 @@ Same requests, same timeline. Switch scenarios to see where the gap is widest:
 
 ## Diagram ↔ real system
 
-| In the diagram | In a real system |
-| --- | --- |
-| One column | One forward pass (one iteration) |
-| One row (slot S1–S4) | One sequence position in the batch; the real limit is KV cache memory |
-| Light cell | Prefill (ingests the whole prompt; takes far more than one cell in reality, simplified here) |
-| Solid cell | One decoded token; color identifies the request |
-| Hatched cell (bubble) | Compute wasted by the scheduling policy |
+<Mapping client:visible lang="en" />
