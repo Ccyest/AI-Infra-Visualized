@@ -26,6 +26,10 @@ export const CHROME = {
   langSwitch: { zh: "EN", en: "中文" },
   langSwitchAria: { zh: "切换到英文版", en: "Switch to Chinese" },
   heroTitle: { zh: "用可视化，学 AI Infra", en: "Learn AI Infra, visually" },
+  heroTagline: {
+    zh: "AI Infra 优化方案可视化详解，Built based on SGLang。",
+    en: "AI infra optimizations, visualized in detail. Built based on SGLang.",
+  },
   heroBody: {
     zh: "LLM 推理与训练系统里的核心机制：continuous batching、KV cache、并行策略。每篇文章配可暂停、可单步、可拖动时间轴的交互式动画，机制本身让动画来讲。",
     en: "The core mechanisms inside LLM serving and training systems: continuous batching, KV cache, parallelism. Each post comes with interactive animations you can pause, step through, and scrub.",
