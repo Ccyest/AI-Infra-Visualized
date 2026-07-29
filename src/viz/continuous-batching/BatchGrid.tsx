@@ -30,7 +30,6 @@ export default function BatchGrid({
 }: BatchGridProps) {
   const uid = useId();
   const hatchId = `hatch-${uid}`;
-  const gridId = `gridbg-${uid}`;
   const wrapRef = useRef<HTMLDivElement>(null);
   const [hover, setHover] = useState<{ x: number; y: number; text: string } | null>(null);
 
@@ -81,18 +80,27 @@ export default function BatchGrid({
             <rect width="5" height="5" fill="color-mix(in srgb, var(--ink) 4%, transparent)" />
             <line x1="0" y1="0" x2="0" y2="5" stroke="var(--axis)" strokeWidth="1.4" />
           </pattern>
-          <pattern id={gridId} width={PITCH} height={PITCH} patternUnits="userSpaceOnUse">
-            <rect
-              x="0.5"
-              y="0.5"
-              width={CELL - 1}
-              height={CELL - 1}
-              rx="3"
-              fill="none"
-              stroke="var(--grid)"
-              strokeWidth="1"
-            />
-          </pattern>
+          {/* prefill:半透明底 + 同色 135° 斜杠(与空泡的灰色 45° 斜纹方向相反) */}
+          {Array.from({ length: 8 }, (_, i) => (
+            <pattern
+              key={i}
+              id={`pf${i + 1}-${uid}`}
+              width="5"
+              height="5"
+              patternUnits="userSpaceOnUse"
+              patternTransform="rotate(135)"
+            >
+              <rect width="5" height="5" fill={`var(--series-${i + 1})`} opacity="0.3" />
+              <line
+                x1="0"
+                y1="0"
+                x2="0"
+                y2="5"
+                stroke={`var(--series-${i + 1})`}
+                strokeWidth="1.5"
+              />
+            </pattern>
+          ))}
         </defs>
 
         {/* 槽位标签 */}
@@ -109,14 +117,23 @@ export default function BatchGrid({
           </text>
         ))}
 
-        {/* 本条时间线的底格(长度 = 各自的总耗时,一眼可见谁先跑完) */}
-        <rect
-          x={LABEL_W}
-          y={0}
-          width={totalIterations * PITCH}
-          height={rowsH + GAP}
-          fill={`url(#${gridId})`}
-        />
+        {/* 本条时间线的底格(长度 = 各自的总耗时,一眼可见谁先跑完);
+            逐格绘制而非 pattern 平铺,保证与彩色格严格对齐 */}
+        {Array.from({ length: numSlots }, (_, s) =>
+          Array.from({ length: totalIterations }, (_, i) => (
+            <rect
+              key={`bg-${s}-${i}`}
+              x={LABEL_W + i * PITCH + 0.5}
+              y={s * PITCH + 0.5}
+              width={CELL - 1}
+              height={CELL - 1}
+              rx={3}
+              fill="none"
+              stroke="var(--grid)"
+              strokeWidth="1"
+            />
+          )),
+        )}
 
         {/* 已回放的 cells */}
         {grid.map((row, s) =>
@@ -137,13 +154,17 @@ export default function BatchGrid({
             if (cell.kind === "bubble") {
               return <rect key={`${s}-${iter}`} {...common} fill={`url(#${hatchId})`} />;
             }
+            if (cell.kind === "prefill") {
+              return (
+                <rect
+                  key={`${s}-${iter}`}
+                  {...common}
+                  fill={`url(#pf${((cell.req - 1) % 8) + 1}-${uid})`}
+                />
+              );
+            }
             return (
-              <rect
-                key={`${s}-${iter}`}
-                {...common}
-                fill={seriesColor(cell.req)}
-                opacity={cell.kind === "prefill" ? 0.4 : 1}
-              />
+              <rect key={`${s}-${iter}`} {...common} fill={seriesColor(cell.req)} />
             );
           }),
         )}
