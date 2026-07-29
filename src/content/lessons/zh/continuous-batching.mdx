@@ -1,6 +1,6 @@
 ---
 title: "Continuous Batching：从 static 到 iteration-level scheduling"
-description: "本文通过可视化工具，讲解static batching 为什么浪费 GPU，以及continuous batching的优化方案。可视化工具提供逐 iteration 对比。"
+description: "本文通过可视化工具，讲解 static batching 为什么浪费 GPU，以及 continuous batching 的优化方案。可视化工具提供逐 iteration 对比。"
 order: 1
 concepts:
   - iteration-level scheduling
@@ -35,10 +35,12 @@ static batching 把一批请求绑在一起跑。先完成的请求不能退出�
 <BatchingViz client:visible mode="static" scenario="steady" />
 
 图里有两种空泡：请求已完成但槽位被整批锁住(悬停可以看到是哪个请求)；
-组批时没凑满、整批期间一直空着的槽。这分别对应着static batching的两个痛点：1.
-当有某个request比较长，其他的request即使完成也需要等待。2.
-在组batch的时候可能凑不满，但是中途不能加入新的request，必须等待batch完成。
-这两个痛点都会导致GPU利用率下降。
+组批时没凑满、整批期间一直空着的槽。这分别对应着 static batching 的两个痛点：
+
+1. 当有某个 request 比较长，其他的 request 即使完成也需要等待；
+2. 组 batch 的时候可能凑不满，但中途不能加入新的 request，必须等待整批完成。
+
+这两个痛点都会导致 GPU 利用率下降。
 
 ## Iteration-level scheduling
 
@@ -56,14 +58,14 @@ ORCA 提出把调度粒度从一整批细化到一个 iteration，SGLang 等主�
 
 <RaceViz client:visible scenario="longtail" />
 
-- 等长不稳定到达：有一定差距，即使所有request都等长，在不稳定到达的情况下，
-  static batching每次组batch组不满，也会导致GPU资源浪费。
+- 等长不稳定到达：有一定差距，即使所有 request 都等长，在不稳定到达的
+  情况下，static batching 每次组 batch 组不满，也会导致 GPU 资源浪费。
 - 长尾输出：差距最大。static 每一批都被批内最长的请求拖住(head-of-line
   blocking)，而真实 LLM 流量恰好是长尾的。
 - 等长突发：严格等长、同时到达时，两者完全打平，这是 static 唯一不吃亏的
-  情况。它说明 static 的浪费全部来自长度差异和到达时间差异，而线上流量，
-  恰恰有长度差异和到达时间差异，因此在现实使用中continuous batching的优化
-  效果比实验室理想结果更加好。
+  情况。它说明 static 的浪费全部来自长度差异和到达时间差异，而线上流量
+  恰恰两者都有，因此在现实使用中 continuous batching 的优化效果比实验室
+  理想结果更加好。
 
 ## 补充说明
 
@@ -72,8 +74,8 @@ ORCA 提出把调度粒度从一整批细化到一个 iteration，SGLang 等主�
 2. 显存成为新瓶颈：准入不再受批次限制之后，并发上限取决于 KV cache 占用的
    显存，这是 PagedAttention 要解决的问题。
 3. prefill 会抢占 decode：新请求进来要先跑 prefill(图中浅色格，文中简化成
-   一步iteration，真实系统里比一步iteration重得多)，会拖慢同批其他请求的
-   出词速度。chunked prefill 和 PD 分离都是针对这个问题。
+   一步 iteration，真实系统里比一步 iteration 重得多)，会拖慢同批其他请求
+   的出词速度。chunked prefill 和 PD 分离都是针对这个问题。
 
 ## 图 ↔ 真实系统对照
 

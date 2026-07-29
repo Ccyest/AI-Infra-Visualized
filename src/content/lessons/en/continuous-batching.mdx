@@ -38,10 +38,14 @@ when slots are visibly empty.
 
 There are two kinds of bubbles here: a finished request whose slot stays locked
 by the batch (hover to see which request), and slots that were never filled
-when the batch formed. These map to static batching's two pain points: 1. when
-one request runs long, every other request has to wait even after finishing;
-2. a batch may form under-filled, and no new request can join mid-batch until
-the whole batch completes. Both drag down GPU utilization.
+when the batch formed. These map to static batching's two pain points:
+
+1. When one request runs long, every other request has to wait even after
+   finishing;
+2. A batch may form under-filled, and no new request can join mid-batch until
+   the whole batch completes.
+
+Both drag down GPU utilization.
 
 ## Iteration-level scheduling
 
