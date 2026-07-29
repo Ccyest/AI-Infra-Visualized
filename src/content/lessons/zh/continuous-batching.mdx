@@ -1,6 +1,6 @@
 ---
 title: "Continuous Batching:从 static 到 iteration-level scheduling"
-description: "static batching 为什么浪费 GPU,iteration-level scheduling 怎么解决。两种调度策略跑同一批请求,逐 iteration 对比。"
+description: "static batching 为什么浪费 GPU，iteration-level scheduling 怎么解决。两种调度策略跑同一批请求，逐 iteration 对比。"
 order: 1
 concepts:
   - iteration-level scheduling
@@ -9,7 +9,7 @@ concepts:
   - ORCA
 tryOnSglang: "https://sgl-project-sglang-93.mintlify.app/concepts/continuous-batching"
 references:
-  - label: "ORCA: A Distributed Serving System for Transformer-Based Generative Models(OSDI '22,continuous batching 的出处)"
+  - label: "ORCA: A Distributed Serving System for Transformer-Based Generative Models(OSDI '22，continuous batching 的出处)"
     url: "https://www.usenix.org/conference/osdi22/presentation/yu"
   - label: "Anyscale:How continuous batching enables 23x throughput in LLM inference"
     url: "https://www.anyscale.com/blog/continuous-batching-llm-inference"
@@ -25,16 +25,16 @@ import Mapping from "../../../viz/continuous-batching/Mapping";
 
 > **TL;DR** static batching 要等一整批里最慢的请求跑完才能换批;continuous
 > batching 在每个 iteration 结束时都可以放走完成的请求、放进排队的请求。
-> 长尾流量下,后者总耗时少接近四成。
+> 长尾流量下，后者总耗时少接近四成。
 
 ## Static batching 的问题
 
 LLM 生成是自回归的:每个 iteration(一次 forward)为批内每个请求生成一个
-token。同一批请求的输出长度差别很大,短的四五个 token 就结束,长的要写二十多个。
+token。同一批请求的输出长度差别很大。
 
-static batching 把一批请求绑在一起跑。先完成的请求不能退出,槽位空转(下图的
-斜纹格,即空泡),直到整批里最慢的请求完成;中途到达的新请求即使眼前有空槽,
-也只能排队。可以点播放,数一下空泡:
+static batching 把一批请求绑在一起跑。先完成的请求不能退出，槽位空转(下图的
+斜纹格，即空泡)，直到整批里最慢的请求完成;中途到达的新请求即使眼前有空槽，
+也只能排队。可以点播放，数一下空泡:
 
 <BatchingViz client:visible mode="static" scenario="steady" />
 
@@ -43,35 +43,35 @@ static batching 把一批请求绑在一起跑。先完成的请求不能退出,
 
 ## Iteration-level scheduling
 
-ORCA 提出把调度粒度从一整批细化到一个 iteration,SGLang 等主流引擎都采用了
-这个做法:每步结束,完成的请求立即释放槽位,队首请求下一步就能进来。
+ORCA 提出把调度粒度从一整批细化到一个 iteration，SGLang 等主流引擎都采用了
+这个做法:每步结束，完成的请求立即释放槽位，队首请求下一步就能进来。
 同样的请求流:
 
 <BatchingViz client:visible mode="continuous" scenario="steady" />
 
-只要队列里还有请求,槽位就不会空着(work-conserving)。
+只要队列里还有请求，槽位就不会空着(work-conserving)。
 
 ## 对比
 
-同一批请求,同一条时间轴。切换场景,看差距什么时候最大:
+同一批请求，同一条时间轴。切换场景，看差距什么时候最大:
 
 <RaceViz client:visible scenario="longtail" />
 
 - 长尾输出:差距最大。static 每一批都被批内最长的请求拖住(head-of-line
-  blocking),而真实 LLM 流量恰好是长尾的。
-- 等长突发:严格等长、同时到达时,两者完全打平,这是 static 唯一不吃亏的
-  情况。它说明 static 的浪费全部来自长度差异和到达时间差异,而线上流量
+  blocking)，而真实 LLM 流量恰好是长尾的。
+- 等长突发:严格等长、同时到达时，两者完全打平，这是 static 唯一不吃亏的
+  情况。它说明 static 的浪费全部来自长度差异和到达时间差异，而线上流量
   恰好两样都占。
 
 ## 几个细节
 
-1. 为什么可以中途换请求?decode 时每个请求只依赖自己的 KV cache,batch
-   维度上互不相干;attention 之外的算子把不同请求的 token 摊平到同一维度,
+1. 为什么可以中途换请求?decode 时每个请求只依赖自己的 KV cache，batch
+   维度上互不相干;attention 之外的算子把不同请求的 token 摊平到同一维度，
    就能一起算(ORCA 的 selective batching)。
-2. 显存成为新瓶颈:准入不再受批次限制之后,并发上限取决于 KV cache 占用的
-   显存,这是 PagedAttention 要解决的问题。
-3. prefill 会抢占 decode:新请求进来要先跑 prefill(图中浅色格,真实系统里
-   比一步 decode 重得多),会拖慢同批其他请求的出词速度。chunked prefill 和
+2. 显存成为新瓶颈:准入不再受批次限制之后，并发上限取决于 KV cache 占用的
+   显存，这是 PagedAttention 要解决的问题。
+3. prefill 会抢占 decode:新请求进来要先跑 prefill(图中浅色格，真实系统里
+   比一步 decode 重得多)，会拖慢同批其他请求的出词速度。chunked prefill 和
    PD 分离都是针对这个问题。
 
 ## 图 ↔ 真实系统对照

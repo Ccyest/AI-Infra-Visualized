@@ -7,7 +7,7 @@ import type { Locale } from "../../lib/i18n";
 import { seriesColor } from "../../lib/palette";
 import { simulatePool } from "./poolEngine";
 import type { PoolRequest, PoolResult } from "./poolEngine";
-import { POOL, poolCellTooltip, poolEventText, poolOutcome, poolVerdict } from "./strings";
+import { POOL, poolCellTooltip, poolEventText, poolVerdict } from "./strings";
 import "./styles.css";
 
 const POOL_SIZE = 44;
@@ -218,46 +218,6 @@ export default function PoolViz({ lang = "zh" }: { lang?: Locale }) {
           <div className="viz-verdict">
             {poolVerdict(lang, evicted, rejected, TRACE.length, rUnified.peakUsed, POOL_SIZE)}
           </div>
-          <details className="viz-details" style={{ flexBasis: "100%" }}>
-            <summary>{POOL.tableSummary[lang]}</summary>
-            <table>
-              <thead>
-                <tr>
-                  <th>{POOL.thRequest[lang]}</th>
-                  <th>{POOL.thArrive[lang]}</th>
-                  <th>{POOL.thTokens[lang]}</th>
-                  <th>{POOL.thSplit[lang]}</th>
-                  <th>{POOL.thUnified[lang]}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {TRACE.map((r) => (
-                  <tr key={r.id}>
-                    <td>
-                      <span
-                        className="viz-dot"
-                        style={{
-                          background: seriesColor(r.id),
-                          display: "inline-block",
-                          marginRight: "0.35rem",
-                          verticalAlign: "-1px",
-                        }}
-                      />
-                      R{r.id}
-                    </td>
-                    <td>{r.start}</td>
-                    <td>{r.tokens}</td>
-                    <td>
-                      {poolOutcome(lang, rSplit.events.find((e) => e.req === r.id))}
-                    </td>
-                    <td>
-                      {poolOutcome(lang, rUnified.events.find((e) => e.req === r.id))}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </details>
         </>
       }
     >

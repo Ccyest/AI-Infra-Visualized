@@ -46,7 +46,7 @@ const ITEMS: MappingItem[] = [
     id: "threshold",
     label: { zh: "裁剪阈值", en: "The trim threshold" },
     real: {
-      zh: "由成本模型 θ(M) 的台阶逐负载标定,图中简化为单一阈值",
+      zh: "由成本模型 θ(M) 的台阶逐负载标定，图中简化为单一阈值",
       en: "Calibrated per load from the θ(M) cost staircase; simplified to a single cutoff here",
     },
     visual: (
@@ -61,7 +61,7 @@ const ITEMS: MappingItem[] = [
     id: "tier",
     label: { zh: "CUDA graph 档位", en: "CUDA graph tiers" },
     real: {
-      zh: "预捕获的固定形状集合,真实档位表更密",
+      zh: "预捕获的固定形状集合，真实档位表更密",
       en: "The set of pre-captured fixed shapes; real tier tables are denser",
     },
     visual: (

@@ -1,6 +1,6 @@
 ---
 title: "Kimi K3 Day-0 Support:SGLang 做了哪些适配"
-description: "K3 的混合架构带来两种性质不同的推理状态。看 SGLang 的三项核心工作:统一显存池、chunked PP prefill、DCP decode,以及各自的实测数字。"
+description: "K3 的混合架构带来两种性质不同的推理状态。看 SGLang 的三项核心工作:统一显存池、chunked PP prefill、DCP decode，以及各自的实测数字。"
 order: 2
 concepts:
   - KDA / MLA 混合架构
@@ -9,7 +9,7 @@ concepts:
   - decode context parallelism
 tryOnSglang: "https://sgl-project-sglang-93.mintlify.app/developer/memory-management"
 references:
-  - label: "LMSYS Blog:Kimi K3 Day-0 Support(本文的第一手来源,含全部实测数字)"
+  - label: "LMSYS Blog:Kimi K3 Day-0 Support(本文的第一手来源，含全部实测数字)"
     url: "https://www.lmsys.org/blog/2026-07-27-kimi-k3-day0-support/"
   - label: "LMSYS Blog:DSpark in SGLang(投机解码)"
     url: "https://www.lmsys.org/blog/2026-07-06-dspark-sglang"
@@ -24,84 +24,84 @@ import PipelineViz from "../../../viz/kimi-k3-day0/PipelineViz";
 import DcpViz from "../../../viz/kimi-k3-day0/DcpViz";
 import Mapping from "../../../viz/kimi-k3-day0/Mapping";
 
-> **TL;DR** K3 在 attention、MoE、量化上同时偏离常规,serving 栈里的很多默认
-> 假设都不再成立。SGLang 的 day-0 支持主要是三件事:显存改统一池,prefill 改
-> chunked PP,decode 改 DCP,再配合投机解码 DSpark。
+> **TL;DR** K3 在 attention、MoE、量化上同时偏离常规，serving 栈里的很多默认
+> 假设都不再成立。SGLang 的 day-0 支持主要是三件事:显存改统一池，prefill 改
+> chunked PP，decode 改 DCP，再配合投机解码 DSpark。
 
 ## K3 的架构
 
-- 2.8T 参数,1M token 上下文,首个 3T 级开源模型;
-- 93 层里 69 层是 KDA 线性注意力,24 层是 MLA,交错排布;
-- LatentMoE:896 个 expert、top-16 路由,在 3584 维隐空间里做;
-- 权重原生 MXFP4,视觉塔 MoonViT3d。
+- 2.8T 参数，1M token 上下文，首个 3T 级开源模型;
+- 93 层里 69 层是 KDA 线性注意力，24 层是 MLA，交错排布;
+- LatentMoE:896 个 expert、top-16 路由，在 3584 维隐空间里做;
+- 权重原生 MXFP4，视觉塔 MoonViT3d。
 
 对 serving 影响最大的是第二条。两种 attention 意味着两种性质不同的推理状态:
 
 | | MLA(24 层) | KDA(69 层) |
 | --- | --- | --- |
-| 状态形式 | KV cache,逐 token 追加 | 递归状态,固定大小 |
-| 增长方式 | 每 token 约 27 KB,只增不减 | 每请求约 54 MB(TP=8),每步原地覆写 |
+| 状态形式 | KV cache，逐 token 追加 | 递归状态，固定大小 |
+| 增长方式 | 每 token 约 27 KB，只增不减 | 每请求约 54 MB(TP=8)，每步原地覆写 |
 
 ## 双状态显存管理
 
 旧方案在启动时把显存池按预估切成 KDA 区和 MLA 区。问题是 KDA 需求只跟并发数
-相关,MLA 需求跟总上下文长度相关,负载一偏就会一侧耗尽、另一侧闲置。SGLang
-改成统一池:KDA 固定块从左端分配,MLA 页从右端分配,中间是一段连续的空闲区,
+相关，MLA 需求跟总上下文长度相关，负载一偏就会一侧耗尽、另一侧闲置。SGLang
+改成统一池:KDA 固定块从左端分配，MLA 页从右端分配，中间是一段连续的空闲区，
 按需取用:
 
 <PoolViz client:visible />
 
-注意 t=14:静态双池的 MLA 区耗尽,R2 生成到一半被驱逐,而 KDA 区还空着 6 页。
+注意 t=14:静态双池的 MLA 区耗尽，R2 生成到一半被驱逐，而 KDA 区还空着 6 页。
 统一池在同一时刻没有任何失败。
 
-前缀缓存(radix tree)这边,KDA 状态会被原地覆写,不能像 KV 那样直接共享。
+前缀缓存(radix tree)这边，KDA 状态会被原地覆写，不能像 KV 那样直接共享。
 SGLang 用三个操作管理它:copy-on-write(使用共享 checkpoint 前先拷到私有槽)、
 snapshot(乒乓缓冲抓快照)、donate(按槽位索引捐给 radix tree)。整套设计
-按构造无竞态,细节见文末博客。
+按构造无竞态，细节见文末博客。
 
 ## Chunked pipeline prefill
 
-TP8 让 8 张卡合算同一个 chunk,但每层都要 AllReduce,通信在关键路径上。
-chunked PP8 把模型按层切成 8 段,prompt 切成 chunk 依次流过各段,P2P 交接
+TP8 让 8 张卡合算同一个 chunk，但每层都要 AllReduce，通信在关键路径上。
+chunked PP8 把模型按层切成 8 段，prompt 切成 chunk 依次流过各段，P2P 交接
 藏在下一个 chunk 的计算后面(实测 91% 被隐藏):
 
 <PipelineViz client:visible />
 
-预热气泡只付一次,稳态每 2 列出一个 chunk。实测 PP8 prefill 吞吐是 TEP8
-节点的 1.45–1.72×(TEP = tensor + expert 并行,图中简化为纯 TP 作对照)。
+预热气泡只付一次，稳态每 2 列出一个 chunk。实测 PP8 prefill 吞吐是 TEP8
+节点的 1.45–1.72×(TEP = tensor + expert 并行，图中简化为纯 TP 作对照)。
 
 ## Decode context parallelism(DCP)
 
 decode 阶段的瓶颈是显存:TP 下每张卡都存一份完整 KV。DCP 按 token 位置取模
-分片,rank r 只存 `position mod N = r` 的 KV;每步 decode 先本地算局部
-attention,再用一次 all-to-all 交换部分结果,log-sum-exp 合并后与单卡输出
+分片，rank r 只存 `position mod N = r` 的 KV;每步 decode 先本地算局部
+attention，再用一次 all-to-all 交换部分结果，log-sum-exp 合并后与单卡输出
 一致:
 
 <DcpViz client:visible />
 
 K3 上的实测:DCP8 把逻辑上下文容量放大 7.9×;长 agent 会话下 TP8 在 16 个
-并发 session 崩掉,DCP8 撑到 48 个,总吞吐 541 tok/s。KDA 状态没有位置轴,
-KDA 层仍按 TP 切分,所以混合架构的并行策略也是按层混合的。
+并发 session 崩掉，DCP8 撑到 48 个，总吞吐 541 tok/s。KDA 状态没有位置轴，
+KDA 层仍按 TP 切分，所以混合架构的并行策略也是按层混合的。
 
 ## 单卡数字
 
-投机解码介入之前,BS=1 解码靠四类手段从 63.8 tok/s 提到约 113 tok/s
+投机解码介入之前，BS=1 解码靠四类手段从 63.8 tok/s 提到约 113 tok/s
 (括号内为博客给出的单项增益):
 
 | 类别 | 代表手段 |
 | --- | --- |
 | 启动开销消除(+19.9 tok/s) | MoE 前段合成单个 GEMM、KDA 投影合并、寄存器内路由 |
 | 专用 kernel(+10.3) | 融合 KDA decode、W4A8 MoE、TMA 聚合 attention residual |
-| 通信融合(+27.6) | 融合 all-reduce:multicast + NVLS 在交换机内归约,顺路做 residual/RMSNorm |
+| 通信融合(+27.6) | 融合 all-reduce:multicast + NVLS 在交换机内归约，顺路做 residual/RMSNorm |
 | 重叠与前奏(+10.4) | GEMV-GEMM 重叠、residual 写回融合、PDL 预热 attention |
 
-在此之上,DSpark 投机解码把 BS=1 提到约 423 tok/s(约 3.7×)。
+在此之上，DSpark 投机解码把 BS=1 提到约 423 tok/s(约 3.7×)。
 
 组合的 serving 边界:PP8 prefill + TP8 decode 达到 2,808 tok/s/GPU(fp4);
 交互式配置可以换到 116+ tok/s/用户。博客里值得记住的一句:
 
-> AllReduce 是同步点,在那里省 1 微秒,步时就省 1 微秒;
-> 藏在别的 stream overlap 里的 kernel,只值大约十分之一。
+> AllReduce 是同步点，在那里省 1 微秒，步时就省 1 微秒;
+> 藏在别的 stream overlap 里的 kernel，只值大约十分之一。
 
 ## 图 ↔ 真实系统对照
 

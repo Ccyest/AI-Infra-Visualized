@@ -5,7 +5,7 @@ import type { Cell, Mode } from "./engine";
 
 export const TITLES: Record<Mode, Localized> = {
   static: {
-    zh: "Static batching:整批进,整批出",
+    zh: "Static batching:整批进，整批出",
     en: "Static batching: whole batch in, whole batch out",
   },
   continuous: {
@@ -26,7 +26,7 @@ export function scenarioSubtitle(
 
 export const LEGEND = {
   decode: {
-    zh: "decode(每格一个 token,颜色 = 请求)",
+    zh: "decode(每格一个 token，颜色 = 请求)",
     en: "decode (one token per cell, color = request)",
   },
   prefill: { zh: "prefill(读入 prompt)", en: "prefill (ingest the prompt)" },
@@ -47,20 +47,6 @@ export const STATS = {
   bubblesAfter: { zh: "格", en: "bubble cells" },
 } satisfies Record<string, Localized>;
 
-export const TABLE = {
-  summary: {
-    zh: "请求时间表(完整跑完后的数据)",
-    en: "Request timings (after the full run)",
-  },
-  request: { zh: "请求", en: "Request" },
-  arrival: { zh: "到达 t", en: "Arrival t" },
-  start: { zh: "开始 t", en: "Start t" },
-  finish: { zh: "完成 t", en: "Finish t" },
-  wait: { zh: "排队等待", en: "Queue wait" },
-  output: { zh: "输出 tokens", en: "Output tokens" },
-  notFinished: { zh: "未完成", en: "unfinished" },
-} satisfies Record<string, Localized>;
-
 export const QUEUE = {
   queued: { zh: "排队中", en: "Queued" },
   done: { zh: "已完成", en: "Done" },
@@ -73,7 +59,7 @@ export function chipTitle(
   output: number,
 ): string {
   return locale === "zh"
-    ? `R${id}:t=${arrival} 到达,需生成 ${output} 个 token`
+    ? `R${id}:t=${arrival} 到达，需生成 ${output} 个 token`
     : `R${id}: arrives at t=${arrival}, needs ${output} tokens`;
 }
 
@@ -96,11 +82,11 @@ export function cellTooltip(
     case "bubble":
       if (cell.req === null) {
         return zh
-          ? `空泡:本批未占满,新请求不能中途加入 · t=${iter}`
+          ? `空泡:本批未占满，新请求不能中途加入 · t=${iter}`
           : `Bubble: batch under-filled, newcomers can't join mid-batch · t=${iter}`;
       }
       return zh
-        ? `空泡:R${cell.req} 已完成,但要等整批跑完 · t=${iter}`
+        ? `空泡:R${cell.req} 已完成，但要等整批跑完 · t=${iter}`
         : `Bubble: R${cell.req} finished but waits for the whole batch · t=${iter}`;
   }
 }
@@ -112,7 +98,7 @@ export function gridAria(
   totalIterations: number,
 ): string {
   return locale === "zh"
-    ? `${mode} batching 调度网格:${numSlots} 个槽位,共 ${totalIterations} 个 iteration`
+    ? `${mode} batching 调度网格:${numSlots} 个槽位，共 ${totalIterations} 个 iteration`
     : `${mode} batching schedule grid: ${numSlots} slots, ${totalIterations} iterations`;
 }
 
@@ -140,10 +126,4 @@ export function raceStats(
 
 export function finishedAt(locale: Locale, t: number): string {
   return locale === "zh" ? `✓ 完成于 t=${t}` : `✓ finished at t=${t}`;
-}
-
-export function tableLabel(locale: Locale, modeLabel: string): string {
-  return locale === "zh"
-    ? `${modeLabel} 请求时间表(完整跑完后)`
-    : `${modeLabel} request timings (after the full run)`;
 }

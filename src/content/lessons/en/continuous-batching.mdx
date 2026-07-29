@@ -32,7 +32,7 @@ import Mapping from "../../../viz/continuous-batching/Mapping";
 
 LLM generation is autoregressive: each iteration (one forward pass) produces
 one token for every request in the batch. Output lengths vary a lot within a
-batch; some requests finish after four or five tokens, others run past twenty.
+batch.
 
 Static batching ties the batch together. A request that finishes early cannot
 leave, so its slot idles (the hatched cells below, called bubbles) until the

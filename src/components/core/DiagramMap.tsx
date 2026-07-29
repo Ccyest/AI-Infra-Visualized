@@ -10,12 +10,9 @@ import type { Locale, Localized } from "../../lib/i18n";
 
 const MAP_UI = {
   hint: {
-    zh: "点选图里的元素,看它对应真实系统里的什么",
+    zh: "点选图里的元素，看它对应真实系统里的什么",
     en: "Select an element to see its real-system counterpart",
   },
-  tableSummary: { zh: "对照表(文字版)", en: "Mapping table (text alternative)" },
-  thDiagram: { zh: "图里的元素", en: "In the diagram" },
-  thReal: { zh: "真实系统里的含义", en: "In a real system" },
 } satisfies Record<string, Localized>;
 
 export interface MappingItem {
@@ -119,25 +116,6 @@ export default function DiagramMap({
         </span>
         <span>{item.real[lang]}</span>
       </div>
-      <details className="viz-details">
-        <summary>{MAP_UI.tableSummary[lang]}</summary>
-        <table>
-          <thead>
-            <tr>
-              <th>{MAP_UI.thDiagram[lang]}</th>
-              <th>{MAP_UI.thReal[lang]}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {items.map((it) => (
-              <tr key={it.id}>
-                <td>{it.label[lang]}</td>
-                <td style={{ textAlign: "left" }}>{it.real[lang]}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </details>
     </figure>
   );
 }

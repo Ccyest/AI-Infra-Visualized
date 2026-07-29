@@ -15,7 +15,7 @@ export const HTML_LANG: Record<Locale, string> = { zh: "zh-CN", en: "en" };
 
 export const CHROME = {
   tagline: {
-    zh: "用交互式可视化,把 AI Infra 的核心机制讲明白",
+    zh: "用交互式可视化，把 AI Infra 的核心机制讲明白",
     en: "Interactive visualizations that make AI infra mechanisms click",
   },
   buildWithSglang: { zh: "Build with SGLang.", en: "Build with SGLang." },
@@ -25,9 +25,9 @@ export const CHROME = {
       aria-label 则用页面自身的语言,读屏器才能正确发音 */
   langSwitch: { zh: "EN", en: "中文" },
   langSwitchAria: { zh: "切换到英文版", en: "Switch to Chinese" },
-  heroTitle: { zh: "用可视化,学 AI Infra", en: "Learn AI Infra, visually" },
+  heroTitle: { zh: "用可视化，学 AI Infra", en: "Learn AI Infra, visually" },
   heroBody: {
-    zh: "LLM 推理与训练系统里的核心机制:continuous batching、KV cache、并行策略。每篇文章配可暂停、可单步、可拖动时间轴的交互式动画,机制本身让动画来讲。",
+    zh: "LLM 推理与训练系统里的核心机制:continuous batching、KV cache、并行策略。每篇文章配可暂停、可单步、可拖动时间轴的交互式动画，机制本身让动画来讲。",
     en: "The core mechanisms inside LLM serving and training systems: continuous batching, KV cache, parallelism. Each post comes with interactive animations you can pause, step through, and scrub.",
   },
   heroCompanion: {
@@ -40,14 +40,14 @@ export const CHROME = {
   },
   period: { zh: "。", en: "." },
   heroCredit: {
-    zh: "本站为 SGLang 社区而建,由",
+    zh: "本站为 SGLang 社区而建，由",
     en: "Built for the SGLang community, maintained by",
   },
   heroCreditTail: { zh: "维护。", en: "." },
   furtherReading: { zh: "延伸阅读", en: "Further reading" },
   tryOnSglang: { zh: "上手试试 · Try on SGLang", en: "Try on SGLang" },
   tryOnSglangSub: {
-    zh: "打开 SGLang Cookbook,在真实推理引擎里观察这一机制",
+    zh: "打开 SGLang Cookbook，在真实推理引擎里观察这一机制",
     en: "Open the SGLang cookbook and watch this mechanism in a real inference engine",
   },
   contribute: { zh: "贡献一篇", en: "Contribute a post" },

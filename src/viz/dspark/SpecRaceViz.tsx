@@ -297,33 +297,6 @@ export default function SpecRaceViz({ lang = "zh" }: { lang?: Locale }) {
               result.avgAccept.toFixed(1),
             )}
           </div>
-          <details className="viz-details" style={{ flexBasis: "100%" }}>
-            <summary>{RACE.tableSummary[lang]}</summary>
-            <table>
-              <thead>
-                <tr>
-                  <th>{RACE.thBlock[lang]}</th>
-                  <th>{RACE.thStart[lang]}</th>
-                  <th>{RACE.thAccepted[lang]}</th>
-                  <th>{RACE.thBonus[lang]}</th>
-                  <th>{RACE.thCommitted[lang]}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {result.blocks.map((b, i) => (
-                  <tr key={i}>
-                    <td>{i + 1}</td>
-                    <td>{b.start}</td>
-                    <td>
-                      {b.accepted}/{result.blockSize}
-                    </td>
-                    <td>{b.bonusPos}</td>
-                    <td>{b.committedAfter}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </details>
         </>
       }
     >

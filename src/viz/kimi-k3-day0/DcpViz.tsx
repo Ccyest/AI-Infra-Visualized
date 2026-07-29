@@ -236,29 +236,6 @@ export default function DcpViz({ lang = "zh" }: { lang?: Locale }) {
           ]}
         />
         <div className="viz-verdict">{DCP.note[lang]}</div>
-        <details className="viz-details" style={{ flexBasis: "100%" }}>
-          <summary>{DCP.tableSummary[lang]}</summary>
-          <table>
-            <thead>
-              <tr>
-                <th>{DCP.thPos[lang]}</th>
-                <th>{DCP.thTp[lang]}</th>
-                <th>{DCP.thDcp[lang]}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {Array.from({ length: POSITIONS }, (_, p) => (
-                <tr key={p}>
-                  <td>{p}</td>
-                  <td>{DCP.tpAll[lang]}</td>
-                  <td>
-                    {DCP.rank[lang]} {(p % RANKS) + 1}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </details>
       </div>
     </figure>
   );

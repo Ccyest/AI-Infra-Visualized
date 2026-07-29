@@ -6,20 +6,12 @@ import VizStage from "../../components/core/VizStage";
 import { useSimPlayer } from "../../components/core/useSimPlayer";
 import type { Locale } from "../../lib/i18n";
 import BatchGrid from "./BatchGrid";
-import { TimingTable } from "./BatchingViz";
 import { simulate, utilization } from "./engine";
 import type { SimResult } from "./engine";
 import { legendItems } from "./legend";
 import { SCENARIOS } from "./scenarios";
 import type { Scenario, ScenarioId } from "./scenarios";
-import {
-  finishedAt,
-  RACE,
-  raceStats,
-  scenarioSubtitle,
-  STATS,
-  tableLabel,
-} from "./strings";
+import { finishedAt, RACE, raceStats, scenarioSubtitle, STATS } from "./strings";
 import "./styles.css";
 
 interface RaceVizProps {
@@ -136,16 +128,6 @@ function RaceInner({
         <>
           <Legend items={legendItems("both", lang)} />
           <div className="viz-verdict">{verdict(lang, rStatic, rCont)}</div>
-          <TimingTable
-            result={rStatic}
-            lang={lang}
-            label={tableLabel(lang, RACE.staticLabel[lang])}
-          />
-          <TimingTable
-            result={rCont}
-            lang={lang}
-            label={tableLabel(lang, RACE.continuousLabel[lang])}
-          />
         </>
       }
     >

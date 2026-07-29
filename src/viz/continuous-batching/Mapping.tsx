@@ -39,7 +39,7 @@ const ITEMS: MappingItem[] = [
     id: "prefill",
     label: { zh: "斜杠格", en: "Slashed cell" },
     real: {
-      zh: "prefill,一次读入整段 prompt;实际耗时远不止一格,此处简化",
+      zh: "prefill，一次读入整段 prompt;实际耗时远不止一格，此处简化",
       en: "Prefill, ingesting the whole prompt; takes far more than one cell in reality, simplified here",
     },
     visual: <MiniCell kind="slash" />,
@@ -48,7 +48,7 @@ const ITEMS: MappingItem[] = [
     id: "decode",
     label: { zh: "实色格", en: "Solid cell" },
     real: {
-      zh: "decode 生成的一个 token,颜色代表所属请求",
+      zh: "decode 生成的一个 token，颜色代表所属请求",
       en: "One decoded token; color identifies the request",
     },
     visual: <MiniCell />,

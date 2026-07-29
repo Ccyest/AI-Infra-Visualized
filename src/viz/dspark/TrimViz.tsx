@@ -173,31 +173,6 @@ export default function TrimViz({ lang = "zh" }: { lang?: Locale }) {
           ]}
         />
         <div className="viz-verdict">{TRIM.note[lang]}</div>
-        <details className="viz-details" style={{ flexBasis: "100%" }}>
-          <summary>{TRIM.tableSummary[lang]}</summary>
-          <table>
-            <thead>
-              <tr>
-                <th>{TRIM.thRequest[lang]}</th>
-                {TRIM_LOADS.map((l) => (
-                  <th key={l.id}>{l.label[lang]}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {TRIM_REQUESTS.map((req, r) => (
-                <tr key={r}>
-                  <td>{req.label[lang]}</td>
-                  {TRIM_LOADS.map((l) => (
-                    <td key={l.id}>
-                      {windowFor(req.conf, l.threshold)}/{K}
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </details>
       </div>
     </figure>
   );
