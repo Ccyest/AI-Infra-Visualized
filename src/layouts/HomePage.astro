@@ -1,5 +1,5 @@
 ---
-import { CHROME, lessonNo } from "../lib/i18n";
+import { CHROME, formatDate } from "../lib/i18n";
 import type { Locale } from "../lib/i18n";
 import { lessonPath, publishedLessons } from "../lib/lessons";
 import { withBase } from "../lib/paths";
@@ -10,7 +10,8 @@ interface Props {
   locale: Locale;
 }
 const { locale } = Astro.props;
-const lessons = await publishedLessons(locale);
+// 博客式列表:新文章在前
+const lessons = (await publishedLessons(locale)).reverse();
 ---
 
 <Base title={SITE.title} locale={locale}>
@@ -41,7 +42,7 @@ const lessons = await publishedLessons(locale);
       lessons.map(({ entry, slug }) => (
         <li class="reveal">
           <a class="lesson-card" href={withBase(lessonPath(locale, slug))}>
-            <span class="lesson-order">{lessonNo(locale, entry.data.order)}</span>
+            <span class="lesson-order">{formatDate(locale, entry.data.date)}</span>
             <h2>{entry.data.title}</h2>
             <p>{entry.data.description}</p>
             {entry.data.concepts.length > 0 && (

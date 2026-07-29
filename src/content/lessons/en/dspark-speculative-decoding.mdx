@@ -1,6 +1,7 @@
 ---
-title: "DSpark: Speculative Decoding That Still Pays at Large Batches"
-description: "Draft a block with a small model, grade it with the big one — the old story. DSpark's new story: confidence-scheduled verify windows plus ragged packing — +68% throughput at batch 256, and K3's BS=1 decode jumps from 113 to 423 tok/s."
+title: "DSpark: Speculative Decoding at Large Batch Sizes"
+description: "Block drafting and block verification are the standard part; DSpark's contribution is confidence-scheduled verify windows and ragged packing. +68% over verify-all at batch 256; K3's BS=1 decode goes from 113 to 423 tok/s."
+date: 2026-07-29
 order: 3
 concepts:
   - speculative decoding
@@ -9,11 +10,11 @@ concepts:
   - ragged verification / CUDA graph
 tryOnSglang: "https://sgl-project-sglang-93.mintlify.app/advanced/speculative-decoding"
 references:
-  - label: "LMSYS Blog: DSpark in SGLang (primary source for this lesson)"
+  - label: "LMSYS Blog: DSpark in SGLang (primary source for this post)"
     url: "https://www.lmsys.org/blog/2026-07-06-dspark-sglang"
   - label: "LMSYS Blog: Kimi K3 Day-0 Support (DSpark's numbers on K3, and ReplaySSM)"
     url: "https://www.lmsys.org/blog/2026-07-27-kimi-k3-day0-support/"
-  - label: "SGLang (where DSpark lives)"
+  - label: "SGLang"
     url: "https://github.com/sgl-project/sglang"
   - label: "Awesome-ML-SYS-Tutorial (companion written tutorials)"
     url: "https://github.com/zhaochenyang20/Awesome-ML-SYS-Tutorial"
@@ -23,73 +24,74 @@ import SpecRaceViz from "../../../viz/dspark/SpecRaceViz";
 import TrimViz from "../../../viz/dspark/TrimViz";
 import PackViz from "../../../viz/dspark/PackViz";
 
-> **In one sentence**: speculative decoding lets a small model over-write and a
-> big model grade a whole block per forward. At small batches verification is
-> nearly free; at large batches every verify token costs real money — DSpark
-> uses confidence to decide how many tokens each request is worth verifying,
-> then packs the ragged verify work tightly.
+> **TL;DR** Speculative decoding drafts with a small model and verifies a whole
+> block per target forward. At small batches verification is nearly free; at
+> large batches every verify token has a real cost. DSpark uses a confidence
+> head to decide how many tokens each request is worth verifying, then packs
+> the ragged verify work tightly into CUDA graphs.
 
-## Why grading is cheaper than writing
+## Why verification is cheaper than generation
 
 Decode is memory-bound: a target-model forward mostly moves weights, so
-verifying K tokens costs about the same as generating 1 (at small batch). So
-let a drafter write K tokens first, and have the target grade them all in one
-forward: the accepted prefix is banked, and the grading forward emits one
-bonus token for free.
+verifying K tokens costs about the same as generating one (at small batch).
+So a drafter writes K tokens first, and the target verifies them all in one
+forward: the accepted prefix is committed, and the verify forward emits one
+bonus token as a side effect.
 
-DSpark's drafter is a **semi-autoregressive block drafter**: the small model
-also emits an entire block per forward instead of grinding token by token —
-fast to draft, and acceptance stays high. Watch the race:
+DSpark's drafter is a semi-autoregressive block drafter: the small model also
+emits a whole block per forward instead of generating token by token, which is
+fast and keeps acceptance high. The comparison:
 
 <SpecRaceViz client:visible lang="en" />
 
-Rejected drafts (hatched) waste only cheap drafter compute; what they save is
-expensive target forwards. At small batch, this trade always wins.
+Rejected drafts (hatched) cost drafter compute; what they save is target
+forwards. At small batch this trade is always favorable.
 
-## The large-batch reversal: verification is no longer free
+## Verification stops being free at large batches
 
-Once the batch grows, the GPU has no idle capacity — verify tokens now crowd
-out other requests' compute. DSpark models the marginal cost of the M-th
-verify token at load bs with an additive model `T(bs, K) = bias + α(bs) + θ(M)`,
-calibrated by a one-time server profile — the real curve is a staircase of
-shelves and risers, not a smooth line.
+Once the batch grows, the GPU has no idle capacity, and verify tokens compete
+with other requests' compute. DSpark models the marginal cost of the M-th
+verify token at load bs with an additive model
+`T(bs, K) = bias + α(bs) + θ(M)`, where θ is measured per load by a one-time
+server profile. The measured curve is a staircase of shelves and risers, not a
+smooth line.
 
-On the other side, the drafter carries a trained **confidence head** that
-scores each position's survival probability. The scheduler trims per request:
-positions whose expected value can't cover marginal cost simply aren't sent to
-verify. Switch the load preset and watch the windows shrink — unevenly:
+On the drafter side, a trained confidence head outputs a survival probability
+for each draft position. The scheduler trims per request: positions whose
+expected value falls below marginal cost are not sent to verify. Switch the
+load preset to see the windows shrink, unevenly across requests:
 
 <TrimViz client:visible lang="en" />
 
 Math drafts get accepted easily, so their windows survive; free-form writing
-diverges, and at large batch is only worth verifying two or three tokens. That
-matches production mixed traffic: gsm8k gets 5.24-token windows on average,
-poetry gets 2.91, with utilization pinned at 0.88–0.97 of the acceptance
-ceiling.
+diverges and is only worth verifying two or three tokens at large batch. This
+matches the mixed-traffic measurements: gsm8k averages 5.24-token windows,
+poetry 2.91, with utilization at 0.88–0.97 of the acceptance ceiling.
 
-## The engineering floor: ragged packing + state replay
+## Engineering: ragged packing and state replay
 
-**Ragged verification**: after trimming, verify lengths differ per request,
-but CUDA graphs demand fixed shapes. Instead of padding to the max block
-length, front-pack the requests end to end and round up to a pre-captured tier:
+After trimming, verify lengths differ per request, and CUDA graphs require
+fixed input shapes. Instead of padding every request to the maximum block
+length, DSpark front-packs the verify requests into one compact buffer and
+rounds up to the nearest pre-captured tier:
 
 <PackViz client:visible lang="en" />
 
-**ReplaySSM** (K3-specific): KDA recurrent state is overwritten in place, so
-rejected speculation must be rolled back. Instead of snapshotting whole states
-(512 KB), store each draft step's compact raw inputs (16 KB — 32× smaller) and
-replay the accepted prefix with a fold kernel — bit-identical to the
-snapshotting baseline, and the freed scratch memory converts straight into
-concurrency. With the overlap scheduler's async futures and device-side
-barriers, iterations run back to back, about 1.5× tighter.
+ReplaySSM addresses a K3-specific problem: KDA recurrent state is overwritten
+in place, so rejected speculation needs a rollback. Rather than snapshotting
+whole states (512 KB), store each draft step's compact raw inputs (16 KB, 32×
+smaller) and replay the accepted prefix with a fold kernel; the output is
+bit-identical to the snapshotting baseline. The freed scratch memory converts
+directly into concurrency. With the overlap scheduler's async futures and
+device-side barriers, iterations run without bubbles, about 1.5× tighter.
 
-## Numbers at a glance
+## Numbers
 
 | Setting | Result |
 | --- | --- |
-| K3, BS=1 decode | 113 → **423 tok/s** (~3.7×, net of draft + verify overhead) |
-| Chat workload, batch 256 | **+68%** throughput over the verify-all speculation baseline (mean accept 2.7 → 2.2 — verifying less on purpose, and faster for it) |
-| DeepSeek-V4-Flash, H200 DP4 | Best throughput/latency frontier across the whole concurrency sweep, ahead of MTP and the non-spec floor |
+| K3, BS=1 decode | 113 → 423 tok/s (~3.7×, net of draft + verify overhead) |
+| Chat workload, batch 256 | +68% throughput over the verify-all speculation baseline (mean accept 2.7 → 2.2; verifying less, and faster for it) |
+| DeepSeek-V4-Flash, H200 DP4 | Best throughput/latency frontier across the concurrency sweep, ahead of MTP and the non-spec floor |
 
 ## Diagram ↔ real system
 

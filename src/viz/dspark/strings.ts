@@ -4,8 +4,8 @@ import type { Locale, Localized } from "../../lib/i18n";
 
 export const RACE = {
   title: {
-    zh: "投机解码:小模型起草,大模型批改",
-    en: "Speculative decoding: the drafter writes, the target grades",
+    zh: "投机解码:小模型起草,大模型验证",
+    en: "Speculative decoding: draft small, verify with the target",
   },
   subtitle: {
     zh: "时间轴 = 大模型 forward 次数;DSpark 每块起草 K=6 个 token",
@@ -95,8 +95,8 @@ export function raceCellTooltip(
 
 export const TRIM = {
   title: {
-    zh: "Confidence-scheduled verification:batch 越大,验证窗口越要省着用",
-    en: "Confidence-scheduled verification: bigger batches, tighter verify windows",
+    zh: "Confidence-scheduled verification:负载越高,窗口越小",
+    en: "Confidence-scheduled verification: higher load, tighter windows",
   },
   subtitle: {
     zh: "每行一个请求,每格一个草稿位置,颜色深浅 = 存活置信度",
@@ -171,8 +171,8 @@ export const TRIM_LOADS: TrimLoad[] = [
 
 export const PACK = {
   title: {
-    zh: "Ragged verification:验证长度参差,别用 padding 凑",
-    en: "Ragged verification: uneven verify lengths shouldn't be padded square",
+    zh: "Ragged verification:用打包代替 padding",
+    en: "Ragged verification: pack instead of pad",
   },
   subtitle: {
     zh: "3 个请求,验证窗口分别为 5 / 4 / 2;CUDA graph 只认固定形状",

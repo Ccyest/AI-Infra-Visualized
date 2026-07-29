@@ -13,8 +13,16 @@ export type Localized = { zh: string; en: string };
 
 export const HTML_LANG: Record<Locale, string> = { zh: "zh-CN", en: "en" };
 
-export function lessonNo(locale: Locale, n: number): string {
-  return locale === "zh" ? `第 ${n} 课` : `Lesson ${n}`;
+export function formatDate(locale: Locale, date: Date): string {
+  if (locale === "zh") {
+    return `${date.getUTCFullYear()} 年 ${date.getUTCMonth() + 1} 月 ${date.getUTCDate()} 日`;
+  }
+  return date.toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    timeZone: "UTC",
+  });
 }
 
 export const CHROME = {
@@ -31,8 +39,8 @@ export const CHROME = {
   langSwitchAria: { zh: "切换到英文版", en: "Switch to Chinese" },
   heroTitle: { zh: "用可视化,学 AI Infra", en: "Learn AI Infra, visually" },
   heroBody: {
-    zh: "LLM 推理与训练系统里的核心机制 —— continuous batching、KV cache、并行策略……与其读十页文字,不如亲手播放一遍。每一课都是可暂停、可单步、可拖动时间轴的交互式动画。",
-    en: "The core mechanisms inside LLM serving and training systems — continuous batching, KV cache, parallelism… Instead of reading ten pages, press play. Every lesson is an interactive animation you can pause, step through, and scrub.",
+    zh: "LLM 推理与训练系统里的核心机制:continuous batching、KV cache、并行策略。每篇文章配可暂停、可单步、可拖动时间轴的交互式动画,机制本身让动画来讲。",
+    en: "The core mechanisms inside LLM serving and training systems: continuous batching, KV cache, parallelism. Each post comes with interactive animations you can pause, step through, and scrub.",
   },
   heroCompanion: {
     zh: "深入的文字讲解请配合",
@@ -54,7 +62,7 @@ export const CHROME = {
     zh: "打开 SGLang Cookbook,在真实推理引擎里观察这一机制",
     en: "Open the SGLang cookbook and watch this mechanism in a real inference engine",
   },
-  contribute: { zh: "贡献一课", en: "Contribute a lesson" },
+  contribute: { zh: "贡献一篇", en: "Contribute a post" },
 } satisfies Record<string, Localized>;
 
 /** 播放器控件(VizStage)文案 */

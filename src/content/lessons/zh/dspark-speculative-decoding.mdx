@@ -1,6 +1,7 @@
 ---
-title: "DSpark:让投机解码在大 batch 下也赚钱"
-description: "小模型整块起草、大模型整块批改,是投机解码的老故事;DSpark 的新故事是按置信度裁剪验证窗口 + ragged 打包——batch 256 时吞吐还能 +68%,K3 的 BS=1 解码靠它从 113 冲到 423 tok/s。"
+title: "DSpark:大 batch 下的投机解码"
+description: "小模型整块起草、大模型整块验证是投机解码的常规部分;DSpark 的增量在于按置信度裁剪验证窗口和 ragged 打包。batch 256 下相对 verify-all 吞吐 +68%,K3 的 BS=1 解码从 113 提到 423 tok/s。"
+date: 2026-07-29
 order: 3
 concepts:
   - speculative decoding
@@ -9,11 +10,11 @@ concepts:
   - ragged verification / CUDA graph
 tryOnSglang: "https://sgl-project-sglang-93.mintlify.app/advanced/speculative-decoding"
 references:
-  - label: "LMSYS Blog:DSpark in SGLang(本课的第一手来源)"
+  - label: "LMSYS Blog:DSpark in SGLang(本文的第一手来源)"
     url: "https://www.lmsys.org/blog/2026-07-06-dspark-sglang"
-  - label: "LMSYS Blog:Kimi K3 Day-0 Support(DSpark 在 K3 上的实战数字与 ReplaySSM)"
+  - label: "LMSYS Blog:Kimi K3 Day-0 Support(DSpark 在 K3 上的实测数字与 ReplaySSM)"
     url: "https://www.lmsys.org/blog/2026-07-27-kimi-k3-day0-support/"
-  - label: "SGLang(DSpark 的落地仓库)"
+  - label: "SGLang"
     url: "https://github.com/sgl-project/sglang"
   - label: "Awesome-ML-SYS-Tutorial(本站配套的中文文字讲解库)"
     url: "https://github.com/zhaochenyang20/Awesome-ML-SYS-Tutorial"
@@ -23,63 +24,64 @@ import SpecRaceViz from "../../../viz/dspark/SpecRaceViz";
 import TrimViz from "../../../viz/dspark/TrimViz";
 import PackViz from "../../../viz/dspark/PackViz";
 
-> **一句话**:投机解码 = 小模型多写、大模型批改,一次 forward 验证一整块。
-> 小 batch 时验证近乎免费;batch 一大,每个 verify token 都要花真金白银——
-> DSpark 用置信度决定"每个请求验几个才划算",再把参差的验证请求紧凑打包。
+> **TL;DR** 投机解码用小模型起草、大模型一次 forward 验证一整块。小 batch 时
+> 验证近乎免费;batch 大了之后每个 verify token 都有实际成本。DSpark 用
+> confidence head 决定每个请求验证多少个 token 才划算,再把参差的验证请求
+> 紧凑打包进 CUDA graph。
 
-## 为什么"批改"比"亲笔写"便宜
+## 为什么验证比生成便宜
 
-Decode 是 memory-bound 的:大模型每次 forward 的时间大头在搬权重,算 1 个
-token 和验证 K 个 token 花的时间(小 batch 下)差不太多。于是让小模型
-(drafter)先写 K 个草稿,大模型一次 forward 全部批改:接受的前缀照单全收,
-批改那次 forward 还顺带产出 1 个 bonus token。
+decode 是 memory-bound 的:大模型一次 forward 的时间大头在搬权重,验证 K 个
+token 和生成 1 个 token 的耗时(小 batch 下)接近。所以让小模型先写 K 个
+草稿,大模型一次 forward 全部验证:接受的前缀直接提交,验证那次 forward 还
+顺带产出 1 个 bonus token。
 
-DSpark 的 drafter 是 **semi-autoregressive block drafter**:小模型自己也一次
-forward 起草一整块,不用逐 token 磨——起草快,接受率还高。看赛跑:
+DSpark 的 drafter 是 semi-autoregressive block drafter:小模型也是一次
+forward 起草一整块,不逐 token 生成,起草快,接受率也高。看对比:
 
 <SpecRaceViz client:visible />
 
-被拒的草稿(斜纹格)浪费的只是小模型的算力,便宜;省下的是大模型的
-forward 次数,昂贵。这笔买卖,小 batch 下稳赚。
+被拒的草稿(斜纹格)浪费的是小模型的算力,省下的是大模型的 forward 次数。
+小 batch 下这个交换总是合算的。
 
-## 大 batch 的反转:验证不再免费
+## 大 batch 下验证不再免费
 
-batch 变大后 GPU 不再闲,verify token 挤占的是别的请求的算力。DSpark 给
-"第 M 个 verify token 在负载 bs 下的边际成本"建了个加性成本模型
-`T(bs, K) = bias + α(bs) + θ(M)`,用一次性的服务器画像把 θ 按负载测成表——
-真实曲线是带平台和陡坡的"台阶",不是平滑曲线。
+batch 变大后 GPU 没有空闲算力,verify token 挤占的是其他请求的计算。DSpark
+用一个加性成本模型 `T(bs, K) = bias + α(bs) + θ(M)` 描述第 M 个 verify token
+在负载 bs 下的边际成本,θ 通过一次性的服务器画像逐负载测出。实测曲线是带
+平台和陡坡的台阶,不是平滑曲线。
 
-另一头,drafter 训练了一个 **confidence head**,对每个草稿位置给出存活概率。
-调度器逐请求裁剪:期望收益盖不住边际成本的位置,直接不送去验证。切换负载
-档位,看窗口如何收缩——以及不同请求收缩得多不均匀:
+drafter 一侧训练了一个 confidence head,对每个草稿位置输出存活概率。调度器
+逐请求裁剪:期望收益低于边际成本的位置不送去验证。切换负载档位,可以看到
+窗口收缩,而且不同请求收缩得很不均匀:
 
 <TrimViz client:visible />
 
-数学推理的草稿容易被接受,窗口保得住;自由写作发散,batch 一大就只值得验
-两三个。这正是混合流量下的实测形态:gsm8k 拿到 5.24 的平均窗口,诗歌只拿
-2.91,而利用率始终贴着接受上限的 0.88–0.97。
+数学推理的草稿容易被接受,窗口保得住;自由写作发散,大 batch 下只值得验证
+两三个。这和混合流量的实测一致:gsm8k 平均拿到 5.24 的窗口,诗歌 2.91,
+利用率保持在接受上限的 0.88–0.97。
 
-## 工程底座:ragged 打包 + 状态回放
+## 工程细节:ragged 打包与状态回放
 
-**Ragged verification**:裁剪完,每个请求的验证长度参差不齐,而 CUDA graph
-只认固定形状。与其 padding 到最大块长,不如首尾相接打包再取整到预捕获的
-档位:
+裁剪之后,每个请求的验证长度参差不齐,而 CUDA graph 要求固定输入形状。
+与其把每个请求 padding 到最大块长,DSpark 把验证请求首尾相接打包进一个紧凑
+buffer,再向上取整到最近的预捕获档位:
 
 <PackViz client:visible />
 
-**ReplaySSM**(K3 特供):KDA 递归状态是原地覆写的,投机被拒时要能回滚。
-与其整块快照(512 KB),不如只存每步草稿的原始输入(16 KB,省 32×),
-接受后用 fold kernel 重放一遍——输出与快照方案逐位一致,省下的 scratch
-显存直接换成了并发度。配合 overlap scheduler 的异步 future + 设备端
-barrier,迭代之间零气泡,执行紧凑约 1.5×。
+ReplaySSM 是 K3 特有的问题:KDA 递归状态原地覆写,投机被拒时需要回滚。
+方案是不存整块快照(512 KB),只存每步草稿的原始输入(16 KB,小 32×),
+接受后用 fold kernel 重放一遍,输出与快照方案逐位一致。省下的 scratch 显存
+直接转化为并发度。配合 overlap scheduler 的异步 future 和设备端 barrier,
+迭代之间没有气泡,执行紧凑约 1.5×。
 
-## 数字速览
+## 数字
 
 | 场景 | 结果 |
 | --- | --- |
-| K3,BS=1 解码 | 113 → **423 tok/s**(~3.7×,含起草与验证开销) |
-| chat 负载,batch 256 | 相对 verify-all 投机基线再 **+68%** 吞吐(平均接受 2.7 → 2.2——故意少验,反而更快) |
-| DeepSeek-V4-Flash,H200 DP4 | 全并发扫描下吞吐/延迟前沿全面领先 MTP 与非投机基线 |
+| K3,BS=1 解码 | 113 → 423 tok/s(约 3.7×,含起草与验证开销) |
+| chat 负载,batch 256 | 相对 verify-all 投机基线 +68% 吞吐(平均接受 2.7 → 2.2,少验反而更快) |
+| DeepSeek-V4-Flash,H200 DP4 | 全并发扫描下吞吐/延迟前沿领先 MTP 与非投机基线 |
 
 ## 图 ↔ 真实系统对照
 
@@ -88,5 +90,5 @@ barrier,迭代之间零气泡,执行紧凑约 1.5×。
 | 时间轴一格 | 一次大模型 forward;小模型起草的耗时未画(约为其零头) |
 | 草稿行 | 只画了最近验证完的一块;真实系统草稿与验证流水重叠 |
 | 置信度深浅 | confidence head 的逐位置存活概率 |
-| 裁剪阈值 | 由成本模型 θ(M) 的"台阶"逐负载标定,图中简化为单一阈值 |
+| 裁剪阈值 | 由成本模型 θ(M) 的台阶逐负载标定,图中简化为单一阈值 |
 | CUDA graph 档位 | 预捕获的固定形状集合,真实档位表更密 |

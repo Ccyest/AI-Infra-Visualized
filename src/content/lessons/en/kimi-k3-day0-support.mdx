@@ -1,6 +1,7 @@
 ---
-title: "Kimi K3 Day-0 Support: How SGLang Serves a 2.8T Hybrid"
-description: "K3 breaks convention in attention, MoE, and quantization all at once. Three core pieces of SGLang work: a unified memory pool for two state types, chunked-PP prefill, and DCP decode."
+title: "Kimi K3 Day-0 Support in SGLang"
+description: "K3's hybrid architecture produces two kinds of inference state. Three core pieces of SGLang work: a unified memory pool, chunked-PP prefill, and DCP decode, with measured numbers for each."
+date: 2026-07-28
 order: 2
 concepts:
   - KDA / MLA hybrid architecture
@@ -9,11 +10,11 @@ concepts:
   - decode context parallelism
 tryOnSglang: "https://sgl-project-sglang-93.mintlify.app/developer/memory-management"
 references:
-  - label: "LMSYS Blog: Kimi K3 Day-0 Support (primary source for this lesson, with all measured numbers)"
+  - label: "LMSYS Blog: Kimi K3 Day-0 Support (primary source for this post, with all measured numbers)"
     url: "https://www.lmsys.org/blog/2026-07-27-kimi-k3-day0-support/"
   - label: "LMSYS Blog: DSpark in SGLang (speculative decoding)"
     url: "https://www.lmsys.org/blog/2026-07-06-dspark-sglang"
-  - label: "SGLang (where every optimization in this lesson lives)"
+  - label: "SGLang"
     url: "https://github.com/sgl-project/sglang"
   - label: "Awesome-ML-SYS-Tutorial (companion written tutorials)"
     url: "https://github.com/zhaochenyang20/Awesome-ML-SYS-Tutorial"
@@ -23,96 +24,94 @@ import PoolViz from "../../../viz/kimi-k3-day0/PoolViz";
 import PipelineViz from "../../../viz/kimi-k3-day0/PipelineViz";
 import DcpViz from "../../../viz/kimi-k3-day0/DcpViz";
 
-> **In one sentence**: K3 departs from convention in attention, MoE, and
-> quantization at the same time, so every "of course" baked into a serving
-> stack breaks. SGLang's day-0 support rewrites three fronts at once — memory
-> (a unified pool), prefill (chunked PP), decode (DCP) — plus speculative
-> decoding with DSpark.
+> **TL;DR** K3 departs from convention in attention, MoE, and quantization at
+> the same time, which breaks many default assumptions in a serving stack.
+> SGLang's day-0 support comes down to three things: a unified memory pool,
+> chunked-PP prefill, and DCP decode, plus speculative decoding with DSpark.
 
-## K3 in 60 seconds
+## The architecture
 
-- **2.8T parameters**, 1M-token context — the first open model in the 3T class;
-- Of its 93 layers, **69 are KDA linear attention and 24 are MLA**, interleaved;
-- **LatentMoE**: 896 experts, top-16 routing, in a 3584-dim latent space;
-- Native **MXFP4** weights; MoonViT3d vision tower.
+- 2.8T parameters, 1M-token context, the first open model in the 3T class;
+- Of its 93 layers, 69 are KDA linear attention and 24 are MLA, interleaved;
+- LatentMoE: 896 experts, top-16 routing, in a 3584-dim latent space;
+- Native MXFP4 weights; MoonViT3d vision tower.
 
-For serving, the second bullet is the killer: two attention types mean **two
-inference states with opposite personalities** —
+The second bullet matters most for serving. Two attention types mean two kinds
+of inference state:
 
 | | MLA (24 layers) | KDA (69 layers) |
 | --- | --- | --- |
 | State shape | KV cache, appends per token | Recurrent state, fixed size |
-| Growth | ~27 KB per token, append-only | ~54 MB per request (TP=8), **overwritten in place** each step |
+| Growth | ~27 KB per token, append-only | ~54 MB per request (TP=8), overwritten in place each step |
 
-## Challenge 1: two state types, one pool of memory
+## Memory management for two state types
 
-The old approach carves the memory pool in half at startup — a guess. But KDA
-demand tracks **concurrency** while MLA demand tracks **total context length**;
-skew the workload and one side starves while the other idles. SGLang switches
-to a unified pool: fixed KDA blocks fill from the left, MLA pages from the
-right, and whatever sits in the middle is contiguous free memory for whoever
-needs it:
+The old approach carves the memory pool into a KDA region and an MLA region at
+startup, based on a guess. But KDA demand tracks concurrency while MLA demand
+tracks total context length, so a skewed workload exhausts one side while the
+other sits idle. SGLang switched to a unified pool: fixed KDA blocks allocate
+from the left, MLA pages from the right, and the middle stays contiguous free
+memory:
 
 <PoolViz client:visible lang="en" />
 
-Watch t=14: the split layout's MLA side runs dry and R2 is evicted
-mid-generation — while 6 KDA pages sit free next door. The unified pool sails
-through the same moment.
+Watch t=14: the split layout's MLA side runs out and R2 is evicted
+mid-generation, while 6 KDA pages are still free. The unified pool has no
+failures at the same moment.
 
-On the prefix-cache (radix tree) side, KDA state is overwritten in place, so it
-can't be shared like KV. SGLang manages it with three operations —
-**copy-on-write** (restore a shared checkpoint to a private slot before
-mutating), **snapshot** (ping-pong buffered capture), and **donate** (hand the
-state to the radix tree by slot index). Race-free by construction; details in
-the blog below.
+On the prefix-cache (radix tree) side, KDA state is overwritten in place and
+cannot be shared like KV. SGLang manages it with three operations:
+copy-on-write (restore a shared checkpoint to a private slot before mutating),
+snapshot (ping-pong buffered capture), and donate (hand the state to the radix
+tree by slot index). The design is race-free by construction; details in the
+blog below.
 
-## Challenge 2: prefill as a layer-wise pipeline, no AllReduce
+## Chunked pipeline prefill
 
-TP8 has all 8 GPUs co-compute each chunk, but every layer pays an AllReduce —
-communication squarely on the critical path. Chunked PP8 flips it: split the
-model into 8 stages by layer, stream prompt chunks through, and hide P2P
-hand-offs behind the next chunk's compute (91% hidden in practice):
+TP8 has all 8 GPUs co-compute each chunk, with an AllReduce every layer, so
+communication sits on the critical path. Chunked PP8 splits the model into 8
+stages by layer and streams prompt chunks through; P2P hand-offs hide behind
+the next chunk's compute (91% hidden in practice):
 
 <PipelineViz client:visible lang="en" />
 
 The warm-up bubble is paid once; at steady state a chunk ships every 2 columns.
-Measured in SGLang: PP8 prefill delivers **1.45–1.72× the throughput of a TEP8
-node** (TEP = tensor + expert parallelism; the diagram simplifies it to plain
-TP for teaching).
+Measured: PP8 prefill delivers 1.45–1.72× the throughput of a TEP8 node
+(TEP = tensor + expert parallelism; the diagram simplifies it to plain TP).
 
-## Challenge 3: decode shards KV by position (DCP)
+## Decode context parallelism (DCP)
 
-Decode's bottleneck is memory, not compute: under TP every GPU stores a full
-copy of the KV. DCP shards by token position instead — rank r keeps only the
-positions where `p mod N = r`, attends locally, then a single all-to-all merges
-the partial outputs (log-sum-exp keeps the result bit-consistent with one GPU):
+Decode's bottleneck is memory: under TP every GPU stores a full copy of the KV.
+DCP shards by token position, so rank r keeps only the positions where
+`p mod N = r`. Each decode step runs local attention first, then one
+all-to-all exchanges the partial results; a log-sum-exp merge reproduces the
+single-GPU output exactly:
 
 <DcpViz client:visible lang="en" />
 
-Measured on K3: DCP8 multiplies logical context capacity by **7.9×**. On long
-agent sessions, TP8 collapses at 16 concurrent sessions while DCP8 sustains
-**48 at 541 tok/s**. Note that KDA state has no position axis, so KDA layers
-stay TP-sharded — with a hybrid model, even parallelism is per-layer hybrid.
+Measured on K3: DCP8 multiplies logical context capacity by 7.9×. On long
+agent sessions TP8 collapses at 16 concurrent sessions, while DCP8 sustains 48
+at 541 tok/s. KDA state has no position axis, so KDA layers stay TP-sharded —
+with a hybrid model, parallelism is also per-layer hybrid.
 
-## How fast can one GPU go? (numbers at a glance)
+## Single-GPU numbers
 
-Before speculation enters the picture, BS=1 decode climbed from **63.8 tok/s**
-to **~113 tok/s** through four families of work (per-item gains from the blog
-in parentheses):
+Before speculation, BS=1 decode went from 63.8 tok/s to about 113 tok/s
+through four families of work (per-item gains from the blog in parentheses):
 
 | Family | Representative moves |
 | --- | --- |
 | Launch elimination (+19.9 tok/s) | Collapse the MoE front into one GEMM, merge KDA projections, register-resident routing |
 | Dedicated kernels (+10.3) | Fused KDA decode, W4A8 MoE, TMA attention-residual aggregation |
-| Communication fusion (+27.6) | Fused all-reduce family: multicast + NVLS in-switch reduction with residual/RMSNorm folded in |
+| Communication fusion (+27.6) | Fused all-reduce: multicast + NVLS in-switch reduction with residual/RMSNorm folded in |
 | Overlap & prologue (+10.4) | GEMV–GEMM overlap, fused residual write-back, PDL attention arming |
 
-On top of that, DSpark speculative decoding lifts BS=1 to **~423 tok/s**
+On top of that, DSpark speculative decoding lifts BS=1 to about 423 tok/s
 (~3.7×).
 
 The combined serving frontier: PP8 prefill feeding TP8 decode reaches
-**2,808 tok/s per GPU** (fp4); interactive configs trade down to **116+ tok/s
-per user**. The one line from the blog worth memorizing:
+2,808 tok/s per GPU (fp4); interactive configs trade down to 116+ tok/s per
+user. One line from the blog worth remembering:
 
 > All-reduce is a synchronization point — a microsecond saved there converts
 > one-for-one into step time; a kernel in another stream's overlap slack
@@ -125,6 +124,6 @@ per user**. The one line from the blog worth memorizing:
 | One memory-pool page | Several MB; a real KDA block ≈ 54 MB while MLA is ~27 KB/token — far more lopsided than drawn |
 | A KDA cell in the pool bar | Fixed-size recurrent state, overwritten every step (the overwrite isn't animated) |
 | One pipeline column | One scheduling beat; real P2P hand-offs are 91% overlapped and omitted here |
-| The upper "TP8" grid | Simplified to plain tensor parallelism for teaching; the blog's measured baseline is TEP8 (tensor + expert parallelism) |
+| The upper "TP8" grid | Simplified to plain tensor parallelism; the blog's measured baseline is TEP8 (tensor + expert parallelism) |
 | Gray AllReduce cell | Critical-path communication; its real share depends on the interconnect |
 | One DCP grid cell | One token position's MLA KV; real systems manage pages and use N=8 |

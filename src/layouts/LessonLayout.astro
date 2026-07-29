@@ -1,7 +1,7 @@
 ---
 import { render } from "astro:content";
 import type { CollectionEntry } from "astro:content";
-import { CHROME, lessonNo } from "../lib/i18n";
+import { CHROME, formatDate } from "../lib/i18n";
 import type { Locale } from "../lib/i18n";
 import { lessonPath, publishedLessons } from "../lib/lessons";
 import { withBase } from "../lib/paths";
@@ -14,7 +14,7 @@ interface Props {
 }
 const { entry, locale } = Astro.props;
 const { Content } = await render(entry);
-const { title, description, order, concepts, references, tryOnSglang } = entry.data;
+const { title, description, date, concepts, references, tryOnSglang } = entry.data;
 
 const all = await publishedLessons(locale);
 const idx = all.findIndex((l) => l.entry.id === entry.id);
@@ -37,7 +37,7 @@ const altPath = twin ? lessonPath(other, twin.slug) : other === "zh" ? "/" : "/e
 >
   <article>
     <header class="lesson-header reveal">
-      <span class="lesson-order">{lessonNo(locale, order)}</span>
+      <span class="lesson-order">{formatDate(locale, date)}</span>
       <h1>{title}</h1>
       <p class="lesson-desc">{description}</p>
       {

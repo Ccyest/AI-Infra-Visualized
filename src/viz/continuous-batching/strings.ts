@@ -9,8 +9,8 @@ export const TITLES: Record<Mode, Localized> = {
     en: "Static batching: whole batch in, whole batch out",
   },
   continuous: {
-    zh: "Continuous batching:每个 iteration 都能换人",
-    en: "Continuous batching: swap riders every iteration",
+    zh: "Continuous batching:iteration 级调度",
+    en: "Continuous batching: iteration-level scheduling",
   },
 };
 
@@ -118,8 +118,8 @@ export function gridAria(
 
 export const RACE = {
   title: {
-    zh: "同场对决:static vs continuous",
-    en: "Head-to-head: static vs continuous",
+    zh: "static vs continuous:同一批请求",
+    en: "Static vs continuous, same requests",
   },
   presetsAria: { zh: "切换场景", en: "Switch scenario" },
   staticLabel: { zh: "Static batching", en: "Static batching" },
