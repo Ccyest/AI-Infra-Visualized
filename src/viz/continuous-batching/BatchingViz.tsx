@@ -9,7 +9,7 @@ import QueueLane from "./QueueLane";
 import { simulate, utilization } from "./engine";
 import type { Mode } from "./engine";
 import { legendItems } from "./legend";
-import { SCENARIOS } from "./scenarios";
+import { lessonXExtent, SCENARIOS } from "./scenarios";
 import type { ScenarioId } from "./scenarios";
 import { scenarioSubtitle, STATS, TITLES } from "./strings";
 import "./styles.css";
@@ -64,7 +64,7 @@ export default function BatchingViz({
       }
     >
       <QueueLane result={result} t={player.t} lang={lang} />
-      <BatchGrid result={result} t={player.t} lang={lang} />
+      <BatchGrid result={result} t={player.t} lang={lang} maxIters={lessonXExtent()} />
     </VizStage>
   );
 }

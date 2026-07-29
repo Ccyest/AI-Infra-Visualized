@@ -9,7 +9,7 @@ import BatchGrid from "./BatchGrid";
 import { simulate, utilization } from "./engine";
 import type { SimResult } from "./engine";
 import { legendItems } from "./legend";
-import { SCENARIOS } from "./scenarios";
+import { lessonXExtent, SCENARIOS } from "./scenarios";
 import type { Scenario, ScenarioId } from "./scenarios";
 import { finishedAt, RACE, raceStats, scenarioSubtitle, STATS } from "./strings";
 import "./styles.css";
@@ -135,14 +135,14 @@ function RaceInner({
         label={RACE.staticLabel[lang]}
         result={rStatic}
         t={player.t}
-        maxIters={maxTotal}
+        maxIters={lessonXExtent()}
         lang={lang}
       />
       <RaceSection
         label={RACE.continuousLabel[lang]}
         result={rCont}
         t={player.t}
-        maxIters={maxTotal}
+        maxIters={lessonXExtent()}
         lang={lang}
       />
     </VizStage>

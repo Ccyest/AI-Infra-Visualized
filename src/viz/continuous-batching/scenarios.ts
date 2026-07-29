@@ -1,4 +1,5 @@
 import type { Localized } from "../../lib/i18n";
+import { simulate } from "./engine";
 import type { RequestSpec } from "./engine";
 
 /**
@@ -14,6 +15,23 @@ export interface Scenario {
 }
 
 export type ScenarioId = "steady" | "longtail" | "burst";
+
+/**
+ * 本课所有网格共用的时间轴长度(所有场景两种模式的最大总耗时)。
+ * 统一 x 轴让三张图比例一致、可以横向对比,切场景时尺寸也不跳。
+ */
+let xExtentCache: number | null = null;
+export function lessonXExtent(): number {
+  if (xExtentCache === null) {
+    xExtentCache = Math.max(
+      ...Object.values(SCENARIOS).flatMap((sc) => [
+        simulate("static", sc.numSlots, sc.requests).totalIterations,
+        simulate("continuous", sc.numSlots, sc.requests).totalIterations,
+      ]),
+    );
+  }
+  return xExtentCache;
+}
 
 function req(id: number, arrival: number, output: number): RequestSpec {
   return { id, arrival, output };
