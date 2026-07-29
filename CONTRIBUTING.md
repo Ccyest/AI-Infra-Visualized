@@ -29,7 +29,6 @@
 | --- | --- | --- |
 | `title` | string | 文章标题 |
 | `description` | string | 一句话简介(首页卡片与 `<meta>` 均用它) |
-| `date` | date | 发布日期,首页卡片与文章页展示 |
 | `order` | number | 排序与上一篇/下一篇导航用,新文章递增(首页按新→旧展示) |
 | `concepts` | string[] | 涉及的概念标签,显示为章节 chips(可省略) |
 | `tryOnSglang` | url | SGLang cookbook 对应章节,渲染为文末引流按钮(可省略) |

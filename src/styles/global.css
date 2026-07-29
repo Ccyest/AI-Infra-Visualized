@@ -384,14 +384,8 @@ main {
   box-shadow: var(--shadow-md);
 }
 
-.lesson-card .lesson-order {
-  color: var(--muted);
-  font-size: 0.8rem;
-  letter-spacing: 0.06em;
-}
-
 .lesson-card h2 {
-  margin: 0.15rem 0 0.3rem;
+  margin: 0 0 0.3rem;
   font-size: 1.15rem;
 }
 

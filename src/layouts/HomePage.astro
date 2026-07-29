@@ -1,5 +1,5 @@
 ---
-import { CHROME, formatDate } from "../lib/i18n";
+import { CHROME } from "../lib/i18n";
 import type { Locale } from "../lib/i18n";
 import { lessonPath, publishedLessons } from "../lib/lessons";
 import { withBase } from "../lib/paths";
@@ -42,7 +42,6 @@ const lessons = (await publishedLessons(locale)).reverse();
       lessons.map(({ entry, slug }) => (
         <li class="reveal">
           <a class="lesson-card" href={withBase(lessonPath(locale, slug))}>
-            <span class="lesson-order">{formatDate(locale, entry.data.date)}</span>
             <h2>{entry.data.title}</h2>
             <p>{entry.data.description}</p>
             {entry.data.concepts.length > 0 && (

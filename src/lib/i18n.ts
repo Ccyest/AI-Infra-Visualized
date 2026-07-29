@@ -13,18 +13,6 @@ export type Localized = { zh: string; en: string };
 
 export const HTML_LANG: Record<Locale, string> = { zh: "zh-CN", en: "en" };
 
-export function formatDate(locale: Locale, date: Date): string {
-  if (locale === "zh") {
-    return `${date.getUTCFullYear()} 年 ${date.getUTCMonth() + 1} 月 ${date.getUTCDate()} 日`;
-  }
-  return date.toLocaleDateString("en-US", {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-    timeZone: "UTC",
-  });
-}
-
 export const CHROME = {
   tagline: {
     zh: "用交互式可视化,把 AI Infra 的核心机制讲明白",

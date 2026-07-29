@@ -16,11 +16,11 @@ built for the [SGLang](https://github.com/sgl-project/sglang) community.
 
 ## 文章
 
-| 日期 | 文章 | 内容 | Try on SGLang |
-| --- | --- | --- | --- |
-| 2026-07-29 | [DSpark:大 batch 下的投机解码](src/content/lessons/zh/dspark-speculative-decoding.mdx) | 整块起草与验证、按置信度裁剪验证窗口、ragged 打包 | [cookbook](https://sgl-project-sglang-93.mintlify.app/advanced/speculative-decoding) |
-| 2026-07-28 | [Kimi K3 Day-0 Support](src/content/lessons/zh/kimi-k3-day0-support.mdx) | 双状态统一显存池、chunked PP prefill、DCP decode | [cookbook](https://sgl-project-sglang-93.mintlify.app/developer/memory-management) |
-| 2026-07-28 | [Continuous Batching](src/content/lessons/zh/continuous-batching.mdx) | static vs continuous 逐 iteration 对比,空泡与 GPU 利用率 | [cookbook](https://sgl-project-sglang-93.mintlify.app/concepts/continuous-batching) |
+| 文章 | 内容 | Try on SGLang |
+| --- | --- | --- |
+| [DSpark:大 batch 下的投机解码](src/content/lessons/zh/dspark-speculative-decoding.mdx) | 整块起草与验证、按置信度裁剪验证窗口、ragged 打包 | [cookbook](https://sgl-project-sglang-93.mintlify.app/advanced/speculative-decoding) |
+| [Kimi K3 Day-0 Support](src/content/lessons/zh/kimi-k3-day0-support.mdx) | 双状态统一显存池、chunked PP prefill、DCP decode | [cookbook](https://sgl-project-sglang-93.mintlify.app/developer/memory-management) |
+| [Continuous Batching](src/content/lessons/zh/continuous-batching.mdx) | static vs continuous 逐 iteration 对比,空泡与 GPU 利用率 | [cookbook](https://sgl-project-sglang-93.mintlify.app/concepts/continuous-batching) |
 
 ## 本地运行
 
