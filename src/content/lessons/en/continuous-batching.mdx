@@ -26,7 +26,7 @@ import Mapping from "../../../viz/continuous-batching/Mapping";
 > **TL;DR** Static batching waits for the slowest request in a batch before
 > admitting the next one. Continuous batching releases finished requests and
 > admits queued ones at the end of every iteration. On long-tail traffic this
-> cuts total wall time by close to 40%.
+> cuts total wall time by about 30%.
 
 ## The problem with static batching
 
