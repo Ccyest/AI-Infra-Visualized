@@ -7,7 +7,7 @@ const ITEMS: MappingItem[] = [
     id: "page",
     label: { zh: "显存池的一页", en: "One memory-pool page" },
     real: {
-      zh: "若干 MB 显存;真实 KDA 块 ≈ 54 MB，MLA 每 token ≈ 27 KB，比例远比图上悬殊",
+      zh: "若干 MB 显存；真实 KDA 块 ≈ 54 MB，MLA 每 token ≈ 27 KB，比例远比图上悬殊",
       en: "Several MB; a real KDA block ≈ 54 MB while MLA is ~27 KB/token, far more lopsided than drawn",
     },
     visual: <MiniCell kind="outline" />,
@@ -40,7 +40,7 @@ const ITEMS: MappingItem[] = [
     id: "pipecol",
     label: { zh: "流水线的一列", en: "One pipeline column" },
     real: {
-      zh: "一个调度节拍;真实 P2P 交接 91% 与计算重叠，图中省略",
+      zh: "一个调度节拍；真实 P2P 交接 91% 与计算重叠，图中省略",
       en: "One scheduling beat; real P2P hand-offs are 91% overlapped and omitted here",
     },
     visual: (
@@ -55,7 +55,7 @@ const ITEMS: MappingItem[] = [
     id: "tp8",
     label: { zh: "上排 “TP8” 网格", en: "The upper “TP8” grid" },
     real: {
-      zh: "教学上简化为纯 tensor 并行;博客的实测基线是 TEP8(tensor + expert 并行)",
+      zh: "教学上简化为纯 tensor 并行；博客的实测基线是 TEP8(tensor + expert 并行)",
       en: "Simplified to plain tensor parallelism; the blog's measured baseline is TEP8 (tensor + expert parallelism)",
     },
     visual: (
@@ -79,7 +79,7 @@ const ITEMS: MappingItem[] = [
     id: "dcp",
     label: { zh: "DCP 网格的一格", en: "One DCP grid cell" },
     real: {
-      zh: "一个 token 位置的 MLA KV;真实系统按页管理且 N=8",
+      zh: "一个 token 位置的 MLA KV；真实系统按页管理且 N=8",
       en: "One token position's MLA KV; real systems manage pages and use N=8",
     },
     visual: (

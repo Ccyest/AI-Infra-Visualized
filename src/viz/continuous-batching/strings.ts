@@ -5,11 +5,11 @@ import type { Cell, Mode } from "./engine";
 
 export const TITLES: Record<Mode, Localized> = {
   static: {
-    zh: "Static batching:整批进，整批出",
+    zh: "Static batching：整批进，整批出",
     en: "Static batching: whole batch in, whole batch out",
   },
   continuous: {
-    zh: "Continuous batching:iteration 级调度",
+    zh: "Continuous batching：iteration 级调度",
     en: "Continuous batching: iteration-level scheduling",
   },
 };
@@ -20,7 +20,7 @@ export function scenarioSubtitle(
   description: string,
 ): string {
   return locale === "zh"
-    ? `场景「${label}」:${description}`
+    ? `场景「${label}」：${description}`
     : `Scenario “${label}”: ${description}`;
 }
 
@@ -59,7 +59,7 @@ export function chipTitle(
   output: number,
 ): string {
   return locale === "zh"
-    ? `R${id}:t=${arrival} 到达，需生成 ${output} 个 token`
+    ? `R${id}：t=${arrival} 到达，需生成 ${output} 个 token`
     : `R${id}: arrives at t=${arrival}, needs ${output} tokens`;
 }
 
@@ -82,11 +82,11 @@ export function cellTooltip(
     case "bubble":
       if (cell.req === null) {
         return zh
-          ? `空泡:本批未占满，新请求不能中途加入 · t=${iter}`
+          ? `空泡：本批未占满，新请求不能中途加入 · t=${iter}`
           : `Bubble: batch under-filled, newcomers can't join mid-batch · t=${iter}`;
       }
       return zh
-        ? `空泡:R${cell.req} 已完成，但要等整批跑完 · t=${iter}`
+        ? `空泡：R${cell.req} 已完成，但要等整批跑完 · t=${iter}`
         : `Bubble: R${cell.req} finished but waits for the whole batch · t=${iter}`;
   }
 }
@@ -98,13 +98,13 @@ export function gridAria(
   totalIterations: number,
 ): string {
   return locale === "zh"
-    ? `${mode} batching 调度网格:${numSlots} 个槽位，共 ${totalIterations} 个 iteration`
+    ? `${mode} batching 调度网格：${numSlots} 个槽位，共 ${totalIterations} 个 iteration`
     : `${mode} batching schedule grid: ${numSlots} slots, ${totalIterations} iterations`;
 }
 
 export const RACE = {
   title: {
-    zh: "static vs continuous:同一批请求",
+    zh: "static vs continuous：同一批请求",
     en: "Static vs continuous, same requests",
   },
   presetsAria: { zh: "切换场景", en: "Switch scenario" },

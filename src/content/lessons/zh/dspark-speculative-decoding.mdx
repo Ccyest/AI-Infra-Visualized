@@ -1,6 +1,6 @@
 ---
-title: "DSpark:大 batch 下的投机解码"
-description: "小模型整块起草、大模型整块验证是投机解码的常规部分;DSpark 的增量在于按置信度裁剪验证窗口和 ragged 打包。batch 256 下相对 verify-all 吞吐 +68%，K3 的 BS=1 解码从 113 提到 423 tok/s。"
+title: "DSpark：大 batch 下的投机解码"
+description: "小模型整块起草、大模型整块验证是投机解码的常规部分；DSpark 的增量在于按置信度裁剪验证窗口和 ragged 打包。batch 256 下相对 verify-all 吞吐 +68%，K3 的 BS=1 解码从 113 提到 423 tok/s。"
 order: 3
 concepts:
   - speculative decoding
@@ -9,9 +9,9 @@ concepts:
   - ragged verification / CUDA graph
 tryOnSglang: "https://sgl-project-sglang-93.mintlify.app/advanced/speculative-decoding"
 references:
-  - label: "LMSYS Blog:DSpark in SGLang(本文的第一手来源)"
+  - label: "LMSYS Blog：DSpark in SGLang(本文的第一手来源)"
     url: "https://www.lmsys.org/blog/2026-07-06-dspark-sglang"
-  - label: "LMSYS Blog:Kimi K3 Day-0 Support(DSpark 在 K3 上的实测数字与 ReplaySSM)"
+  - label: "LMSYS Blog：Kimi K3 Day-0 Support(DSpark 在 K3 上的实测数字与 ReplaySSM)"
     url: "https://www.lmsys.org/blog/2026-07-27-kimi-k3-day0-support/"
   - label: "SGLang"
     url: "https://github.com/sgl-project/sglang"
@@ -25,19 +25,19 @@ import PackViz from "../../../viz/dspark/PackViz";
 import Mapping from "../../../viz/dspark/Mapping";
 
 > **TL;DR** 投机解码用小模型起草、大模型一次 forward 验证一整块。小 batch 时
-> 验证近乎免费;batch 大了之后每个 verify token 都有实际成本。DSpark 用
+> 验证近乎免费；batch 大了之后每个 verify token 都有实际成本。DSpark 用
 > confidence head 决定每个请求验证多少个 token 才划算，再把参差的验证请求
 > 紧凑打包进 CUDA graph。
 
 ## 为什么验证比生成便宜
 
-decode 是 memory-bound 的:大模型一次 forward 的时间大头在搬权重，验证 K 个
+decode 是 memory-bound 的：大模型一次 forward 的时间大头在搬权重，验证 K 个
 token 和生成 1 个 token 的耗时(小 batch 下)接近。所以让小模型先写 K 个
-草稿，大模型一次 forward 全部验证:接受的前缀直接提交，验证那次 forward 还
+草稿，大模型一次 forward 全部验证：接受的前缀直接提交，验证那次 forward 还
 顺带产出 1 个 bonus token。
 
-DSpark 的 drafter 是 semi-autoregressive block drafter:小模型也是一次
-forward 起草一整块，不逐 token 生成，起草快，接受率也高。看对比:
+DSpark 的 drafter 是 semi-autoregressive block drafter：小模型也是一次
+forward 起草一整块，不逐 token 生成，起草快，接受率也高。看对比：
 
 <SpecRaceViz client:visible />
 
@@ -52,24 +52,24 @@ batch 变大后 GPU 没有空闲算力，verify token 挤占的是其他请求�
 平台和陡坡的台阶，不是平滑曲线。
 
 drafter 一侧训练了一个 confidence head，对每个草稿位置输出存活概率。调度器
-逐请求裁剪:期望收益低于边际成本的位置不送去验证。切换负载档位，可以看到
-窗口收缩，而且不同请求收缩得很不均匀:
+逐请求裁剪：期望收益低于边际成本的位置不送去验证。切换负载档位，可以看到
+窗口收缩，而且不同请求收缩得很不均匀：
 
 <TrimViz client:visible />
 
-数学推理的草稿容易被接受，窗口保得住;自由写作发散，大 batch 下只值得验证
-两三个。这和混合流量的实测一致:gsm8k 平均拿到 5.24 的窗口，诗歌 2.91，
+数学推理的草稿容易被接受，窗口保得住；自由写作发散，大 batch 下只值得验证
+两三个。这和混合流量的实测一致：gsm8k 平均拿到 5.24 的窗口，诗歌 2.91，
 利用率保持在接受上限的 0.88–0.97。
 
-## 工程细节:ragged 打包与状态回放
+## 工程细节：ragged 打包与状态回放
 
 裁剪之后，每个请求的验证长度参差不齐，而 CUDA graph 要求固定输入形状。
 与其把每个请求 padding 到最大块长，DSpark 把验证请求首尾相接打包进一个紧凑
-buffer，再向上取整到最近的预捕获档位:
+buffer，再向上取整到最近的预捕获档位：
 
 <PackViz client:visible />
 
-ReplaySSM 是 K3 特有的问题:KDA 递归状态原地覆写，投机被拒时需要回滚。
+ReplaySSM 是 K3 特有的问题：KDA 递归状态原地覆写，投机被拒时需要回滚。
 方案是不存整块快照(512 KB)，只存每步草稿的原始输入(16 KB，小 32×)，
 接受后用 fold kernel 重放一遍，输出与快照方案逐位一致。省下的 scratch 显存
 直接转化为并发度。配合 overlap scheduler 的异步 future 和设备端 barrier，

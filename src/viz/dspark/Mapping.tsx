@@ -7,7 +7,7 @@ const ITEMS: MappingItem[] = [
     id: "step",
     label: { zh: "时间轴一格", en: "One timeline step" },
     real: {
-      zh: "一次大模型 forward;小模型起草的耗时未画(约为其零头)",
+      zh: "一次大模型 forward；小模型起草的耗时未画(约为其零头)",
       en: "One target-model forward; drafter time isn't drawn (a small fraction of it)",
     },
     visual: <MiniCell />,
@@ -16,7 +16,7 @@ const ITEMS: MappingItem[] = [
     id: "draftrow",
     label: { zh: "草稿行", en: "The draft row" },
     real: {
-      zh: "只画了最近验证完的一块;真实系统草稿与验证流水重叠",
+      zh: "只画了最近验证完的一块；真实系统草稿与验证流水重叠",
       en: "Shows only the block just verified; real systems pipeline drafting with verification",
     },
     visual: (

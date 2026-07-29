@@ -84,7 +84,7 @@ export const SCENARIOS: Record<ScenarioId, Scenario> = {
     id: "burst",
     label: { zh: "等长突发", en: "Equal-length burst" },
     description: {
-      zh: "所有请求同时到达、输出严格等长:static 唯一不吃亏的情况，两者完全打平",
+      zh: "所有请求同时到达、输出严格等长：static 唯一不吃亏的情况，两者完全打平",
       en: "All requests arrive together with identical lengths: the one case where static loses nothing, a dead tie",
     },
     numSlots: 4,

@@ -4,19 +4,19 @@ import type { Locale, Localized } from "../../lib/i18n";
 
 export const RACE = {
   title: {
-    zh: "投机解码:小模型起草，大模型验证",
+    zh: "投机解码：小模型起草，大模型验证",
     en: "Speculative decoding: draft small, verify with the target",
   },
   subtitle: {
-    zh: "时间轴 = 大模型 forward 次数;DSpark 每块起草 K=6 个 token",
+    zh: "时间轴 = 大模型 forward 次数；DSpark 每块起草 K=6 个 token",
     en: "Timeline = target-model forwards; DSpark drafts K=6 tokens per block",
   },
   baselineLabel: {
-    zh: "Baseline:1 次 forward = 1 个 token",
+    zh: "Baseline：1 次 forward = 1 个 token",
     en: "Baseline: 1 forward = 1 token",
   },
   dsparkLabel: {
-    zh: "DSpark:整块起草 + 整块验证",
+    zh: "DSpark：整块起草 + 整块验证",
     en: "DSpark: draft a block, verify a block",
   },
   draftRow: { zh: "草稿(小模型)", en: "drafts (small model)" },
@@ -53,7 +53,7 @@ export function raceVerdict(
   avgAccept: string,
 ): string {
   return locale === "zh"
-    ? `同样生成 ${tokens} 个 token:baseline 要 ${baseF} 次大模型 forward，DSpark 只要 ${dsF} 次(平均每块接受 ${avgAccept} 个草稿 + 1 个 bonus)。算上小模型起草与验证开销，K3 实测 BS=1 解码 113 → 423 tok/s(约 3.7×)。`
+    ? `同样生成 ${tokens} 个 token：baseline 要 ${baseF} 次大模型 forward，DSpark 只要 ${dsF} 次(平均每块接受 ${avgAccept} 个草稿 + 1 个 bonus)。算上小模型起草与验证开销，K3 实测 BS=1 解码 113 → 423 tok/s(约 3.7×)。`
     : `Same ${tokens} tokens: the baseline needs ${baseF} target forwards, DSpark needs ${dsF} (each block accepts ${avgAccept} drafts on average, plus 1 bonus). Net of drafting and verification overhead, K3 measures BS=1 decode at 113 → 423 tok/s (~3.7×).`;
 }
 
@@ -86,7 +86,7 @@ export function raceCellTooltip(
 
 export const TRIM = {
   title: {
-    zh: "Confidence-scheduled verification:负载越高，窗口越小",
+    zh: "Confidence-scheduled verification：负载越高，窗口越小",
     en: "Confidence-scheduled verification: higher load, tighter windows",
   },
   subtitle: {
@@ -106,7 +106,7 @@ export const TRIM = {
   },
   legendTrimmed: { zh: "被裁剪(不送去验证)", en: "trimmed (not sent to verify)" },
   note: {
-    zh: "DSpark 的调度器用一次性的服务器画像把「第 M 个 verify token 的边际成本」按负载建表(真实曲线是带平台和陡坡的『台阶』)，再逐请求裁剪到期望收益 ≥ 边际成本为止。实测:batch 256 的 chat 负载吞吐 +68%(平均接受 2.7 → 2.2);混合流量下数学题拿到 5.24 的窗口、自由写作只拿 2.91，利用率保持在接受上限的 0.88–0.97。",
+    zh: "DSpark 的调度器用一次性的服务器画像把「第 M 个 verify token 的边际成本」按负载建表(真实曲线是带平台和陡坡的『台阶』)，再逐请求裁剪到期望收益 ≥ 边际成本为止。实测：batch 256 的 chat 负载吞吐 +68%(平均接受 2.7 → 2.2)；混合流量下数学题拿到 5.24 的窗口、自由写作只拿 2.91，利用率保持在接受上限的 0.88–0.97。",
     en: "DSpark's scheduler profiles the server once to map the marginal cost of the M-th verify token at each load (the real curve is a staircase of shelves and risers), then trims each request until expected value covers marginal cost. Measured: +68% throughput at batch 256 on chat (mean accept 2.7 → 2.2); under mixed traffic, math gets 5.24-token windows while free-form writing gets 2.91, holding 0.88–0.97 of the acceptance ceiling.",
   },
 } satisfies Record<string, Localized>;
@@ -157,11 +157,11 @@ export const TRIM_LOADS: TrimLoad[] = [
 
 export const PACK = {
   title: {
-    zh: "Ragged verification:用打包代替 padding",
+    zh: "Ragged verification：用打包代替 padding",
     en: "Ragged verification: pack instead of pad",
   },
   subtitle: {
-    zh: "3 个请求，验证窗口分别为 5 / 4 / 2;CUDA graph 只认固定形状",
+    zh: "3 个请求，验证窗口分别为 5 / 4 / 2；CUDA graph 只认固定形状",
     en: "3 requests with verify windows 5 / 4 / 2; CUDA graphs demand fixed shapes",
   },
   paddedToggle: { zh: "padding 到最大 K", en: "pad to max K" },
@@ -186,6 +186,6 @@ export function packCellTooltip(
     return zh ? `R${req} 的 verify token` : `verify token of R${req}`;
   }
   return zh
-    ? `padding:占着计算槽位却不产出任何东西`
+    ? `padding：占着计算槽位却不产出任何东西`
     : `padding: burns a compute slot, produces nothing`;
 }
