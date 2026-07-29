@@ -63,8 +63,10 @@ Same requests, same timeline. Switch scenarios to see where the gap is widest:
 
 - Long-tail outputs: the widest gap. Every static batch is dragged by its
   longest request (head-of-line blocking), and real LLM traffic is long-tailed.
-- One burst (equal lengths, simultaneous arrival): static holds up fine, but
-  production traffic doesn't look like this.
+- Equal-length burst: with identical lengths and simultaneous arrival the two
+  tie exactly — the one case where static loses nothing. It shows that static's
+  waste comes entirely from length variance and arrival spread, and production
+  traffic has both.
 
 ## A few details
 
