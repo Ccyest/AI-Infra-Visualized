@@ -30,19 +30,6 @@ export const CHROME = {
     zh: "AI Infra 优化方案可视化详解，Built based on SGLang。",
     en: "AI infra optimizations, visualized in detail. Built based on SGLang.",
   },
-  heroBody: {
-    zh: "LLM 推理与训练系统里的核心机制：continuous batching、KV cache、并行策略。每篇文章配可暂停、可单步、可拖动时间轴的交互式动画，机制本身让动画来讲。",
-    en: "The core mechanisms inside LLM serving and training systems: continuous batching, KV cache, parallelism. Each post comes with interactive animations you can pause, step through, and scrub.",
-  },
-  heroCompanion: {
-    zh: "深入的文字讲解请配合",
-    en: "For in-depth written material, pair each lesson with",
-  },
-  heroCompanionTail: {
-    zh: "；这里负责让机制“动起来”。灵感来自",
-    en: "; this site makes the mechanisms move. Inspired by",
-  },
-  period: { zh: "。", en: "." },
   heroCredit: {
     zh: "本站为 SGLang 社区而建，由",
     en: "Built for the SGLang community, maintained by",

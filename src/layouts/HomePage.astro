@@ -29,12 +29,6 @@ const lessons = (await publishedLessons(locale)).reverse();
       </a>
       <p class="hero-tagline">{CHROME.heroTagline[locale]}</p>
     </div>
-    <p>{CHROME.heroBody[locale]}</p>
-    <p>
-      {CHROME.heroCompanion[locale]}
-      <a href={SITE.tutorialUrl} target="_blank" rel="noopener">Awesome-ML-SYS-Tutorial</a>{CHROME.heroCompanionTail[locale]}
-      <a href={SITE.inspirationUrl} target="_blank" rel="noopener">bbycroft.net/llm</a>{CHROME.period[locale]}
-    </p>
     <div class="hero-actions">
       <a class="btn btn-primary" href={SITE.sglangUrl} target="_blank" rel="noopener">
         {CHROME.buildWithSglang[locale]}
