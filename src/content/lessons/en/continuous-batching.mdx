@@ -1,6 +1,6 @@
 ---
 title: "Continuous Batching: From Static to Iteration-Level Scheduling"
-description: "Why static batching wastes GPU time and how iteration-level scheduling fixes it. Two scheduling policies run the same requests, compared iteration by iteration."
+description: "A visual walkthrough of why static batching wastes GPU time and how continuous batching fixes it, with iteration-by-iteration comparisons."
 order: 1
 concepts:
   - iteration-level scheduling
@@ -23,11 +23,6 @@ import BatchingViz from "../../../viz/continuous-batching/BatchingViz";
 import RaceViz from "../../../viz/continuous-batching/RaceViz";
 import Mapping from "../../../viz/continuous-batching/Mapping";
 
-> **TL;DR** Static batching waits for the slowest request in a batch before
-> admitting the next one. Continuous batching releases finished requests and
-> admits queued ones at the end of every iteration. On long-tail traffic this
-> cuts total wall time by about 30%.
-
 ## The problem with static batching
 
 LLM generation is autoregressive: each iteration (one forward pass) produces
@@ -37,13 +32,16 @@ batch.
 Static batching ties the batch together. A request that finishes early cannot
 leave, so its slot idles (the hatched cells below, called bubbles) until the
 slowest request in the batch completes. Requests arriving mid-batch queue even
-when slots are visibly empty. Press play and count the bubbles:
+when slots are visibly empty.
 
 <BatchingViz client:visible mode="static" scenario="steady" lang="en" />
 
 There are two kinds of bubbles here: a finished request whose slot stays locked
 by the batch (hover to see which request), and slots that were never filled
-when the batch formed.
+when the batch formed. These map to static batching's two pain points: 1. when
+one request runs long, every other request has to wait even after finishing;
+2. a batch may form under-filled, and no new request can join mid-batch until
+the whole batch completes. Both drag down GPU utilization.
 
 ## Iteration-level scheduling
 
@@ -62,27 +60,28 @@ Same requests, same timeline. Switch scenarios to see where the gap is widest:
 
 <RaceViz client:visible scenario="longtail" lang="en" />
 
+- Equal-length, unsteady arrivals: a real gap. Even with every request the same
+  length, staggered arrivals mean static batching keeps forming under-filled
+  batches, wasting GPU capacity.
 - Long-tail outputs: the widest gap. Every static batch is dragged by its
   longest request (head-of-line blocking), and real LLM traffic is long-tailed.
 - Equal-length burst: with identical lengths and simultaneous arrival the two
   tie exactly, the one case where static loses nothing. It shows that static's
-  waste comes entirely from length variance and arrival spread, and production
-  traffic has both.
+  waste comes entirely from length variance and arrival spread. Production
+  traffic has exactly both, so in real deployments continuous batching's gains
+  are even better than the idealized lab result.
 
-## A few details
+## Notes
 
 1. Why can requests swap mid-run? During decode each request only depends on
-   its own KV cache; requests are independent along the batch dimension. For
-   the non-attention operators, flatten every request's tokens into one
-   dimension and they batch together regardless of length (ORCA's selective
-   batching).
+   its own KV cache; requests are independent along the batch dimension.
 2. Memory becomes the new bottleneck: once admission is no longer gated by
    batch boundaries, concurrency is limited by KV cache memory. That is the
    problem PagedAttention addresses.
 3. Prefill preempts decode: a newly admitted request runs prefill first (the
-   light cells; far heavier than one decode step in real systems), which slows
-   down everyone else's token cadence. Chunked prefill and prefill/decode
-   disaggregation both target this.
+   light cells; simplified to a single iteration here, far heavier than one
+   iteration in real systems), which slows down everyone else's token cadence.
+   Chunked prefill and prefill/decode disaggregation both target this.
 
 ## Diagram ↔ real system
 

@@ -1,6 +1,6 @@
 ---
 title: "Continuous Batching：从 static 到 iteration-level scheduling"
-description: "static batching 为什么浪费 GPU，iteration-level scheduling 怎么解决。两种调度策略跑同一批请求，逐 iteration 对比。"
+description: "本文通过可视化工具，讲解static batching 为什么浪费 GPU，以及continuous batching的优化方案。可视化工具提供逐 iteration 对比。"
 order: 1
 concepts:
   - iteration-level scheduling
@@ -11,7 +11,7 @@ tryOnSglang: "https://sgl-project-sglang-93.mintlify.app/concepts/continuous-bat
 references:
   - label: "ORCA: A Distributed Serving System for Transformer-Based Generative Models(OSDI '22，continuous batching 的出处)"
     url: "https://www.usenix.org/conference/osdi22/presentation/yu"
-  - label: "Anyscale:How continuous batching enables 23x throughput in LLM inference"
+  - label: "Anyscale：How continuous batching enables 23x throughput in LLM inference"
     url: "https://www.anyscale.com/blog/continuous-batching-llm-inference"
   - label: "SGLang"
     url: "https://github.com/sgl-project/sglang"
@@ -22,10 +22,6 @@ references:
 import BatchingViz from "../../../viz/continuous-batching/BatchingViz";
 import RaceViz from "../../../viz/continuous-batching/RaceViz";
 import Mapping from "../../../viz/continuous-batching/Mapping";
-
-> **TL;DR** static batching 要等一整批里最慢的请求跑完才能换批；continuous
-> batching 在每个 iteration 结束时都可以放走完成的请求、放进排队的请求。
-> 长尾流量下，后者总耗时少三成。
 
 ## Static batching 的问题
 
@@ -39,7 +35,10 @@ static batching 把一批请求绑在一起跑。先完成的请求不能退出�
 <BatchingViz client:visible mode="static" scenario="steady" />
 
 图里有两种空泡：请求已完成但槽位被整批锁住(悬停可以看到是哪个请求)；
-组批时没凑满、整批期间一直空着的槽。这分别对应着
+组批时没凑满、整批期间一直空着的槽。这分别对应着static batching的两个痛点：1.
+当有某个request比较长，其他的request即使完成也需要等待。2.
+在组batch的时候可能凑不满，但是中途不能加入新的request，必须等待batch完成。
+这两个痛点都会导致GPU利用率下降。
 
 ## Iteration-level scheduling
 
@@ -57,22 +56,24 @@ ORCA 提出把调度粒度从一整批细化到一个 iteration，SGLang 等主�
 
 <RaceViz client:visible scenario="longtail" />
 
+- 等长不稳定到达：有一定差距，即使所有request都等长，在不稳定到达的情况下，
+  static batching每次组batch组不满，也会导致GPU资源浪费。
 - 长尾输出：差距最大。static 每一批都被批内最长的请求拖住(head-of-line
   blocking)，而真实 LLM 流量恰好是长尾的。
 - 等长突发：严格等长、同时到达时，两者完全打平，这是 static 唯一不吃亏的
-  情况。它说明 static 的浪费全部来自长度差异和到达时间差异，而线上流量
-  恰好两样都占。
+  情况。它说明 static 的浪费全部来自长度差异和到达时间差异，而线上流量，
+  恰恰有长度差异和到达时间差异，因此在现实使用中continuous batching的优化
+  效果比实验室理想结果更加好。
 
-## 几个细节
+## 补充说明
 
-1. 为什么可以中途换请求?decode 时每个请求只依赖自己的 KV cache，batch
-   维度上互不相干；attention 之外的算子把不同请求的 token 摊平到同一维度，
-   就能一起算(ORCA 的 selective batching)。
+1. 为什么可以中途换请求？decode 时每个请求只依赖自己的 KV cache，batch
+   维度上互不相干。
 2. 显存成为新瓶颈：准入不再受批次限制之后，并发上限取决于 KV cache 占用的
    显存，这是 PagedAttention 要解决的问题。
-3. prefill 会抢占 decode：新请求进来要先跑 prefill(图中浅色格，真实系统里
-   比一步 decode 重得多)，会拖慢同批其他请求的出词速度。chunked prefill 和
-   PD 分离都是针对这个问题。
+3. prefill 会抢占 decode：新请求进来要先跑 prefill(图中浅色格，文中简化成
+   一步iteration，真实系统里比一步iteration重得多)，会拖慢同批其他请求的
+   出词速度。chunked prefill 和 PD 分离都是针对这个问题。
 
 ## 图 ↔ 真实系统对照
 
