@@ -24,8 +24,8 @@ export const SCENARIOS: Record<ScenarioId, Scenario> = {
     id: "steady",
     label: { zh: "稳定到达", en: "Steady arrivals" },
     description: {
-      zh: "请求陆续到达,输出长度中等且各不相同 —— 最贴近日常在线流量",
-      en: "Requests trickle in with varied medium lengths — closest to everyday online traffic",
+      zh: "请求陆续到达,输出长度中等且各不相同,最贴近日常在线流量",
+      en: "Requests trickle in with varied medium lengths, closest to everyday online traffic",
     },
     numSlots: 4,
     requests: [
@@ -45,8 +45,8 @@ export const SCENARIOS: Record<ScenarioId, Scenario> = {
     id: "longtail",
     label: { zh: "长尾输出", en: "Long-tail outputs" },
     description: {
-      zh: "大多数请求很短,少数请求特别长 —— 真实 LLM 流量的典型形态",
-      en: "Most requests are short, a few are very long — the typical shape of real LLM traffic",
+      zh: "大多数请求很短,少数请求特别长,真实 LLM 流量的典型形态",
+      en: "Most requests are short, a few are very long, the typical shape of real LLM traffic",
     },
     numSlots: 4,
     requests: [
@@ -67,7 +67,7 @@ export const SCENARIOS: Record<ScenarioId, Scenario> = {
     label: { zh: "等长突发", en: "Equal-length burst" },
     description: {
       zh: "所有请求同时到达、输出严格等长:static 唯一不吃亏的情况,两者完全打平",
-      en: "All requests arrive together with identical lengths: the one case where static loses nothing — a dead tie",
+      en: "All requests arrive together with identical lengths: the one case where static loses nothing, a dead tie",
     },
     numSlots: 4,
     requests: [

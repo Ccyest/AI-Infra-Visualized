@@ -112,7 +112,7 @@ The combined serving frontier: PP8 prefill feeding TP8 decode reaches
 2,808 tok/s per GPU (fp4); interactive configs trade down to 116+ tok/s per
 user. One line from the blog worth remembering:
 
-> All-reduce is a synchronization point — a microsecond saved there converts
+> All-reduce is a synchronization point, so a microsecond saved there converts
 > one-for-one into step time; a kernel in another stream's overlap slack
 > converts at roughly one-tenth.
 
@@ -120,7 +120,7 @@ user. One line from the blog worth remembering:
 
 | In the diagram | In a real system |
 | --- | --- |
-| One memory-pool page | Several MB; a real KDA block ≈ 54 MB while MLA is ~27 KB/token — far more lopsided than drawn |
+| One memory-pool page | Several MB; a real KDA block ≈ 54 MB while MLA is ~27 KB/token, far more lopsided than drawn |
 | A KDA cell in the pool bar | Fixed-size recurrent state, overwritten every step (the overwrite isn't animated) |
 | One pipeline column | One scheduling beat; real P2P hand-offs are 91% overlapped and omitted here |
 | The upper "TP8" grid | Simplified to plain tensor parallelism; the blog's measured baseline is TEP8 (tensor + expert parallelism) |

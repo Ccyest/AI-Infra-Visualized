@@ -185,8 +185,8 @@ export const PACK = {
   statSlots: { zh: "GPU 计算槽位", en: "GPU compute slots" },
   tierStat: { zh: "取整到 CUDA graph 档位", en: "rounded to CUDA graph tier" },
   note: {
-    zh: "CUDA graph 要求固定输入形状。与其把每个请求都 padding 到最大块长,DSpark 把参差的验证请求首尾相接打包进一个紧凑 buffer,再向上取整到最近的已捕获档位(tier)——同样的接受结果,计算槽位 18 → 12。",
-    en: "CUDA graphs need fixed input shapes. Instead of padding every request to the maximum block length, DSpark front-packs the ragged verify requests into one compact buffer and rounds up to the nearest captured tier — same accepted tokens, compute slots 18 → 12.",
+    zh: "CUDA graph 要求固定输入形状。与其把每个请求都 padding 到最大块长,DSpark 把参差的验证请求首尾相接打包进一个紧凑 buffer,再向上取整到最近的已捕获档位(tier)。同样的接受结果,计算槽位 18 → 12。",
+    en: "CUDA graphs need fixed input shapes. Instead of padding every request to the maximum block length, DSpark front-packs the ragged verify requests into one compact buffer and rounds up to the nearest captured tier. Same accepted tokens, compute slots 18 → 12.",
   },
 } satisfies Record<string, Localized>;
 
