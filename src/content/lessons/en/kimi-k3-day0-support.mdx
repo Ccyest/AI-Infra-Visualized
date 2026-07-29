@@ -11,7 +11,7 @@ tryOnSglang: "https://sgl-project-sglang-93.mintlify.app/developer/memory-manage
 references:
   - label: "LMSYS Blog: Kimi K3 Day-0 Support (primary source for this lesson, with all measured numbers)"
     url: "https://www.lmsys.org/blog/2026-07-27-kimi-k3-day0-support/"
-  - label: "LMSYS Blog: DSpark in SGLang (speculative decoding — the star of the next lesson)"
+  - label: "LMSYS Blog: DSpark in SGLang (speculative decoding)"
     url: "https://www.lmsys.org/blog/2026-07-06-dspark-sglang"
   - label: "SGLang (where every optimization in this lesson lives)"
     url: "https://github.com/sgl-project/sglang"
@@ -27,7 +27,7 @@ import DcpViz from "../../../viz/kimi-k3-day0/DcpViz";
 > quantization at the same time, so every "of course" baked into a serving
 > stack breaks. SGLang's day-0 support rewrites three fronts at once — memory
 > (a unified pool), prefill (chunked PP), decode (DCP) — plus speculative
-> decoding with DSpark (next lesson).
+> decoding with DSpark.
 
 ## K3 in 60 seconds
 
@@ -107,6 +107,9 @@ in parentheses):
 | Communication fusion (+27.6) | Fused all-reduce family: multicast + NVLS in-switch reduction with residual/RMSNorm folded in |
 | Overlap & prologue (+10.4) | GEMV–GEMM overlap, fused residual write-back, PDL attention arming |
 
+On top of that, DSpark speculative decoding lifts BS=1 to **~423 tok/s**
+(~3.7×).
+
 The combined serving frontier: PP8 prefill feeding TP8 decode reaches
 **2,808 tok/s per GPU** (fp4); interactive configs trade down to **116+ tok/s
 per user**. The one line from the blog worth memorizing:
@@ -125,10 +128,3 @@ per user**. The one line from the blog worth memorizing:
 | The upper "TP8" grid | Simplified to plain tensor parallelism for teaching; the blog's measured baseline is TEP8 (tensor + expert parallelism) |
 | Gray AllReduce cell | Critical-path communication; its real share depends on the interconnect |
 | One DCP grid cell | One token position's MLA KV; real systems manage pages and use N=8 |
-
-## Next lesson
-
-One more K3 throughput engine remains: **DSpark speculative decoding** — a
-semi-autoregressive block drafter plus confidence-scheduled verification. It is
-what takes the ~113 tok/s above to **~423 tok/s** at batch 1, and adds +68%
-throughput at batch 256. It deserves a lesson of its own.

@@ -66,8 +66,7 @@ scheduling,如今 SGLang 等主流推理引擎都这么做):每一步结束,完�
    维度上各请求本就互不相干;attention 之外的算子把不同请求的 token 摊平到一个
    维度即可同批执行(ORCA 的 selective batching)。
 2. **显存成为新瓶颈**:随时能上车之后,"车上能坐多少人"取决于 KV cache
-   占用的显存——这正是 KV cache 分页管理(PagedAttention)要解决的问题,
-   值得单独一课。
+   占用的显存——这正是 KV cache 分页管理(PagedAttention)要解决的问题。
 3. **prefill 会抢占 decode**:新请求上车要先跑 prefill(图中浅色格;真实系统里
    它比一步 decode 重得多),会拖慢同批其他请求的出词速度——chunked prefill
    与 PD 分离由此而来。

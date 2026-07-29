@@ -11,7 +11,7 @@ tryOnSglang: "https://sgl-project-sglang-93.mintlify.app/developer/memory-manage
 references:
   - label: "LMSYS Blog:Kimi K3 Day-0 Support(本课的第一手来源,含全部实测数字)"
     url: "https://www.lmsys.org/blog/2026-07-27-kimi-k3-day0-support/"
-  - label: "LMSYS Blog:DSpark in SGLang(投机解码,下一课的主角)"
+  - label: "LMSYS Blog:DSpark in SGLang(投机解码)"
     url: "https://www.lmsys.org/blog/2026-07-06-dspark-sglang"
   - label: "SGLang(本课所有优化的落地仓库)"
     url: "https://github.com/sgl-project/sglang"
@@ -25,7 +25,7 @@ import DcpViz from "../../../viz/kimi-k3-day0/DcpViz";
 
 > **一句话**:K3 在 attention、MoE、量化上同时偏离常规,serving 栈里所有
 > "想当然"逐个失效。SGLang 的 day-0 支持 = 显存(统一池)、prefill(chunked
-> PP)、decode(DCP)三条战线同时重写,外加投机解码 DSpark(下一课)。
+> PP)、decode(DCP)三条战线同时重写,外加投机解码 DSpark。
 
 ## K3 长什么样(60 秒)
 
@@ -93,6 +93,8 @@ K3 实测:DCP8 把逻辑上下文容量放大 **7.9×**;跑 agent 长会话时,T
 | 通信融合(+27.6) | 融合 all-reduce 家族:multicast + NVLS 在交换机内做归约,顺路加 residual/RMSNorm |
 | 重叠与前奏(+10.4) | GEMV-GEMM 重叠、residual 写回融合、PDL 预热 attention |
 
+在此之上,DSpark 投机解码把 BS=1 再拉到 **~423 tok/s**(约 3.7×)。
+
 组合的 serving 边界:PP8 prefill + TP8 decode 达到 **2,808 tok/s/GPU**(fp4);
 交互式配置可换到 **116+ tok/s/用户**。博客里最值得背下来的一句:
 
@@ -109,9 +111,3 @@ K3 实测:DCP8 把逻辑上下文容量放大 **7.9×**;跑 agent 长会话时,T
 | 上排 "TP8" 网格 | 教学上简化为纯 tensor 并行;博客的实测基线是 TEP8(tensor + expert 并行) |
 | AllReduce 灰格 | 关键路径上的通信,真实占比随互联拓扑变化 |
 | DCP 网格的一格 | 一个 token 位置的 MLA KV;真实系统按页管理且 N=8 |
-
-## 下一课预告
-
-K3 的吞吐还有一台加速器没讲:**DSpark 投机解码**——半自回归 block 草稿 +
-按置信度裁剪验证窗口。上面 BS=1 的 ~113 tok/s,正是被它直接拉到
-**~423 tok/s**;batch 256 时吞吐再 +68%。它值得单独一课。

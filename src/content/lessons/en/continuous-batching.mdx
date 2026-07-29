@@ -78,7 +78,7 @@ gap is widest:
    and they batch together regardless of length (ORCA's selective batching).
 2. **Memory becomes the new bottleneck**: once anyone can hop on, "how many
    seats the bus has" is decided by KV cache memory — exactly what paged KV
-   cache management (PagedAttention) addresses, worth a lesson of its own.
+   cache management (PagedAttention) addresses.
 3. **Prefill preempts decode**: a new rider must run prefill first (the light
    cells; far heavier than one decode step in real systems), slowing down
    everyone else's token cadence — which is where chunked prefill and
