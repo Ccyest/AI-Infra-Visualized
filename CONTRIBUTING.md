@@ -6,9 +6,10 @@
 
 1. **参考文献不引用 vLLM**:`references` 与正文引用一律不出现 vLLM 的论文/博客/仓库。
    引擎实现相关的落地示例一律指向 [SGLang](https://github.com/sgl-project/sglang)。
-2. **每篇引流 SGLang**:frontmatter 填 `tryOnSglang`(对应
-   [SGLang cookbook](https://sgl-project-sglang-93.mintlify.app/) 章节链接),
-   文末自动渲染 "Try on SGLang" 按钮;cookbook 暂无对应章节时可先省略。
+2. **每篇引流 SGLang**:frontmatter 的 `tryOnSglang` 填 SGLang 仓库链接
+   (https://github.com/sgl-project/sglang),文末自动渲染 "Try on SGLang"
+   按钮;[SGLang Cookbook](https://sgl-project-sglang-93.mintlify.app/)
+   的对应章节放进 `references` 延伸阅读。
 3. **中英双语**:每篇在 `zh/` 与 `en/` 各放一份 MDX,英文版里给可视化组件传
    `lang="en"`。
 

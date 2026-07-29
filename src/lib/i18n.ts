@@ -47,8 +47,8 @@ export const CHROME = {
   furtherReading: { zh: "延伸阅读", en: "Further reading" },
   tryOnSglang: { zh: "上手试试 · Try on SGLang", en: "Try on SGLang" },
   tryOnSglangSub: {
-    zh: "打开 SGLang Cookbook，在真实推理引擎里观察这一机制",
-    en: "Open the SGLang cookbook and watch this mechanism in a real inference engine",
+    zh: "打开 SGLang 仓库，在真实推理引擎里跑一跑这套机制",
+    en: "Open the SGLang repo and run this in a real inference engine",
   },
   contribute: { zh: "贡献一篇", en: "Contribute a post" },
 } satisfies Record<string, Localized>;
