@@ -112,9 +112,12 @@ First, where the blending comes from: no step ever "accumulates" as an
 operation, S simply is the sum Σ k·vᵀ. Two assignments to the same
 variable share a key direction, so a read returns their sum; and keys of
 different variables cannot be fully orthogonal in limited dimensions, so
-every read also picks up crosstalk from the other slots. Each read in the
-diagram carries a swatch: the colored part is the target value, the gray
-share is crosstalk, and it widens as the state fills.
+every read also picks up crosstalk from the other slots. As with MHA,
+every token writes at every step: assignments go to their variable slot,
+while read and marker tokens land in the "…" slot, contributing only
+crosstalk. Read results are marked under their slot: the colored part of
+the swatch is the target value, the gray share is crosstalk, widening as
+the state fills.
 
 DeltaNet replaces the write with the delta rule: read the old value with k,
 erase it with write strength β, then write the new one,
@@ -132,10 +135,10 @@ layers.
 
 <MemoryViz client:visible lang="en" />
 
-Three moments to watch: at t=6, using A, the plain-sum panel blends (✗)
-while the other two read correctly; at t=11, using E, the delta panel
+Three moments to watch: at t=6, reading A, the plain-sum panel blends (✗)
+while the other two read correctly; at t=11, reading E, the delta panel
 shows clear crosstalk (△) while KDA decayed the old channels at the t=7
-topic shift and reads clean (✓); at t=13, using B, the KDA panel has
+topic shift and reads clean (✓); at t=13, reading B, the KDA panel has
 decayed it below readability (◌). Which channels decay is learned from
 data; channels a task still needs, the model learns not to decay.
 

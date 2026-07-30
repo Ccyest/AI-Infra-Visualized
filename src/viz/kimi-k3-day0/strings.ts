@@ -279,8 +279,8 @@ export const MEM = {
     en: "Memory in a fixed state: plain sum vs delta rule vs KDA gating",
   },
   subtitle: {
-    zh: "同一串赋值与取用，三种更新规则；颜色 = 值，透明度 = 记忆强度",
-    en: "Same assignments and uses, three update rules; color = value, opacity = strength",
+    zh: "同一串 token，三种更新规则；每步先读后写，读取/标记 token 写进「…」槽",
+    en: "Same token stream, three update rules; every step reads then writes, read/marker tokens land in the \"…\" slot",
   },
   modeAdd: { zh: "直接求和(S = Σ k·vᵀ)", en: "Plain sum (S = Σ k·vᵀ)" },
   modeDelta: { zh: "Delta rule(DeltaNet)", en: "Delta rule (DeltaNet)" },
@@ -295,8 +295,8 @@ export const MEM = {
   legendMixed: { zh: "同槽多色 = 新旧值混叠", en: "two colors in a slot = old and new values blended" },
   legendRing: { zh: "描边 = 本步写入/读取的槽", en: "outline = slot written/read this step" },
   legendReadout: {
-    zh: "读出色块：彩色 = 目标值，灰色 = 串扰份额",
-    en: "readout swatch: color = target value, gray = crosstalk share",
+    zh: "槽位下方 = 该槽的读取结果(彩色 = 目标值，灰色 = 串扰)",
+    en: "below a slot = its read results (color = target value, gray = crosstalk)",
   },
 } satisfies Record<string, Localized>;
 
@@ -307,16 +307,24 @@ const GRADE_TEXT: Record<MemRecall["grade"], Localized> = {
   faded: { zh: "◌ 已淡忘", en: "◌ forgotten" },
 };
 
-export function memRecallChip(locale: Locale, r: MemRecall): string {
+export const GRADE_SYMBOL: Record<MemRecall["grade"], string> = {
+  clean: "✓",
+  mixed: "✗",
+  noisy: "△",
+  faded: "◌",
+};
+
+export function recallMarkTooltip(locale: Locale, r: MemRecall): string {
+  const pct = `${(r.purity * 100).toFixed(0)}%`;
   return locale === "zh"
-    ? `t=${r.t} ${r.key}?：${GRADE_TEXT[r.grade].zh}`
-    : `t=${r.t} ${r.key}?: ${GRADE_TEXT[r.grade].en}`;
+    ? `t=${r.t} 读取 ${r.key}：${GRADE_TEXT[r.grade].zh}，纯度 ${pct}`
+    : `t=${r.t} read ${r.key}: ${GRADE_TEXT[r.grade].en}, purity ${pct}`;
 }
 
 export function memEventText(locale: Locale, ev: MemEvent): string {
   const zh = locale === "zh";
   if (ev.kind === "write") return zh ? `赋值 ${ev.key}=${ev.value}` : `assign ${ev.key}=${ev.value}`;
-  if (ev.kind === "query") return zh ? `用到 ${ev.key}` : `use ${ev.key}`;
+  if (ev.kind === "query") return zh ? `读取 ${ev.key}` : `read ${ev.key}`;
   return zh ? "新话题" : "new topic";
 }
 
@@ -327,6 +335,12 @@ export function memSlotTooltip(
   mode: MemMode,
 ): string {
   const zh = locale === "zh";
+  if (key === "…") {
+    const total = contribs.reduce((s, c) => s + c.weight, 0);
+    return zh
+      ? `「…」槽：读取/标记 token 的写入堆在这里(强度 ${total.toFixed(1)})，只贡献串扰`
+      : `The "…" slot: writes from read/marker tokens pile up here (strength ${total.toFixed(1)}), contributing only crosstalk`;
+  }
   if (contribs.length === 0) {
     return zh ? `槽 ${key}：空` : `slot ${key}: empty`;
   }
