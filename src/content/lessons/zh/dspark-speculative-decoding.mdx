@@ -24,11 +24,6 @@ import TrimViz from "../../../viz/dspark/TrimViz";
 import PackViz from "../../../viz/dspark/PackViz";
 import Mapping from "../../../viz/dspark/Mapping";
 
-> **TL;DR** 投机解码用小模型起草、大模型一次 forward 验证一整块。小 batch 时
-> 验证近乎免费；batch 大了之后每个 verify token 都有实际成本。DSpark 用
-> confidence head 决定每个请求验证多少个 token 才划算，再把参差的验证请求
-> 紧凑打包进 CUDA graph。
-
 ## 为什么验证比生成便宜
 
 decode 是 memory-bound 的：大模型一次 forward 的时间大头在搬权重，验证 K 个

@@ -24,12 +24,6 @@ import TrimViz from "../../../viz/dspark/TrimViz";
 import PackViz from "../../../viz/dspark/PackViz";
 import Mapping from "../../../viz/dspark/Mapping";
 
-> **TL;DR** Speculative decoding drafts with a small model and verifies a whole
-> block per target forward. At small batches verification is nearly free; at
-> large batches every verify token has a real cost. DSpark uses a confidence
-> head to decide how many tokens each request is worth verifying, then packs
-> the ragged verify work tightly into CUDA graphs.
-
 ## Why verification is cheaper than generation
 
 Decode is memory-bound: a target-model forward mostly moves weights, so

@@ -206,8 +206,8 @@ export function dcpCellTooltip(
 
 export const CACHE = {
   title: {
-    zh: "1M 上下文的 cache 账单：93 层全 MLA vs 3:1 混排",
-    en: "The 1M-context cache bill: 93 all-MLA layers vs the 3:1 mix",
+    zh: "1M 上下文的 KV cache：93 层全 MLA vs 3:1 混排",
+    en: "KV cache at 1M context: 93 all-MLA layers vs the 3:1 mix",
   },
   subtitle: {
     zh: "同一个请求，上下文从 0 涨到 1M token；一格 = 2 GB",
@@ -347,8 +347,8 @@ export function memSlotTooltip(
 
 export function memVerdict(locale: Locale): string {
   return locale === "zh"
-    ? "同一串输入：累加把 A 的新旧值叠在一起(✗)；delta rule 先擦后写，换绑正确，但状态只进不出，后半段查询全是串扰(△)；KDA 在话题切换处压低不再需要的通道，后半段查询保持干净(✓)，代价是久未使用的 B 被淡忘(◌)。留谁忘谁，是门控从数据里学的。"
-    : "Same input stream: additive stacks A's old and new values (✗); the delta rule erases before writing so rebinding works, but the state only ever fills up and late queries all suffer crosstalk (△); KDA damps no-longer-needed channels at the topic shift so late queries stay clean (✓), at the cost of forgetting the long-unused B (◌). What to keep and what to drop is learned from data.";
+    ? "同一串输入：累加把 A 的新旧值叠在一起(✗)；delta rule 先擦后写，换绑正确，但状态只进不出，后半段查询全是串扰(△)；KDA 在话题切换处压低不再需要的通道，后半段查询保持干净(✓)，代价是久未使用的 B 被淡忘(◌)。衰减哪些通道由门控从数据中学出。"
+    : "Same input stream: additive stacks A's old and new values (✗); the delta rule erases before writing so rebinding works, but the state only ever fills up and late queries all suffer crosstalk (△); KDA damps no-longer-needed channels at the topic shift so late queries stay clean (✓), at the cost of forgetting the long-unused B (◌). Which channels decay is learned from data.";
 }
 
 export const ATTN = {
@@ -364,8 +364,8 @@ export const ATTN = {
   modeRes: { zh: "AttnRes", en: "AttnRes" },
   emb: { zh: "Emb", en: "Emb" },
   chainCaption: {
-    zh: "所有历史表征都挤在同一条累加流里，深层想用浅层的信息，只能指望它没被沿途的加法淹掉",
-    en: "Every representation squeezes through one accumulated stream; deep layers can only hope shallow information survived the additions along the way",
+    zh: "所有层共用一条累加的残差流；浅层的信息要传到深层，要经过沿途每一层的相加",
+    en: "Every layer shares one accumulated residual stream; shallow information reaches deep layers only through every addition along the way",
   },
   resCaption: {
     zh: "选中的块用学到的 pseudo-query 对 embedding 和之前各块的输出算权重 α，按需取回",
@@ -445,3 +445,90 @@ export function moeVerdict(locale: Locale, latent: boolean): string {
     : "Load balance comes from Quantile Balancing: expert quotas derive directly from router-score quantiles, with no sensitive aux-loss coefficient to tune.";
   return traffic + balance;
 }
+
+export const ARCH = {
+  title: { zh: "K3 整体结构", en: "K3 at a glance" },
+  subtitle: {
+    zh: "一个重复块 = 3 层 KDA + 1 层 MLA，每层都带 LatentMoE FFN；点击部件看说明",
+    en: "One repeating block = 3 KDA + 1 MLA layers, each with a LatentMoE FFN; click a part for details",
+  },
+  hint: { zh: "点击图中部件", en: "Click a component" },
+  vision: { zh: "视觉", en: "vision" },
+  text: { zh: "文本 token", en: "text tokens" },
+  repeat: { zh: "×23 组，末尾再加 1 层 MLA，共 93 层", en: "×23 blocks plus one final MLA layer: 93 total" },
+  attnresArc: { zh: "AttnRes(每 12 层)", en: "AttnRes (every 12 layers)" },
+  outLabel: { zh: "LM head", en: "LM head" },
+} satisfies Record<string, Localized>;
+
+export interface ArchDetail {
+  id: string;
+  label: Localized;
+  detail: Localized;
+}
+
+export const ARCH_DETAILS: ArchDetail[] = [
+  {
+    id: "scale",
+    label: { zh: "2.8T / 104B", en: "2.8T / 104B" },
+    detail: {
+      zh: "总参数 2.8T，每 token 激活 104B(≈3.7%)；原生 1M token 上下文。",
+      en: "2.8T total parameters, 104B active per token (≈3.7%); native 1M-token context.",
+    },
+  },
+  {
+    id: "mxfp4",
+    label: { zh: "MXFP4", en: "MXFP4" },
+    detail: {
+      zh: "从 SFT 阶段起做量化感知训练，MXFP4 权重、MXFP8 激活，发布的权重就是低精度格式。",
+      en: "Quantization-aware training from the SFT stage on: MXFP4 weights, MXFP8 activations; the released weights are already low-precision.",
+    },
+  },
+  {
+    id: "vision",
+    label: { zh: "MoonViT3d", en: "MoonViT3d" },
+    detail: {
+      zh: "原生视觉塔，图像/视频编码后与文本 token 一起进入主干。",
+      en: "The native vision tower; image and video tokens enter the trunk alongside text.",
+    },
+  },
+  {
+    id: "embed",
+    label: { zh: "Embedding(NoPE)", en: "Embedding (NoPE)" },
+    detail: {
+      zh: "全模型不加 RoPE。位置信息由 KDA 层的递归隐式提供，MLA 层做无位置编码的全局 attention。",
+      en: "No RoPE anywhere. Position comes implicitly from the KDA recurrence; MLA layers run global attention without position encoding.",
+    },
+  },
+  {
+    id: "kda",
+    label: { zh: "KDA 层 ×69", en: "KDA layers ×69" },
+    detail: {
+      zh: "线性注意力：固定大小的递归状态，每步原地覆写，解码每步 O(1)。更新规则是 delta rule 加逐通道门控，下文展开。",
+      en: "Linear attention: a fixed-size recurrent state overwritten in place, O(1) per decode step. The update rule is a delta rule with per-channel gating, covered below.",
+    },
+  },
+  {
+    id: "mla",
+    label: { zh: "MLA 层 ×24", en: "MLA layers ×24" },
+    detail: {
+      zh: "全局 softmax attention(带输出门)，KV cache 随上下文增长；每 3 层 KDA 配 1 层，负责跨全文的信息交互。",
+      en: "Global softmax attention (with an output gate); its KV cache grows with context. One per 3 KDA layers, providing full-context interaction.",
+    },
+  },
+  {
+    id: "moe",
+    label: { zh: "LatentMoE FFN", en: "LatentMoE FFN" },
+    detail: {
+      zh: "每层的 FFN：896 个 routed expert 选 16 个，另有 2 个 shared expert；路由和 expert 计算都在 3584 维隐空间进行。",
+      en: "Every layer's FFN: 16 of 896 routed experts plus 2 shared experts; routing and expert compute both run in a 3584-d latent space.",
+    },
+  },
+  {
+    id: "attnres",
+    label: { zh: "AttnRes", en: "AttnRes" },
+    detail: {
+      zh: "每 12 层一组，组末用学到的 pseudo-query 对 embedding 和之前各组的输出算权重 α，按权重跨层取回。",
+      en: "Every 12 layers form a group; a learned pseudo-query scores the embedding and all preceding groups' outputs and retrieves them by weight α.",
+    },
+  },
+];

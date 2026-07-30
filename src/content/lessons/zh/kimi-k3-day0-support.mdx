@@ -29,6 +29,7 @@ references:
     url: "https://github.com/zhaochenyang20/Awesome-ML-SYS-Tutorial"
 ---
 
+import ArchViz from "../../../viz/kimi-k3-day0/ArchViz";
 import CacheViz from "../../../viz/kimi-k3-day0/CacheViz";
 import MemoryViz from "../../../viz/kimi-k3-day0/MemoryViz";
 import AttnResViz from "../../../viz/kimi-k3-day0/AttnResViz";
@@ -38,103 +39,105 @@ import PipelineViz from "../../../viz/kimi-k3-day0/PipelineViz";
 import DcpViz from "../../../viz/kimi-k3-day0/DcpViz";
 import Mapping from "../../../viz/kimi-k3-day0/Mapping";
 
-> **TL;DR** K3 把 93 层里的 69 层换成 KDA 线性注意力，KV cache 只剩 24 层在涨；
-> 深度方向加 AttnRes，FFN 全部换成 896 选 16 的 LatentMoE。这套架构落到
-> serving 栈，很多默认假设不再成立：SGLang 的 day-0 支持是显存改统一池，
-> prefill 改 chunked PP，decode 改 DCP，再配合投机解码 DSpark。
+## Kimi K3 的架构
 
-## 先算账：1M token 的 KV cache
+K3 是 2.8T 参数的 MoE 模型，每 token 激活 104B；93 层里 69 层是 KDA 线性
+注意力，24 层是全局 MLA；原生 1M 上下文，权重以 MXFP4 格式发布。整体结构
+如下，点击图中部件可以看对应的说明：
 
-基本盘：2.8T 参数、104B 激活、93 层、原生 1M 上下文、权重 MXFP4、原生视觉
-(MoonViT3d)。其中"1M 上下文"直接把"93 层全用 softmax attention"这条路
-堵死了：按 MLA 压缩后 27 KB/token(24 层合计)的口径线性外推，93 层全 MLA
-在 1M token 时一个请求要占约 110 GB，这还没算未压缩 MHA 那个数量级。
+<ArchViz client:visible />
 
-K3 的选择：93 层 = 69 层 KDA + 24 层 MLA，按 3 KDA + 1 MLA 交错。KDA 层是
-线性注意力，状态固定大小(整机约 0.4 GB/请求)，每步原地覆写；MLA 层保留
-全局 attention，并且不加 RoPE(NoPE)，位置感由 KDA 的递归天然携带：
+### 1M 上下文的 KV cache
+
+先算显存。按 MLA 压缩后 27 KB/token(24 层合计)线性外推，93 层全部用
+MLA 时，1M token 的一个请求要占约 110 GB；未压缩的 MHA 还要再大一个
+数量级。这个数字决定了大部分层不能保留 softmax attention。
+
+K3 按 3 KDA + 1 MLA 交错。KDA 层的状态固定大小(整机约 0.4 GB/请求)，
+每步原地覆写，不随上下文增长；MLA 层保留全局 attention，且全模型不加
+RoPE(NoPE)，位置信息由 KDA 的递归隐式提供：
 
 <CacheViz client:visible />
 
-24 层 MLA 在 1M 时约 28 GB，是全 MLA 假想值的 1/3.9。计算侧同理：softmax
-attention 每生成一个 token 都要扫全部历史(O(N))，KDA 每步只碰固定状态
-(O(1))。
+24 层 MLA 在 1M token 时约 28 GB，是全 MLA 假想值的 1/3.9。计算量同理：
+softmax attention 每生成一个 token 要扫一遍全部历史(O(N))，KDA 每步只
+更新固定大小的状态(O(1))。
 
-## KDA：固定大小的状态怎么记东西
+### KDA：delta rule 加逐通道门控
 
-线性注意力把 attention 里的 softmax 去掉，让乘法可以重新结合：历史全部压进
-一个固定大小的矩阵 S(每 head 约 128×128)，写入是 `S += k·vᵀ`，读出是
-`qᵀ·S`。每步 O(1)，但"只加不减"：同一个键方向写第二次，新旧值就叠在一起，
-查询读出来的是混合物。
+线性注意力去掉 softmax，乘法可以重新结合：历史全部压进一个固定大小的
+矩阵 S(每 head 约 128×128)，写入是 `S += k·vᵀ`，读出是 `qᵀ·S`。问题是
+只加不减：同一个键方向写第二次，新旧值叠在一起，查询读出两者的混合。
 
 DeltaNet 把写入换成 delta rule：先用 k 读出旧值、按写入强度 β 擦掉，再写
-新值，`S_t = (I − β·k·kᵀ)·S_{t−1} + β·k·vᵀ`。这等价于对"S·k 应该等于 v"
-做在线梯度下降，换绑正确了。但状态仍然只进不出：写进去的键永远占着有限的
-维度，上下文一长，读出的串扰越积越多。
+新值，`S_t = (I − β·k·kᵀ)·S_{t−1} + β·k·vᵀ`，等价于对“S·k = v”做在线
+梯度下降。重复写同一个键不再混叠，但状态仍然只进不出：写入越多，读出的
+串扰越大。
 
-Gated DeltaNet 补上遗忘门，每个 head 一个标量：要忘一起忘。KDA 把它细化成
-逐通道的对角门，`S_t = (I − β·k·kᵀ)·Diag(a_t)·S_{t−1} + β·k·vᵀ`，a_t 由
-当前输入算出，每个通道有自己的遗忘速率。Kimi Linear 论文把这读作一种可学习
-的位置编码：RoPE 的固定旋转，换成数据依赖的衰减。配套的 chunkwise kernel
-在受约束的 DPLR 形式下比通用算法快约一倍，这是它能铺满 69 层的前提。
+Gated DeltaNet 在此基础上加遗忘门，每个 head 一个标量。KDA 把标量细化成
+逐通道的对角门 `Diag(a_t)`，由当前输入算出，每个通道有自己的遗忘速率；
+Kimi Linear 论文把它解释为一种可学习的位置编码，取代 RoPE 的固定旋转。
+配套的 chunkwise kernel 在受约束的 DPLR 形式下比通用实现快约一倍，KDA
+才能铺满 69 层。
 
 <MemoryViz client:visible />
 
-看三个时刻：t=6 查 A，累加面板新旧值混叠(✗)，另两个面板读出正确；t=11
-查 E，delta 面板被塞满的状态拖出串扰(△)，KDA 面板在 t=7 的话题切换处压低
-了旧通道，读出干净(✓)；t=13 查 B，KDA 面板已淡忘(◌)。最后这条是门控的
-取舍：留谁忘谁由数据决定，任务需要留的通道，模型会学到不衰减。
+三个关键时刻：t=6 查 A，累加面板混叠(✗)，另外两个面板读出正确；t=11 查
+E，delta 面板串扰明显(△)，KDA 面板在 t=7 的话题切换处衰减了旧通道，读出
+干净(✓)；t=13 查 B，KDA 面板已经衰减到读不出(◌)。衰减哪些通道由门控从
+数据中学出，任务还需要的通道，模型会学到不衰减。
 
-## 深度方向：Attention Residual
+### Attention Residual
 
-残差流是 transformer 的信息干线：每层从里面读、往里面加，一路传到底。93 层
-共用一条干线，所有中间表征都要挤过同一个向量；深层想精确用到浅层的某个
-表征，只能指望它没被沿途几十次加法淹掉。
+transformer 每层的输出都通过同一条残差流向后传，93 层共用这一个向量。
+深层要用浅层的某个表征，前提是它经过沿途几十次相加之后仍然可分辨，层数
+越深越难保证。
 
-AttnRes 给深层开了第二条路：每 12 层一组，用学到的 pseudo-query 对
-embedding 和之前所有组的输出算注意力权重 α，按权重取回，汇入当前表征。
-取回是选择性的，要哪组拿哪组，而不是什么都沿着一条流累加：
+AttnRes 增加一条跨层通道：每 12 层一组，组末用学到的 pseudo-query 对
+embedding 和之前各组的输出算注意力权重 α，按权重取回。取回哪些组、取
+多少，由权重决定，不再依赖单一残差流：
 
 <AttnResViz client:visible />
 
-## FFN：896 选 16 的 LatentMoE
+### LatentMoE
 
-FFN 侧全部是 MoE：896 个 routed expert 每 token 选 16 个，外加 2 个常驻的
-shared expert。激活率 16/896 ≈ 1.8%，整模型每 token 激活 104B/2.8T ≈ 3.7%
-的参数(K2 是 384 选 8，K3 把稀疏度又推进了一档)。
+FFN 全部是 MoE：896 个 routed expert 每 token 选 16 个，另有 2 个每个
+token 都经过的 shared expert。激活率 16/896 ≈ 1.8%，整模型每 token 激活
+104B/2.8T ≈ 3.7% 的参数；对比 K2 的 384 选 8，稀疏度进一步提高。
 
-路由和分发的位置也变了：不在 7168 维 hidden 上做，而是先降到 3584 维的
-隐空间，router 在半宽向量上打分，expert 也在半宽上计算，最后再升回来。
-16 份 dispatch 的 all-to-all 流量和 expert 权重体积因此都省一半：
+路由和分发不在 7168 维 hidden 上做：先降到 3584 维隐空间，router 在半宽
+向量上打分，expert 也在半宽上计算，最后升回 7168 维。16 份 dispatch 的
+all-to-all 流量和 expert 权重体积都省一半：
 
 <MoeViz client:visible />
 
-在 1.8% 的激活率下把训练稳住靠三件事：RMSNorm、有界的 SiTU-GLU 激活，以及
-Quantile Balancing：expert 配额直接从 router 分数的分位数导出，不再有
-aux-loss 那个敏感系数要调。
+1.8% 的激活率下训练容易不稳定，报告用了三个手段：RMSNorm、有界的
+SiTU-GLU 激活，以及 Quantile Balancing(expert 配额直接从 router 分数的
+分位数导出，不需要再调 aux-loss 系数)。
 
-## 训练侧的几件事
+### 训练侧
 
-- 量化感知训练从 SFT 阶段开始，MXFP4 权重 + MXFP8 激活，发布即低精度；
-- 优化器是 Per-Head Muon：Muon 按 attention head 独立做正交化更新；
+- 量化感知训练从 SFT 阶段开始，MXFP4 权重 + MXFP8 激活，发布的权重就是
+  低精度格式；
+- 优化器是 Per-Head Muon，按 attention head 独立做正交化更新；
 - 1M 上下文按课程拉长：8K → 64K → 256K → 1M；
 - RL 覆盖 general、agentic、coding 三个域和多档 reasoning effort；工具、
-  prompt、memory、subagent 这些 scaffold 在训练中持续变化，避免模型绑死在
-  单一工作流上。
+  prompt、memory、subagent 等 scaffold 在训练中持续变化，避免模型只适应
+  单一工作流。
 
-## 从架构到 serving：两种状态
+## SGLang 的 Day-0 适配
 
-上面的架构落到推理栈里，第一个直接后果是两种性质不同的推理状态：
+上面的架构落到推理引擎里，首先要处理的是两种性质不同的推理状态：
 
 | | MLA(24 层) | KDA(69 层) |
 | --- | --- | --- |
 | 状态形式 | KV cache，逐 token 追加 | 递归状态，固定大小 |
 | 增长方式 | 每 token 约 27 KB，只增不减 | 每请求约 54 MB(TP=8)，每步原地覆写 |
 
-KV 逐 token 追加、按页共享这些默认假设对 KDA 统统不成立，SGLang 的
-day-0 适配从这里开始。
+KV 逐 token 追加、按页共享这些默认假设对 KDA 都不成立，SGLang 的适配从
+这里开始。
 
-## 双状态显存管理
+### 双状态显存管理
 
 旧方案在启动时把显存池按预估切成 KDA 区和 MLA 区。问题是 KDA 需求只跟并发数
 相关，MLA 需求跟总上下文长度相关，负载一偏就会一侧耗尽、另一侧闲置。SGLang
@@ -151,7 +154,7 @@ SGLang 用三个操作管理它：copy-on-write(使用共享 checkpoint 前先�
 snapshot(乒乓缓冲抓快照)、donate(按槽位索引捐给 radix tree)。整套设计
 按构造无竞态，细节见文末博客。
 
-## Chunked pipeline prefill
+### Chunked pipeline prefill
 
 TP8 让 8 张卡合算同一个 chunk，但每层都要 AllReduce，通信在关键路径上。
 chunked PP8 把模型按层切成 8 段，prompt 切成 chunk 依次流过各段，P2P 交接
@@ -162,7 +165,7 @@ chunked PP8 把模型按层切成 8 段，prompt 切成 chunk 依次流过各段
 预热气泡只付一次，稳态每 2 列出一个 chunk。实测 PP8 prefill 吞吐是 TEP8
 节点的 1.45–1.72×(TEP = tensor + expert 并行，图中简化为纯 TP 作对照)。
 
-## Decode context parallelism(DCP)
+### Decode context parallelism(DCP)
 
 decode 阶段的瓶颈是显存：TP 下每张卡都存一份完整 KV。DCP 按 token 位置取模
 分片，rank r 只存 `position mod N = r` 的 KV；每步 decode 先本地算局部
@@ -175,7 +178,7 @@ K3 上的实测：DCP8 把逻辑上下文容量放大 7.9×；长 agent 会话�
 并发 session 崩掉，DCP8 撑到 48 个，总吞吐 541 tok/s。KDA 状态没有位置轴，
 KDA 层仍按 TP 切分，所以混合架构的并行策略也是按层混合的。
 
-## 单卡数字
+### 单卡数字
 
 投机解码介入之前，BS=1 解码靠四类手段从 63.8 tok/s 提到约 113 tok/s
 (括号内为博客给出的单项增益)：
