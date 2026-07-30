@@ -33,6 +33,8 @@ export type MemEvent = MemWrite | MemQuery | MemShift;
 export interface SlotContrib {
   value: number;
   weight: number;
+  /** 写入时刻(条纹按此排序渲染) */
+  t: number;
 }
 
 export interface MemSlot {
@@ -146,7 +148,7 @@ export function simulateMemory(mode: MemMode): MemResult {
       const slot = slots.find((s) => s.key === event.key)!;
       // delta rule:先用 k 读出旧值并擦除(β=1),再写入;直接求和则叠加
       if (mode !== "additive") slot.contribs = [];
-      slot.contribs.push({ value: event.value, weight: 1 });
+      slot.contribs.push({ value: event.value, weight: 1, t });
     } else {
       if (event.kind === "query") {
         // 读取用的是自身写入之前的状态
@@ -170,7 +172,7 @@ export function simulateMemory(mode: MemMode): MemResult {
         }
       }
       // 读取/标记 token 自己的 k·vᵀ 也要写入,落进「…」槽
-      misc.contribs.push({ value: 0, weight: MISC_WEIGHT });
+      misc.contribs.push({ value: 0, weight: MISC_WEIGHT, t });
     }
 
     frames.push({

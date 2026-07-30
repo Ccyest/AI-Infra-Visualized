@@ -1,5 +1,5 @@
 import type { Locale, Localized } from "../../lib/i18n";
-import type { MemEvent, MemMode, MemRecall, SlotContrib } from "./memoryEngine";
+import type { MemEvent, MemRecall } from "./memoryEngine";
 
 /** 本课全部可视化的界面文案(zh / en) */
 
@@ -279,28 +279,32 @@ export const MEM = {
     en: "Memory in a fixed state: plain sum vs delta rule vs KDA gating",
   },
   subtitle: {
-    zh: "同一串 token，三种更新规则；每步写入一个槽、从全部槽读出，X? 的输出用来检验状态",
-    en: "Same token stream, three update rules; each step writes one slot and reads across all of them, X? outputs grade the state",
+    zh: "同一串 token 压进三个固定大小的状态箱；输出 o = qᵀ·S 永远是整箱之和的投影",
+    en: "One token stream folds into three fixed-size state boxes; the output o = qᵀ·S is always a projection of the whole sum",
   },
   modeAdd: { zh: "直接求和(S = Σ k·vᵀ)", en: "Plain sum (S = Σ k·vᵀ)" },
   modeDelta: { zh: "Delta rule(DeltaNet)", en: "Delta rule (DeltaNet)" },
   modeKda: { zh: "Delta + 逐通道门控(KDA)", en: "Delta + per-channel gate (KDA)" },
-  statLive: { zh: "占用", en: "in use" },
-  slots: { zh: "槽", en: "slots" },
-  legendValue: { zh: "值向量(颜色区分)", en: "value vector (one color each)" },
-  legendFade: {
-    zh: "透明度 = 强度(门控衰减后)",
-    en: "opacity = strength (after gating decay)",
+  sLabel: { zh: "S(固定大小)", en: "S (fixed size)" },
+  legendToken: {
+    zh: "token 格：赋值 = 值的颜色，X?/~ = 灰",
+    en: "token cell: assignments take their value's color, X?/~ are gray",
   },
-  legendMixed: { zh: "同槽多色 = 新旧值混叠", en: "two colors in a slot = old and new values blended" },
-  legendRing: { zh: "描边 = 本步被写入的槽", en: "outline = the slot written this step" },
-  legendFan: {
-    zh: "连线 = 本步读出 o = qᵀ·S 的组成(粗 = 目标槽，细 = 串扰)",
-    en: "lines = this step's readout o = qᵀ·S (thick = target slot, thin = crosstalk)",
+  legendIntent: {
+    zh: "虚线箭头 = X? 想读的那次赋值(状态里并没有这个地址)",
+    en: "dashed arrow = the assignment X? wants (the state has no such address)",
   },
-  legendReadout: {
-    zh: "槽位下方 = X? 的输出(彩色 = 目标值，灰色 = 串扰)",
-    en: "below a slot = X? outputs (color = target value, gray = crosstalk)",
+  legendStripe: {
+    zh: "箱内条纹 = 一次写入，宽度 = 占固定容量的份额；描边 = 本步写入",
+    en: "stripe = one write, width = its share of the fixed capacity; outline = this step's write",
+  },
+  legendO: {
+    zh: "o = 实际读出：X? 步为目标份额(彩) + 串扰(灰)，其余步为整箱混合",
+    en: "o = the actual readout: on X? steps target share (color) + crosstalk (gray), otherwise the whole-box blend",
+  },
+  legendHist: {
+    zh: "o 右侧 = 历次 X? 的输出与判定",
+    en: "to the right of o = past X? outputs and verdicts",
   },
 } satisfies Record<string, Localized>;
 
@@ -320,8 +324,25 @@ export const GRADE_SYMBOL: Record<MemRecall["grade"], string> = {
 
 export function outNodeTooltip(locale: Locale): string {
   return locale === "zh"
-    ? "输出 o = qᵀ·S：每步都计算，所有槽位都参与；这个 token 的输出没有标准答案，不检验"
-    : "Output o = qᵀ·S: computed every step over every slot; this token's output has no ground truth to check";
+    ? "o = qᵀ·S：整箱之和的投影，每步都计算；这个 token 的输出没有标准答案，不检验"
+    : "o = qᵀ·S: a projection of the whole summed box, computed every step; this token's output has no ground truth to check";
+}
+
+export function stripeTooltip(
+  locale: Locale,
+  t: number,
+  label: string,
+  weight: number,
+): string {
+  return locale === "zh"
+    ? `t=${t}「${label}」压进的条纹，当前强度 ${weight.toFixed(2)}`
+    : `stripe from "${label}" at t=${t}, current strength ${weight.toFixed(2)}`;
+}
+
+export function intentTooltip(locale: Locale, cur: string, target: string): string {
+  return locale === "zh"
+    ? `${cur} 的 q 对准「${target}」写入的键方向；状态里没有可寻址的位置，读回的是整箱之和的投影`
+    : `The q of ${cur} points at the key direction "${target}" wrote; the state has no addressable position, what comes back is a projection of the whole sum`;
 }
 
 export function recallMarkTooltip(locale: Locale, r: MemRecall): string {
@@ -338,37 +359,6 @@ export function memEventText(locale: Locale, ev: MemEvent): string {
   return locale === "zh" ? "~(新话题)" : "~ (new topic)";
 }
 
-export function memSlotTooltip(
-  locale: Locale,
-  key: string,
-  contribs: SlotContrib[],
-  mode: MemMode,
-): string {
-  const zh = locale === "zh";
-  if (key === "…") {
-    const total = contribs.reduce((s, c) => s + c.weight, 0);
-    return zh
-      ? `「…」槽：非赋值 token 的写入堆在这里(强度 ${total.toFixed(1)})，只贡献串扰`
-      : `The "…" slot: writes from non-assignment tokens pile up here (strength ${total.toFixed(1)}), contributing only crosstalk`;
-  }
-  if (contribs.length === 0) {
-    return zh ? `槽 ${key}：空` : `slot ${key}: empty`;
-  }
-  const parts = contribs
-    .map((c) => `v${c.value}×${c.weight.toFixed(2)}`)
-    .join(" + ");
-  if (contribs.length > 1) {
-    return zh
-      ? `槽 ${key}：${parts}(同键方向的写入直接相加，读出即混叠)`
-      : `slot ${key}: ${parts} (writes to the same key direction simply add; reads come out blended)`;
-  }
-  if (mode === "kda" && contribs[0].weight < 0.3) {
-    return zh
-      ? `槽 ${key}：${parts}(门控已把它衰减到接近遗忘)`
-      : `slot ${key}: ${parts} (the gate has decayed it close to forgotten)`;
-  }
-  return zh ? `槽 ${key}：${parts}` : `slot ${key}: ${parts}`;
-}
 
 export function memVerdict(locale: Locale): string {
   return locale === "zh"

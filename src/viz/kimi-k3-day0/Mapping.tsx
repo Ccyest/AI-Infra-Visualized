@@ -33,20 +33,11 @@ const ITEMS: MappingItem[] = [
     ),
   },
   {
-    id: "slot",
-    label: { zh: "记忆槽格子", en: "One memory slot" },
-    real: {
-      zh: "KDA 状态是每 head 一个约 128×128 的矩阵，“槽”对应键方向；真实键不正交，串扰是连续的，图中用固定系数近似",
-      en: "The KDA state is a ≈128×128 matrix per head; a “slot” stands for a key direction. Real keys aren't orthogonal, so crosstalk is continuous; the diagram approximates it with a fixed coefficient",
-    },
-    visual: <MiniCell kind="outline" />,
-  },
-  {
     id: "fade",
     label: { zh: "透明度(强度)", en: "Opacity (strength)" },
     real: {
-      zh: "逐通道门控系数每步连乘的结果；“话题切换”是把数据依赖的门控画成一次离散事件",
-      en: "The running product of per-channel gate values; the “topic shift” draws data-dependent gating as one discrete event",
+      zh: "条纹宽度 = 逐通道门控系数每步连乘后的容量份额；“话题切换”是把数据依赖的门控画成一次离散事件；真实键不正交，串扰用固定系数 ε 近似",
+      en: "Stripe width = capacity share after the per-channel gate's running product; the “topic shift” draws data-dependent gating as one discrete event; real keys aren't orthogonal and crosstalk is approximated with a fixed ε",
     },
     visual: (
       <MiniRow>

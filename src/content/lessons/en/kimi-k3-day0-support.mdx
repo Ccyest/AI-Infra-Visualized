@@ -106,24 +106,23 @@ A blend means degraded retrieval, and fixing it starts with measuring it.
 A sentence doesn't expose S's internals, so switch to a synthetic test
 that does. The input is still a stream of ordinary tokens: `A=1` is a
 token that assigns variable A, `A?` is a token that needs A (think
-`print(A)`). Every token runs the identical computation, writing into S
-and reading out qᵀ·S; the only difference is that for `A?` we know the
-correct answer, so its output grades the state. Midway A is reassigned to
-`A=4`, and t=7 marks a topic shift.
+`print(A)`). Every token runs the identical computation: its k·vᵀ folds
+into the fixed-size state box while it reads out o = qᵀ·S. Note that
+"reading A" is a false premise here: the state has no addressable
+position; the q of `A?` merely points at A's key direction (the dashed
+arrow to the assignment it wants), and what comes back is always a
+projection of the whole summed box. Midway A is reassigned to `A=4`, and
+t=7 marks a topic shift.
 
-First, where the blending comes from: no step ever "accumulates" as an
-operation, S simply is the sum Σ k·vᵀ. Two assignments to the same
-variable share a key direction, so a read returns their sum; and keys of
-different variables cannot be fully orthogonal in limited dimensions, so
-every read also picks up crosstalk from the other slots. The o on the
-right of each panel is that multiplication: every slot has a line into
-it, and on `X?` steps the target slot's line is thick while the thin
-lines from everything else are exactly where crosstalk comes from;
-assignment tokens have no specified q, so their lines draw uniformly
-thin. On the write side, assignment tokens go to their variable slot
-(outlined) and all other tokens land in the "…" slot. `X?` outputs are
-also archived under their slot: the colored part of the swatch is the
-target value, the gray share is crosstalk, widening as the state fills.
+The three update rules differ only in how the box is maintained. The
+plain sum takes everything: stripes only ever enter, A's old and new
+stripes coexist, and the box gets more and more crowded. The delta rule
+erases the old stripe before writing the same key, leaving only A's
+latest. KDA additionally narrows stripes over time and at topic shifts,
+handing capacity back to recent content. Stripe width = share of the
+fixed capacity; in the o swatch, color is the target share and gray is
+the crosstalk from every other stripe, with past `X?` verdicts lined up
+to the right of o.
 
 DeltaNet replaces the write with the delta rule: read the old value with k,
 erase it with write strength β, then write the new one,
