@@ -71,19 +71,22 @@ whole history per generated token (O(N)); KDA updates a fixed-size state
 
 ### MHA: scan the whole history each step
 
-Start with what got replaced. Every decode step does the same thing: the
-new token dots its q against every k in the cache, softmaxes the scores
-into weights, takes the weighted sum of the v's, then appends its own KV to
-the cache. The "write/query" labels are just roles we assign in the story;
-MHA processes every token identically. On query steps the weight
-concentrates exactly on the matching key, picking just the latest of A's
-two writes:
+Start with what got replaced, and set up the test sequence all three
+diagrams share: a stream of variable assignments. `A=1` `B=2` `C=3` arrive
+in order, `A=4` later rebinds A, and then comes a token like `A?` (think
+`print(A)`: it needs A's latest value). There is no special step in
+attention: every token dots its q against every k in the cache, softmaxes
+the scores into weights, takes the weighted sum of the v's, and appends its
+own KV. The tokens to watch are the `A?` kind, whose weight has to land on
+`A=4`, not `A=1`:
 
 <MhaViz client:visible lang="en" />
 
-The cost is the math from the previous section: one more cache cell per
-step (query tokens' KV takes a cell too), and a dot-product count equal to
-the cache length; memory and compute both grow linearly with context.
+MHA delivers: weight can concentrate exactly on any position, keeping the
+two assignments apart. The cost is the math from the previous section: one
+more cache cell per step (`A?`'s KV takes a cell too), and a dot-product
+count equal to the cache length; memory and compute both grow linearly
+with context.
 
 ### Linear attention: a fixed-size state
 
@@ -94,8 +97,8 @@ is `qᵀ·S`. The cache is gone; each step touches only S:
 
 <LinearViz client:visible lang="en" />
 
-Memory and compute flatten out, but the t=6 query reads a blend of A's two
-writes: the state only adds, so rebinding a key blends old and new.
+Memory and compute flatten out, but at t=6 `A?` reads a blend of `A=1`
+and `A=4`: the state only adds, so reassignment blends old and new.
 
 ### KDA: delta rule with per-channel gating
 
@@ -115,10 +118,10 @@ layers.
 
 <MemoryViz client:visible lang="en" />
 
-Three moments to watch: at t=6, querying A, the additive panel blends (✗)
-while the other two read correctly; at t=11, querying E, the delta panel
+Three moments to watch: at t=6, using A, the additive panel blends (✗)
+while the other two read correctly; at t=11, using E, the delta panel
 shows clear crosstalk (△) while KDA decayed the old channels at the t=7
-topic shift and reads clean (✓); at t=13, querying B, the KDA panel has
+topic shift and reads clean (✓); at t=13, using B, the KDA panel has
 decayed it below readability (◌). Which channels decay is learned from
 data; channels a task still needs, the model learns not to decay.
 

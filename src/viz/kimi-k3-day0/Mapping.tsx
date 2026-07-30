@@ -7,8 +7,8 @@ const ITEMS: MappingItem[] = [
     id: "mhabar",
     label: { zh: "MHA 权重条", en: "MHA weight bars" },
     real: {
-      zh: "真实是对全 cache 的 softmax 分布，图中数值为手工示意；“写入/查询”只是叙事标注，MHA 对每个 token 的处理完全相同",
-      en: "Really a softmax distribution over the full cache; drawn values are hand-crafted. “Write/query” are narrative labels only, MHA processes every token identically",
+      zh: "真实是对全 cache 的 softmax 分布，图中数值为手工示意；“赋值/取用”只是叙事标注，MHA 对每个 token 的处理完全相同",
+      en: "Really a softmax distribution over the full cache; drawn values are hand-crafted. “Assign/use” are narrative labels only, MHA processes every token identically",
     },
     visual: (
       <MiniRow>

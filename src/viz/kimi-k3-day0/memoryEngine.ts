@@ -62,7 +62,7 @@ export interface MemResult {
 
 export const MEM_KEYS = ["A", "B", "C", "D", "E", "F"] as const;
 
-/** 手工设计的事件流：t=5 换绑 A,t=7 话题切换，后半段查询拉开三种规则 */
+/** 手工设计的事件流：变量赋值(write)与取用(query)；t=5 重新赋值 A，t=7 话题切换 */
 export const MEM_SCENARIO: MemEvent[] = [
   { kind: "write", key: "A", value: 1 },
   { kind: "write", key: "B", value: 2 },

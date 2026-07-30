@@ -1,5 +1,5 @@
 import type { Locale, Localized } from "../../lib/i18n";
-import type { MemMode, MemRecall, SlotContrib } from "./memoryEngine";
+import type { MemEvent, MemMode, MemRecall, SlotContrib } from "./memoryEngine";
 
 /** 本课全部可视化的界面文案(zh / en) */
 
@@ -279,8 +279,8 @@ export const MEM = {
     en: "Memory in a fixed state: additive vs delta rule vs KDA gating",
   },
   subtitle: {
-    zh: "同一串写入与查询，三种更新规则；颜色 = 值，透明度 = 记忆强度",
-    en: "Same writes and queries, three update rules; color = value, opacity = strength",
+    zh: "同一串赋值与取用，三种更新规则；颜色 = 值，透明度 = 记忆强度",
+    en: "Same assignments and uses, three update rules; color = value, opacity = strength",
   },
   modeAdd: { zh: "累加(朴素线性注意力)", en: "Additive (vanilla linear attention)" },
   modeDelta: { zh: "Delta rule(DeltaNet)", en: "Delta rule (DeltaNet)" },
@@ -305,18 +305,15 @@ const GRADE_TEXT: Record<MemRecall["grade"], Localized> = {
 
 export function memRecallChip(locale: Locale, r: MemRecall): string {
   return locale === "zh"
-    ? `t=${r.t} 查 ${r.key}：${GRADE_TEXT[r.grade].zh}`
-    : `t=${r.t} q ${r.key}: ${GRADE_TEXT[r.grade].en}`;
+    ? `t=${r.t} ${r.key}?：${GRADE_TEXT[r.grade].zh}`
+    : `t=${r.t} ${r.key}?: ${GRADE_TEXT[r.grade].en}`;
 }
 
-export function memEventText(
-  locale: Locale,
-  ev: { kind: "write"; key: string } | { kind: "query"; key: string } | { kind: "shift" },
-): string {
+export function memEventText(locale: Locale, ev: MemEvent): string {
   const zh = locale === "zh";
-  if (ev.kind === "write") return zh ? `写入 ${ev.key}` : `write ${ev.key}`;
-  if (ev.kind === "query") return zh ? `查询 ${ev.key}` : `query ${ev.key}`;
-  return zh ? "话题切换" : "topic shift";
+  if (ev.kind === "write") return zh ? `赋值 ${ev.key}=${ev.value}` : `assign ${ev.key}=${ev.value}`;
+  if (ev.kind === "query") return zh ? `用到 ${ev.key}` : `use ${ev.key}`;
+  return zh ? "新话题" : "new topic";
 }
 
 export function memSlotTooltip(
@@ -547,18 +544,18 @@ export const MHA = {
   statDot: { zh: "本步点积", en: "dot products this step" },
   times: { zh: "次", en: "" },
   legendCell: {
-    zh: "写入 token 的 KV(颜色 = 值)",
-    en: "a write token's KV (color = value)",
+    zh: "赋值 token 的 KV(颜色 = 值)",
+    en: "an assignment token's KV (color = value)",
   },
   legendOther: {
-    zh: "查询/标记 token 的 KV(也占一格)",
-    en: "a query or marker token's KV (also one cell)",
+    zh: "取用/标记 token 的 KV(也占一格)",
+    en: "a use or marker token's KV (also one cell)",
   },
   legendBar: { zh: "当前 token 的注意力权重", en: "the current token's attention weight" },
   legendCurrent: { zh: "描边 = 当前 token", en: "outline = current token" },
   verdict: {
-    zh: "每一步的处理完全相同：算权重、取加权和、自己的 KV 入 cache。检索无损：权重能集中到任意位置，A 写过两次也能只取最近一次(t=6)。代价：cache 每步加一格，点积次数等于 cache 长度，都随上下文线性增长。",
-    en: "Every step is processed identically: compute weights, take the weighted sum, append its own KV. Retrieval is lossless: weight can concentrate on any position, and after A is written twice the query picks just the latest one (t=6). The cost: one more cache cell per step and a dot-product count equal to the cache length, both growing linearly with context.",
+    zh: "每一步的处理完全相同：算权重、取加权和、自己的 KV 入 cache。A? 这类要用早前信息的 token，权重能精确压在 A 的最新一次赋值上(t=6)，旧值不会串进来。代价：cache 每步加一格，点积次数等于 cache 长度，都随上下文线性增长。",
+    en: "Every step is processed identically: compute weights, take the weighted sum, append its own KV. For tokens like A? that need earlier information, the weight lands exactly on A's latest assignment (t=6) with no bleed from the old value. The cost: one more cache cell per step and a dot-product count equal to the cache length, both growing linearly with context.",
   },
 } satisfies Record<string, Localized>;
 
@@ -573,15 +570,15 @@ export function mhaCellTooltip(
   const what =
     kind === "write"
       ? zh
-        ? `写入 ${key} 的 KV`
-        : `KV of write ${key}`
+        ? `赋值 ${key} 的 KV`
+        : `KV of the ${key} assignment`
       : kind === "query"
         ? zh
-          ? `查询 ${key} 的 KV(查询 token 也占一格)`
-          : `KV of query ${key} (query tokens take a cell too)`
+          ? `用到 ${key} 的 token 的 KV(也占一格)`
+          : `KV of a token using ${key} (takes a cell too)`
         : zh
-          ? "话题切换标记的 KV"
-          : "KV of the topic-shift marker";
+          ? "新话题标记的 KV"
+          : "KV of the new-topic marker";
   const base = zh ? `位置 ${pos} · ${what}` : `position ${pos} · ${what}`;
   if (weight === null) return base;
   return zh
@@ -595,13 +592,13 @@ export const LIN = {
     en: "Linear attention: history compressed into a fixed state",
   },
   subtitle: {
-    zh: "同一串写入；k 决定槽位，v 决定颜色；状态始终 6 个槽",
-    en: "Same writes; k picks the slot, v is the color; the state stays 6 slots",
+    zh: "同一串赋值；变量名决定槽位，值决定颜色；状态始终 6 个槽",
+    en: "Same assignments; the variable picks the slot, the value the color; the state stays 6 slots",
   },
   statState: { zh: "状态 6 槽(常数)", en: "state: 6 slots (constant)" },
   statVs: { zh: "MHA 此时已存", en: "MHA by now holds" },
   verdict: {
-    zh: "显存和每步计算都是常数，1M 上下文也不涨。代价在质量：状态只加不减，同一个键写两次，读出是两次的混合(t=6 查 A ✗)。在固定状态里把检索做对，是下一节 KDA 的内容。",
-    en: "Memory and per-step compute are both constant, even at 1M context. The cost is quality: the state only adds, so writing the same key twice makes reads a blend of both (query A at t=6, ✗). Making retrieval work inside a fixed state is what KDA addresses next.",
+    zh: "显存和每步计算都是常数，1M 上下文也不涨。代价在质量：状态只加不减，同一个变量赋值两次，读出是两次的混合(t=6 的 A? ✗)。在固定状态里把检索做对，是下一节 KDA 的内容。",
+    en: "Memory and per-step compute are both constant, even at 1M context. The cost is quality: the state only adds, so assigning the same variable twice makes reads a blend of both (A? at t=6, ✗). Making retrieval work inside a fixed state is what KDA addresses next.",
   },
 } satisfies Record<string, Localized>;

@@ -11,9 +11,9 @@ import { MHA, memEventText, mhaCellTooltip } from "./strings";
 import "./styles.css";
 
 /**
- * MHA:与 MemoryViz 同一事件流,但每个事件都是一个普通 token——
- * 每步先对全部历史算 softmax 权重,再把自己的 KV 追加进 cache。
- * "写入/查询"只是叙事角色,MHA 对每个 token 的处理完全相同。
+ * MHA:与 MemoryViz 同一事件流,每个事件都是一个普通 token——
+ * 赋值(A=1)、取用(A?)、话题标记(~)都一样:每步先对全部历史算
+ * softmax 权重,再把自己的 KV 追加进 cache。
  *
  * 权重为手工示意值:查询步集中到最近一次同键写入(0.85),
  * 其余步按就近衰减(0.55 的距离衰减)画出。
@@ -82,8 +82,8 @@ const TOP = 12;
 const LABEL_H = 14;
 
 function cellLabel(entry: TokenEntry): string {
-  if (entry.kind === "write") return entry.key!;
-  if (entry.kind === "query") return `q${entry.key}`;
+  if (entry.kind === "write") return `${entry.key}=${entry.value}`;
+  if (entry.kind === "query") return `${entry.key}?`;
   return "~";
 }
 
