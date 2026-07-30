@@ -539,32 +539,50 @@ export const MHA = {
     en: "MHA: attention over the whole history, every step",
   },
   subtitle: {
-    zh: "同一串写入与查询；查询步的竖条 = softmax 权重(示意值)",
-    en: "Same writes and queries; bars on query steps = softmax weights (illustrative)",
+    zh: "每步一个新 token：先对全部历史算 softmax 权重(竖条，示意值)，再把自己的 KV 追加进 cache",
+    en: "One new token per step: softmax weights over the whole history (bars, illustrative), then its own KV joins the cache",
   },
   statCache: { zh: "cache", en: "cache" },
   cells: { zh: "格", en: "cells" },
   statDot: { zh: "本步点积", en: "dot products this step" },
   times: { zh: "次", en: "" },
   legendCell: {
-    zh: "cache 一格 = 一个 token 的 KV(颜色 = 值)",
-    en: "one cache cell = one token's KV (color = value)",
+    zh: "写入 token 的 KV(颜色 = 值)",
+    en: "a write token's KV (color = value)",
   },
-  legendBar: { zh: "查询步的注意力权重", en: "attention weight on a query step" },
+  legendOther: {
+    zh: "查询/标记 token 的 KV(也占一格)",
+    en: "a query or marker token's KV (also one cell)",
+  },
+  legendBar: { zh: "当前 token 的注意力权重", en: "the current token's attention weight" },
+  legendCurrent: { zh: "描边 = 当前 token", en: "outline = current token" },
   verdict: {
-    zh: "检索无损：权重能集中到任意位置，A 写过两次也能只取最近一次(t=6)；话题切换后旧内容也全部保留。代价：cache 每写一步加一格，点积次数等于 cache 长度，都随上下文线性增长。",
-    en: "Retrieval is lossless: weight can concentrate on any position, and after A is written twice the query picks just the latest one (t=6); everything survives the topic shift too. The cost: the cache adds a cell per write and the dot-product count equals the cache length, both growing linearly with context.",
+    zh: "每一步的处理完全相同：算权重、取加权和、自己的 KV 入 cache。检索无损：权重能集中到任意位置，A 写过两次也能只取最近一次(t=6)。代价：cache 每步加一格，点积次数等于 cache 长度，都随上下文线性增长。",
+    en: "Every step is processed identically: compute weights, take the weighted sum, append its own KV. Retrieval is lossless: weight can concentrate on any position, and after A is written twice the query picks just the latest one (t=6). The cost: one more cache cell per step and a dot-product count equal to the cache length, both growing linearly with context.",
   },
 } satisfies Record<string, Localized>;
 
 export function mhaCellTooltip(
   locale: Locale,
   pos: number,
-  key: string,
+  kind: "write" | "query" | "shift",
+  key: string | null,
   weight: number | null,
 ): string {
   const zh = locale === "zh";
-  const base = zh ? `位置 ${pos} · 键 ${key}` : `position ${pos} · key ${key}`;
+  const what =
+    kind === "write"
+      ? zh
+        ? `写入 ${key} 的 KV`
+        : `KV of write ${key}`
+      : kind === "query"
+        ? zh
+          ? `查询 ${key} 的 KV(查询 token 也占一格)`
+          : `KV of query ${key} (query tokens take a cell too)`
+        : zh
+          ? "话题切换标记的 KV"
+          : "KV of the topic-shift marker";
+  const base = zh ? `位置 ${pos} · ${what}` : `position ${pos} · ${what}`;
   if (weight === null) return base;
   return zh
     ? `${base} · 本步权重 ${weight.toFixed(2)}`

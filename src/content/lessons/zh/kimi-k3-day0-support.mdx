@@ -67,14 +67,16 @@ softmax attention 每生成一个 token 要扫一遍全部历史(O(N))，KDA 每
 
 ### MHA：每步扫全部历史
 
-先看被换掉的东西。softmax attention 每生成一个 token，都用它的 q 和
-cache 里全部 k 做点积，softmax 变成权重后加权求和 v。检索是无损的：
-权重可以集中到任意位置，同一个键写过两次，也能只取最近一次：
+先看被换掉的东西。decode 的每一步都做同一件事：新 token 用自己的 q 和
+cache 里全部 k 做点积，softmax 变成权重后加权求和 v，然后把自己的 KV
+追加进 cache。图里的"写入/查询"只是给 token 标的角色，MHA 对每个 token
+的处理完全相同；查询步的权重能精确集中到对应的键上，A 写过两次也能只取
+最近一次：
 
 <MhaViz client:visible />
 
-代价就是上一节算过的账：cache 每步加一格，点积次数等于 cache 长度，
-显存和计算都随上下文线性涨。
+代价就是上一节算过的账：cache 每步加一格(查询 token 的 KV 也占位)，
+点积次数等于 cache 长度，显存和计算都随上下文线性涨。
 
 ### Linear attention：固定大小的状态
 

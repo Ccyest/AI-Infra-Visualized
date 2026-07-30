@@ -3,7 +3,7 @@ import Legend from "../../components/core/Legend";
 import VizStage from "../../components/core/VizStage";
 import { useSimPlayer } from "../../components/core/useSimPlayer";
 import type { Locale } from "../../lib/i18n";
-import { MEM_SCENARIO, simulateMemory } from "./memoryEngine";
+import { simulateMemory } from "./memoryEngine";
 import SlotRow from "./SlotRow";
 import { LIN, MEM, MHA, memEventText, memRecallChip } from "./strings";
 import "./styles.css";
@@ -15,7 +15,8 @@ export default function LinearViz({ lang = "zh" }: { lang?: Locale }) {
 
   const t = Math.min(player.t, result.totalIterations);
   const frame = result.frames[t];
-  const mhaCells = MEM_SCENARIO.slice(0, t).filter((e) => e.kind === "write").length;
+  // MHA 每个 token(含查询与标记)都占一格
+  const mhaCells = t;
   const pastRecalls = result.recalls.filter((r) => r.t <= t);
 
   const legend = [

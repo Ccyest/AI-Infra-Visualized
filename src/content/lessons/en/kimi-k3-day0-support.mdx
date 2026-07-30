@@ -71,17 +71,19 @@ whole history per generated token (O(N)); KDA updates a fixed-size state
 
 ### MHA: scan the whole history each step
 
-Start with what got replaced. For every generated token, softmax attention
-dots its q against every k in the cache, turns the scores into weights, and
-takes a weighted sum of the v's. Retrieval is lossless: weight can
-concentrate on any position, and when a key has been written twice, the
-query picks just the latest one:
+Start with what got replaced. Every decode step does the same thing: the
+new token dots its q against every k in the cache, softmaxes the scores
+into weights, takes the weighted sum of the v's, then appends its own KV to
+the cache. The "write/query" labels are just roles we assign in the story;
+MHA processes every token identically. On query steps the weight
+concentrates exactly on the matching key, picking just the latest of A's
+two writes:
 
 <MhaViz client:visible lang="en" />
 
 The cost is the math from the previous section: one more cache cell per
-step, and a dot-product count equal to the cache length; memory and compute
-both grow linearly with context.
+step (query tokens' KV takes a cell too), and a dot-product count equal to
+the cache length; memory and compute both grow linearly with context.
 
 ### Linear attention: a fixed-size state
 
