@@ -4,6 +4,20 @@ import type { Locale } from "../../lib/i18n";
 
 const ITEMS: MappingItem[] = [
   {
+    id: "mhabar",
+    label: { zh: "MHA 权重条", en: "MHA weight bars" },
+    real: {
+      zh: "真实是对全 cache 的 softmax 分布，图中数值为手工示意；cache 一格 = 一个 token 的 KV，查询 token 本身也会入 cache，图中省略",
+      en: "Really a softmax distribution over the full cache; drawn values are hand-crafted. One cell = one token's KV; the query token also enters the cache, omitted here",
+    },
+    visual: (
+      <MiniRow>
+        <MiniCell color="var(--series-1)" />
+        <MiniCell kind="faded" color="var(--series-3)" />
+      </MiniRow>
+    ),
+  },
+  {
     id: "slot",
     label: { zh: "记忆槽格子", en: "One memory slot" },
     real: {

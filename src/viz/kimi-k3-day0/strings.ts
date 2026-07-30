@@ -532,3 +532,58 @@ export const ARCH_DETAILS: ArchDetail[] = [
     },
   },
 ];
+
+export const MHA = {
+  title: {
+    zh: "MHA：每步对全部历史做注意力",
+    en: "MHA: attention over the whole history, every step",
+  },
+  subtitle: {
+    zh: "同一串写入与查询；查询步的竖条 = softmax 权重(示意值)",
+    en: "Same writes and queries; bars on query steps = softmax weights (illustrative)",
+  },
+  statCache: { zh: "cache", en: "cache" },
+  cells: { zh: "格", en: "cells" },
+  statDot: { zh: "本步点积", en: "dot products this step" },
+  times: { zh: "次", en: "" },
+  legendCell: {
+    zh: "cache 一格 = 一个 token 的 KV(颜色 = 值)",
+    en: "one cache cell = one token's KV (color = value)",
+  },
+  legendBar: { zh: "查询步的注意力权重", en: "attention weight on a query step" },
+  verdict: {
+    zh: "检索无损：权重能集中到任意位置，A 写过两次也能只取最近一次(t=6)；话题切换后旧内容也全部保留。代价：cache 每写一步加一格，点积次数等于 cache 长度，都随上下文线性增长。",
+    en: "Retrieval is lossless: weight can concentrate on any position, and after A is written twice the query picks just the latest one (t=6); everything survives the topic shift too. The cost: the cache adds a cell per write and the dot-product count equals the cache length, both growing linearly with context.",
+  },
+} satisfies Record<string, Localized>;
+
+export function mhaCellTooltip(
+  locale: Locale,
+  pos: number,
+  key: string,
+  weight: number | null,
+): string {
+  const zh = locale === "zh";
+  const base = zh ? `位置 ${pos} · 键 ${key}` : `position ${pos} · key ${key}`;
+  if (weight === null) return base;
+  return zh
+    ? `${base} · 本步权重 ${weight.toFixed(2)}`
+    : `${base} · weight ${weight.toFixed(2)} this step`;
+}
+
+export const LIN = {
+  title: {
+    zh: "Linear attention：历史压进固定状态",
+    en: "Linear attention: history compressed into a fixed state",
+  },
+  subtitle: {
+    zh: "同一串写入；k 决定槽位，v 决定颜色；状态始终 6 个槽",
+    en: "Same writes; k picks the slot, v is the color; the state stays 6 slots",
+  },
+  statState: { zh: "状态 6 槽(常数)", en: "state: 6 slots (constant)" },
+  statVs: { zh: "MHA 此时已存", en: "MHA by now holds" },
+  verdict: {
+    zh: "显存和每步计算都是常数，1M 上下文也不涨。代价在质量：状态只加不减，同一个键写两次，读出是两次的混合(t=6 查 A ✗)。在固定状态里把检索做对，是下一节 KDA 的内容。",
+    en: "Memory and per-step compute are both constant, even at 1M context. The cost is quality: the state only adds, so writing the same key twice makes reads a blend of both (query A at t=6, ✗). Making retrieval work inside a fixed state is what KDA addresses next.",
+  },
+} satisfies Record<string, Localized>;
