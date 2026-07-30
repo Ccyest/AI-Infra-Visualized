@@ -1,46 +1,138 @@
 ---
-title: "Kimi K3 Day-0 Support:SGLang 做了哪些适配"
-description: "K3 的混合架构带来两种性质不同的推理状态。看 SGLang 的三项核心工作：统一显存池、chunked PP prefill、DCP decode，以及各自的实测数字。"
+title: "Kimi K3：架构与 SGLang Day-0 Support"
+description: "上半篇讲 K3 架构：KDA、AttnRes 与 LatentMoE 怎么把 2.8T 参数和 1M 上下文的账算平；下半篇讲这套架构落到 serving 的适配：统一显存池、chunked PP prefill、DCP decode 与实测数字。"
 order: 2
 concepts:
-  - KDA / MLA 混合架构
+  - Kimi Delta Attention
+  - 3:1 混排与 NoPE
+  - Attention Residual
+  - Stable LatentMoE
   - 统一显存池
-  - chunked pipeline parallelism
-  - decode context parallelism
+  - chunked PP / DCP
 tryOnSglang: "https://github.com/sgl-project/sglang"
 references:
-  - label: "LMSYS Blog：Kimi K3 Day-0 Support(本文的第一手来源，含全部实测数字)"
+  - label: "Kimi K3 Technical Report(arXiv 2607.24653，架构部分的第一手来源)"
+    url: "https://arxiv.org/abs/2607.24653"
+  - label: "LMSYS Blog：Kimi K3 Day-0 Support(serving 部分的第一手来源，含全部实测数字)"
     url: "https://www.lmsys.org/blog/2026-07-27-kimi-k3-day0-support/"
+  - label: "Kimi Linear: An Expressive, Efficient Attention Architecture(KDA 的出处，含 3:1 混排的消融)"
+    url: "https://arxiv.org/abs/2510.26692"
+  - label: "Gated Delta Networks: Improving Mamba2 with Delta Rule(delta rule 加门控的先例)"
+    url: "https://arxiv.org/abs/2412.06464"
+  - label: "Sebastian Raschka：Kimi K3 Architecture Notes(NoPE 与 AttnRes 的成本数字)"
+    url: "https://sebastianraschka.com/blog/2026/kimi-k3-architecture-notes.html"
   - label: "LMSYS Blog：DSpark in SGLang(投机解码)"
     url: "https://www.lmsys.org/blog/2026-07-06-dspark-sglang"
-  - label: "SGLang Cookbook：Memory Management"
+  - label: "SGLang Cookbook：Memory Management(双状态显存在引擎里的落地)"
     url: "https://sgl-project-sglang-93.mintlify.app/developer/memory-management"
   - label: "Awesome-ML-SYS-Tutorial(本站配套的中文文字讲解库)"
     url: "https://github.com/zhaochenyang20/Awesome-ML-SYS-Tutorial"
 ---
 
+import CacheViz from "../../../viz/kimi-k3-day0/CacheViz";
+import MemoryViz from "../../../viz/kimi-k3-day0/MemoryViz";
+import AttnResViz from "../../../viz/kimi-k3-day0/AttnResViz";
+import MoeViz from "../../../viz/kimi-k3-day0/MoeViz";
 import PoolViz from "../../../viz/kimi-k3-day0/PoolViz";
 import PipelineViz from "../../../viz/kimi-k3-day0/PipelineViz";
 import DcpViz from "../../../viz/kimi-k3-day0/DcpViz";
 import Mapping from "../../../viz/kimi-k3-day0/Mapping";
 
-> **TL;DR** K3 在 attention、MoE、量化上同时偏离常规，serving 栈里的很多默认
-> 假设都不再成立。SGLang 的 day-0 支持主要是三件事：显存改统一池，prefill 改
-> chunked PP，decode 改 DCP，再配合投机解码 DSpark。
+> **TL;DR** K3 把 93 层里的 69 层换成 KDA 线性注意力，KV cache 只剩 24 层在涨；
+> 深度方向加 AttnRes，FFN 全部换成 896 选 16 的 LatentMoE。这套架构落到
+> serving 栈，很多默认假设不再成立：SGLang 的 day-0 支持是显存改统一池，
+> prefill 改 chunked PP，decode 改 DCP，再配合投机解码 DSpark。
 
-## K3 的架构
+## 先算账：1M token 的 KV cache
 
-- 2.8T 参数，1M token 上下文，首个 3T 级开源模型；
-- 93 层里 69 层是 KDA 线性注意力，24 层是 MLA，交错排布；
-- LatentMoE：896 个 expert、top-16 路由，在 3584 维隐空间里做；
-- 权重原生 MXFP4，视觉塔 MoonViT3d。
+基本盘：2.8T 参数、104B 激活、93 层、原生 1M 上下文、权重 MXFP4、原生视觉
+(MoonViT3d)。其中"1M 上下文"直接把"93 层全用 softmax attention"这条路
+堵死了：按 MLA 压缩后 27 KB/token(24 层合计)的口径线性外推，93 层全 MLA
+在 1M token 时一个请求要占约 110 GB，这还没算未压缩 MHA 那个数量级。
 
-对 serving 影响最大的是第二条。两种 attention 意味着两种性质不同的推理状态：
+K3 的选择：93 层 = 69 层 KDA + 24 层 MLA，按 3 KDA + 1 MLA 交错。KDA 层是
+线性注意力，状态固定大小(整机约 0.4 GB/请求)，每步原地覆写；MLA 层保留
+全局 attention，并且不加 RoPE(NoPE)，位置感由 KDA 的递归天然携带：
+
+<CacheViz client:visible />
+
+24 层 MLA 在 1M 时约 28 GB，是全 MLA 假想值的 1/3.9。计算侧同理：softmax
+attention 每生成一个 token 都要扫全部历史(O(N))，KDA 每步只碰固定状态
+(O(1))。
+
+## KDA：固定大小的状态怎么记东西
+
+线性注意力把 attention 里的 softmax 去掉，让乘法可以重新结合：历史全部压进
+一个固定大小的矩阵 S(每 head 约 128×128)，写入是 `S += k·vᵀ`，读出是
+`qᵀ·S`。每步 O(1)，但"只加不减"：同一个键方向写第二次，新旧值就叠在一起，
+查询读出来的是混合物。
+
+DeltaNet 把写入换成 delta rule：先用 k 读出旧值、按写入强度 β 擦掉，再写
+新值，`S_t = (I − β·k·kᵀ)·S_{t−1} + β·k·vᵀ`。这等价于对"S·k 应该等于 v"
+做在线梯度下降，换绑正确了。但状态仍然只进不出：写进去的键永远占着有限的
+维度，上下文一长，读出的串扰越积越多。
+
+Gated DeltaNet 补上遗忘门，每个 head 一个标量：要忘一起忘。KDA 把它细化成
+逐通道的对角门，`S_t = (I − β·k·kᵀ)·Diag(a_t)·S_{t−1} + β·k·vᵀ`，a_t 由
+当前输入算出，每个通道有自己的遗忘速率。Kimi Linear 论文把这读作一种可学习
+的位置编码：RoPE 的固定旋转，换成数据依赖的衰减。配套的 chunkwise kernel
+在受约束的 DPLR 形式下比通用算法快约一倍，这是它能铺满 69 层的前提。
+
+<MemoryViz client:visible />
+
+看三个时刻：t=6 查 A，累加面板新旧值混叠(✗)，另两个面板读出正确；t=11
+查 E，delta 面板被塞满的状态拖出串扰(△)，KDA 面板在 t=7 的话题切换处压低
+了旧通道，读出干净(✓)；t=13 查 B，KDA 面板已淡忘(◌)。最后这条是门控的
+取舍：留谁忘谁由数据决定，任务需要留的通道，模型会学到不衰减。
+
+## 深度方向：Attention Residual
+
+残差流是 transformer 的信息干线：每层从里面读、往里面加，一路传到底。93 层
+共用一条干线，所有中间表征都要挤过同一个向量；深层想精确用到浅层的某个
+表征，只能指望它没被沿途几十次加法淹掉。
+
+AttnRes 给深层开了第二条路：每 12 层一组，用学到的 pseudo-query 对
+embedding 和之前所有组的输出算注意力权重 α，按权重取回，汇入当前表征。
+取回是选择性的，要哪组拿哪组，而不是什么都沿着一条流累加：
+
+<AttnResViz client:visible />
+
+## FFN：896 选 16 的 LatentMoE
+
+FFN 侧全部是 MoE：896 个 routed expert 每 token 选 16 个，外加 2 个常驻的
+shared expert。激活率 16/896 ≈ 1.8%，整模型每 token 激活 104B/2.8T ≈ 3.7%
+的参数(K2 是 384 选 8，K3 把稀疏度又推进了一档)。
+
+路由和分发的位置也变了：不在 7168 维 hidden 上做，而是先降到 3584 维的
+隐空间，router 在半宽向量上打分，expert 也在半宽上计算，最后再升回来。
+16 份 dispatch 的 all-to-all 流量和 expert 权重体积因此都省一半：
+
+<MoeViz client:visible />
+
+在 1.8% 的激活率下把训练稳住靠三件事：RMSNorm、有界的 SiTU-GLU 激活，以及
+Quantile Balancing：expert 配额直接从 router 分数的分位数导出，不再有
+aux-loss 那个敏感系数要调。
+
+## 训练侧的几件事
+
+- 量化感知训练从 SFT 阶段开始，MXFP4 权重 + MXFP8 激活，发布即低精度；
+- 优化器是 Per-Head Muon：Muon 按 attention head 独立做正交化更新；
+- 1M 上下文按课程拉长：8K → 64K → 256K → 1M；
+- RL 覆盖 general、agentic、coding 三个域和多档 reasoning effort；工具、
+  prompt、memory、subagent 这些 scaffold 在训练中持续变化，避免模型绑死在
+  单一工作流上。
+
+## 从架构到 serving：两种状态
+
+上面的架构落到推理栈里，第一个直接后果是两种性质不同的推理状态：
 
 | | MLA(24 层) | KDA(69 层) |
 | --- | --- | --- |
 | 状态形式 | KV cache，逐 token 追加 | 递归状态，固定大小 |
 | 增长方式 | 每 token 约 27 KB，只增不减 | 每请求约 54 MB(TP=8)，每步原地覆写 |
+
+KV 逐 token 追加、按页共享这些默认假设对 KDA 统统不成立，SGLang 的
+day-0 适配从这里开始。
 
 ## 双状态显存管理
 

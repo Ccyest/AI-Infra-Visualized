@@ -4,6 +4,87 @@ import type { Locale } from "../../lib/i18n";
 
 const ITEMS: MappingItem[] = [
   {
+    id: "slot",
+    label: { zh: "记忆槽格子", en: "One memory slot" },
+    real: {
+      zh: "KDA 状态是每 head 一个约 128×128 的矩阵，“槽”对应键方向；真实键不正交，串扰是连续的，图中用固定系数近似",
+      en: "The KDA state is a ≈128×128 matrix per head; a “slot” stands for a key direction. Real keys aren't orthogonal, so crosstalk is continuous; the diagram approximates it with a fixed coefficient",
+    },
+    visual: <MiniCell kind="outline" />,
+  },
+  {
+    id: "fade",
+    label: { zh: "透明度(强度)", en: "Opacity (strength)" },
+    real: {
+      zh: "逐通道门控系数每步连乘的结果；“话题切换”是把数据依赖的门控画成一次离散事件",
+      en: "The running product of per-channel gate values; the “topic shift” draws data-dependent gating as one discrete event",
+    },
+    visual: (
+      <MiniRow>
+        <MiniCell color="var(--series-2)" />
+        <MiniCell kind="faded" color="var(--series-2)" />
+      </MiniRow>
+    ),
+  },
+  {
+    id: "erase",
+    label: { zh: "一步擦干净的写入", en: "One-step clean erase" },
+    real: {
+      zh: "delta rule 的写入强度 β_t ∈ (0,1) 由输入算出；图里取 β=1，一步擦净好读图",
+      en: "The delta-rule write strength β_t ∈ (0,1) is input-dependent; the diagram uses β=1 so one write fully erases",
+    },
+    visual: <MiniCell color="var(--series-4)" />,
+  },
+  {
+    id: "cachecell",
+    label: { zh: "cache 格(2 GB)", en: "One cache cell (2 GB)" },
+    real: {
+      zh: "按 Day-0 博客 27 KB/token(24 层 MLA 合计)推算；93 层假想值是把同款 MLA 铺满全深度的线性外推",
+      en: "Scaled from the Day-0 blog's 27 KB/token (24 MLA layers); the 93-layer bar linearly extrapolates the same MLA to full depth",
+    },
+    visual: <MiniCell kind="faded" />,
+  },
+  {
+    id: "layers",
+    label: { zh: "K / M 层条", en: "K / M layer tiles" },
+    real: {
+      zh: "真实 93 层 = 69 KDA + 24 MLA，3 KDA + 1 MLA 交错；图只画了前 8 层",
+      en: "The real 93 layers are 69 KDA + 24 MLA interleaved 3:1; only the first 8 are drawn",
+    },
+    visual: (
+      <MiniRow>
+        <MiniCell color="var(--series-1)" />
+        <MiniCell color="var(--series-1)" />
+        <MiniCell color="var(--series-1)" />
+        <MiniCell kind="faded" />
+      </MiniRow>
+    ),
+  },
+  {
+    id: "alpha",
+    label: { zh: "AttnRes 的 α 线宽", en: "AttnRes α line widths" },
+    real: {
+      zh: "真实权重由每组的 pseudo-query 对前面各组输出打分得出，按 12 层一组；图中数值为手工示意",
+      en: "Real weights come from each group's learned pseudo-query scoring preceding group outputs, one group per 12 layers; the drawn numbers are hand-crafted",
+    },
+    visual: <MiniCell kind="slash" color="var(--series-3)" />,
+  },
+  {
+    id: "expert",
+    label: { zh: "expert 小格", en: "One expert cell" },
+    real: {
+      zh: "一个 routed expert 的 FFN(在 3584 维隐空间里计算)；图中的选择模式是手工构造的散布，真实由 router 决定",
+      en: "One routed expert's FFN (computed in the 3584-d latent space); the drawn selection pattern is a hand-crafted spread, the real one comes from the router",
+    },
+    visual: (
+      <MiniRow>
+        <MiniCell color="var(--series-2)" />
+        <MiniCell kind="outline" />
+        <MiniCell kind="outline" />
+      </MiniRow>
+    ),
+  },
+  {
     id: "page",
     label: { zh: "显存池的一页", en: "One memory-pool page" },
     real: {

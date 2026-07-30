@@ -1,48 +1,164 @@
 ---
-title: "Kimi K3 Day-0 Support in SGLang"
-description: "K3's hybrid architecture produces two kinds of inference state. Three core pieces of SGLang work: a unified memory pool, chunked-PP prefill, and DCP decode, with measured numbers for each."
+title: "Kimi K3: Architecture and SGLang Day-0 Support"
+description: "Part one covers the K3 architecture: how KDA, AttnRes, and LatentMoE balance the books for 2.8T parameters and a 1M context. Part two lands it in a serving stack: unified memory pool, chunked-PP prefill, DCP decode, and measured numbers."
 order: 2
 concepts:
-  - KDA / MLA hybrid architecture
+  - Kimi Delta Attention
+  - 3:1 interleave & NoPE
+  - Attention Residual
+  - Stable LatentMoE
   - unified memory pool
-  - chunked pipeline parallelism
-  - decode context parallelism
+  - chunked PP / DCP
 tryOnSglang: "https://github.com/sgl-project/sglang"
 references:
-  - label: "LMSYS Blog: Kimi K3 Day-0 Support (primary source for this post, with all measured numbers)"
+  - label: "Kimi K3 Technical Report (arXiv 2607.24653, primary source for the architecture half)"
+    url: "https://arxiv.org/abs/2607.24653"
+  - label: "LMSYS Blog: Kimi K3 Day-0 Support (primary source for the serving half, with all measured numbers)"
     url: "https://www.lmsys.org/blog/2026-07-27-kimi-k3-day0-support/"
+  - label: "Kimi Linear: An Expressive, Efficient Attention Architecture (where KDA comes from, incl. the 3:1 ablation)"
+    url: "https://arxiv.org/abs/2510.26692"
+  - label: "Gated Delta Networks: Improving Mamba2 with Delta Rule (the delta rule + gating precedent)"
+    url: "https://arxiv.org/abs/2412.06464"
+  - label: "Sebastian Raschka: Kimi K3 Architecture Notes (NoPE and the AttnRes cost numbers)"
+    url: "https://sebastianraschka.com/blog/2026/kimi-k3-architecture-notes.html"
   - label: "LMSYS Blog: DSpark in SGLang (speculative decoding)"
     url: "https://www.lmsys.org/blog/2026-07-06-dspark-sglang"
-  - label: "SGLang Cookbook: Memory Management"
+  - label: "SGLang Cookbook: Memory Management (how two-state memory lands in an engine)"
     url: "https://sgl-project-sglang-93.mintlify.app/developer/memory-management"
   - label: "Awesome-ML-SYS-Tutorial (companion written tutorials)"
     url: "https://github.com/zhaochenyang20/Awesome-ML-SYS-Tutorial"
 ---
 
+import CacheViz from "../../../viz/kimi-k3-day0/CacheViz";
+import MemoryViz from "../../../viz/kimi-k3-day0/MemoryViz";
+import AttnResViz from "../../../viz/kimi-k3-day0/AttnResViz";
+import MoeViz from "../../../viz/kimi-k3-day0/MoeViz";
 import PoolViz from "../../../viz/kimi-k3-day0/PoolViz";
 import PipelineViz from "../../../viz/kimi-k3-day0/PipelineViz";
 import DcpViz from "../../../viz/kimi-k3-day0/DcpViz";
 import Mapping from "../../../viz/kimi-k3-day0/Mapping";
 
-> **TL;DR** K3 departs from convention in attention, MoE, and quantization at
-> the same time, which breaks many default assumptions in a serving stack.
-> SGLang's day-0 support comes down to three things: a unified memory pool,
-> chunked-PP prefill, and DCP decode, plus speculative decoding with DSpark.
+> **TL;DR** K3 swaps 69 of its 93 layers to KDA linear attention so KV cache
+> grows in only 24 layers, adds AttnRes across depth, and makes every FFN a
+> 16-of-896 LatentMoE. Landing that architecture breaks many default
+> assumptions in a serving stack: SGLang's day-0 support comes down to a
+> unified memory pool, chunked-PP prefill, and DCP decode, plus speculative
+> decoding with DSpark.
 
-## The architecture
+## Do the math first: KV cache at 1M tokens
 
-- 2.8T parameters, 1M-token context, the first open model in the 3T class;
-- Of its 93 layers, 69 are KDA linear attention and 24 are MLA, interleaved;
-- LatentMoE: 896 experts, top-16 routing, in a 3584-dim latent space;
-- Native MXFP4 weights; MoonViT3d vision tower.
+The basics: 2.8T parameters, 104B active, 93 layers, native 1M context, MXFP4
+weights, native vision (MoonViT3d). That "1M context" immediately rules out
+softmax attention in all 93 layers: extrapolating from the compressed-MLA rate
+of 27 KB/token (across 24 layers), an all-MLA stack of 93 layers would need
+about 110 GB per request at 1M tokens, and uncompressed MHA is an order of
+magnitude beyond that.
 
-The second bullet matters most for serving. Two attention types mean two kinds
-of inference state:
+K3's answer: 93 layers = 69 KDA + 24 MLA, interleaved 3 KDA + 1 MLA. KDA
+layers are linear attention with a fixed-size state (≈0.4 GB per request in
+total), overwritten in place every step; MLA layers keep global attention and
+drop RoPE entirely (NoPE), since KDA's recurrence carries position on its own:
+
+<CacheViz client:visible lang="en" />
+
+The 24 MLA layers hold about 28 GB at 1M tokens, 1/3.9 of the all-MLA
+hypothetical. Compute tells the same story: softmax attention scans the whole
+history for every generated token (O(N)); KDA touches a fixed state (O(1)).
+
+## KDA: how a fixed-size state remembers
+
+Linear attention removes the softmax so the multiplication re-associates: the
+whole history compresses into one fixed-size matrix S (≈128×128 per head).
+Writing is `S += k·vᵀ`, reading is `qᵀ·S`. That is O(1) per step, but
+add-only: write the same key direction twice and the old and new values stack,
+so a query reads back a blend.
+
+DeltaNet replaces the write with the delta rule: use k to read the old value,
+erase it with write strength β, then write the new one,
+`S_t = (I − β·k·kᵀ)·S_{t−1} + β·k·vᵀ`. This is online gradient descent on
+"S·k should equal v", and rebinding now works. But the state still only fills
+up: every written key occupies the limited dimensions forever, and the longer
+the context, the more crosstalk each read picks up.
+
+Gated DeltaNet adds a forget gate, one scalar per head: everything forgets
+together. KDA refines it into a per-channel diagonal gate,
+`S_t = (I − β·k·kᵀ)·Diag(a_t)·S_{t−1} + β·k·vᵀ`, where a_t is computed from
+the current input and every channel gets its own forgetting rate. The Kimi
+Linear paper reads this as a learnable position encoding: RoPE's fixed
+rotation swapped for data-dependent decay. A chunkwise kernel for the
+constrained DPLR form runs about twice as fast as the general algorithm,
+which is what makes covering 69 layers affordable.
+
+<MemoryViz client:visible lang="en" />
+
+Watch three moments: at t=6, querying A, the additive panel blends old and new
+values (✗) while the other two read correctly; at t=11, querying E, the delta
+panel's saturated state drags in crosstalk (△) while KDA damped the old
+channels at the t=7 topic shift and reads clean (✓); at t=13, querying B, the
+KDA panel has forgotten it (◌). That last one is the gate's trade-off: what to
+keep and what to drop is learned from data, and channels a task needs are the
+ones the model learns not to decay.
+
+## Across depth: Attention Residual
+
+The residual stream is the transformer's trunk line: every layer reads from
+it, adds to it, and passes it on. With 93 layers sharing one trunk, every
+intermediate representation squeezes through the same vector; a deep layer
+that needs something specific from a shallow one can only hope it survived
+dozens of additions along the way.
+
+AttnRes opens a second path: every 12 layers form a group, and a learned
+pseudo-query scores the embedding plus all preceding groups' outputs with
+attention weights α, retrieving them by weight into the current
+representation. Retrieval is selective, taking exactly the groups it needs
+instead of accumulating everything along one stream:
+
+<AttnResViz client:visible lang="en" />
+
+## FFN: LatentMoE, 16 of 896
+
+Every FFN is MoE: 896 routed experts with 16 chosen per token, plus 2 shared
+experts that are always on. The activation ratio is 16/896 ≈ 1.8%, and the
+model activates 104B/2.8T ≈ 3.7% of its parameters per token (K2 was 8 of
+384; K3 pushes sparsity one notch further).
+
+Where routing happens also changed: instead of the 7168-d hidden width,
+tokens first project down to a 3584-d latent space; the router scores the
+half-width vector, experts compute at half width too, and the result projects
+back up. The 16-way all-to-all dispatch traffic and the expert weights both
+halve as a result:
+
+<MoeViz client:visible lang="en" />
+
+Keeping training stable at 1.8% activation takes three things: RMSNorm,
+bounded SiTU-GLU activations, and Quantile Balancing, where expert quotas
+derive directly from router-score quantiles, removing the sensitive aux-loss
+coefficient entirely.
+
+## A few things on the training side
+
+- Quantization-aware training starts at the SFT stage: MXFP4 weights with
+  MXFP8 activations, so the release is natively low-precision;
+- The optimizer is Per-Head Muon: Muon's orthogonalized updates applied per
+  attention head;
+- The 1M context is grown on a curriculum: 8K → 64K → 256K → 1M;
+- RL covers general, agentic, and coding domains across multiple
+  reasoning-effort levels; tools, prompts, memory, and subagent scaffolds keep
+  changing during training so the model doesn't overfit one workflow.
+
+## From architecture to serving: two state types
+
+Inside an inference stack, the first direct consequence of this architecture
+is two kinds of inference state:
 
 | | MLA (24 layers) | KDA (69 layers) |
 | --- | --- | --- |
 | State shape | KV cache, appends per token | Recurrent state, fixed size |
 | Growth | ~27 KB per token, append-only | ~54 MB per request (TP=8), overwritten in place each step |
+
+The default assumptions of a serving stack, per-token KV appends and
+page-level sharing, hold for neither KDA property. SGLang's day-0 work starts
+here.
 
 ## Memory management for two state types
 
