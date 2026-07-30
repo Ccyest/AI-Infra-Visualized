@@ -5,10 +5,10 @@ import type { Locale } from "../../lib/i18n";
 const ITEMS: MappingItem[] = [
   {
     id: "mhabar",
-    label: { zh: "MHA 权重条", en: "MHA weight bars" },
+    label: { zh: "MHA 的连线", en: "MHA attention lines" },
     real: {
-      zh: "真实是对全 cache 的 softmax 分布，图中数值为手工示意；“赋值/取用”只是叙事标注，MHA 对每个 token 的处理完全相同",
-      en: "Really a softmax distribution over the full cache; drawn values are hand-crafted. “Assign/use” are narrative labels only, MHA processes every token identically",
+      zh: "每条线 = 当前 token 和一个历史位置的点积；真实权重来自训练出的 Q/K 投影，对全 cache 做 softmax，「它 → 猫」等数值为手工示意",
+      en: "Each line is one dot product between the current token and a past position; real weights come from learned Q/K projections softmaxed over the full cache, numbers like “it → cat” are hand-crafted",
     },
     visual: (
       <MiniRow>

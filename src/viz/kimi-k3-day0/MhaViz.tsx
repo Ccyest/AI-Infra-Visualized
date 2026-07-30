@@ -1,103 +1,58 @@
-import { useMemo, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import type { MouseEvent as ReactMouseEvent } from "react";
 import Legend from "../../components/core/Legend";
 import VizStage from "../../components/core/VizStage";
 import { useSimPlayer } from "../../components/core/useSimPlayer";
 import type { Locale } from "../../lib/i18n";
-import { seriesColor } from "../../lib/palette";
-import { MEM_SCENARIO } from "./memoryEngine";
-import type { MemEvent } from "./memoryEngine";
-import { MHA, memEventText, mhaCellTooltip } from "./strings";
+import { MHA, MHA_TOKENS, mhaCellTooltip, mhaChip } from "./strings";
 import "./styles.css";
 
 /**
- * MHA:与 MemoryViz 同一事件流,每个事件都是一个普通 token——
- * 赋值(A=1)、取用(A?)、话题标记(~)都一样:每步先对全部历史算
- * softmax 权重,再把自己的 KV 追加进 cache。
- *
- * 权重为手工示意值:查询步集中到最近一次同键写入(0.85),
- * 其余步按就近衰减(0.55 的距离衰减)画出。
+ * MHA:一句话逐 token 解码。第 N 步的当前 token 和之前 N−1 个 token
+ * 各做一次点积(一条连线),线宽 = softmax 权重;算完自己的 KV 入 cache。
+ * 权重为手工示意值:代词等有明确指代的步用 MHA_TOKENS 里的 focus,
+ * 其余按就近衰减分摊。
  */
-
-type TokenKind = "write" | "query" | "shift";
-
-interface TokenEntry {
-  kind: TokenKind;
-  key: string | null;
-  value: number | null;
-}
-
-interface MhaFrame {
-  tokens: TokenEntry[];
-  /** 当前 token 对之前所有 token 的权重(长度 = tokens.length - 1);t=0 为 null */
-  weights: number[] | null;
-  event: MemEvent | null;
-}
-
-function toEntry(ev: MemEvent): TokenEntry {
-  if (ev.kind === "write") return { kind: "write", key: ev.key, value: ev.value };
-  if (ev.kind === "query") return { kind: "query", key: ev.key, value: null };
-  return { kind: "shift", key: null, value: null };
-}
-
-function buildFrames(): MhaFrame[] {
-  const frames: MhaFrame[] = [{ tokens: [], weights: null, event: null }];
-  const tokens: TokenEntry[] = [];
-  for (const ev of MEM_SCENARIO) {
-    const current = toEntry(ev);
-    const prev = [...tokens];
-    let weights: number[] | null = null;
-    if (prev.length > 0) {
-      if (current.kind === "query") {
-        const matches = prev
-          .map((p, i) => (p.kind === "write" && p.key === current.key ? i : -1))
-          .filter((i) => i >= 0);
-        const latest = matches[matches.length - 1];
-        const oldMatches = matches.length - 1;
-        const rest = prev.length - matches.length;
-        const latestW = oldMatches > 0 ? 0.85 : 0.93;
-        weights = prev.map((p, i) => {
-          if (i === latest) return latestW;
-          if (p.kind === "write" && p.key === current.key) return 0.08 / oldMatches;
-          return rest > 0 ? 0.07 / rest : 0;
-        });
-      } else {
-        // 非查询步:按就近衰减的示意分布
-        const raw = prev.map((_, i) => 0.55 ** (prev.length - 1 - i));
-        const sum = raw.reduce((a, b) => a + b, 0);
-        weights = raw.map((w) => w / sum);
-      }
-    }
-    tokens.push(current);
-    frames.push({ tokens: [...tokens], weights, event: ev });
-  }
-  return frames;
-}
 
 const CELL = 30;
 const GAP = 10;
 const PITCH = CELL + GAP;
-const BAR_H = 44;
-const TOP = 12;
-const LABEL_H = 14;
+const ARC_H = 66;
+const LABEL_H = 16;
 
-function cellLabel(entry: TokenEntry): string {
-  if (entry.kind === "write") return `${entry.key}=${entry.value}`;
-  if (entry.kind === "query") return `${entry.key}?`;
-  return "~";
+/** 第 c 个 token(0 起)对位置 i < c 的权重 */
+function weightsFor(tokens: { focus?: [number, number][] }[], c: number): number[] {
+  const focus = tokens[c].focus ?? [];
+  const focusMap = new Map(focus);
+  const focusSum = focus.reduce((a, [, w]) => a + w, 0);
+  const rest = Array.from({ length: c }, (_, i) => i).filter((i) => !focusMap.has(i));
+  const raw = rest.map((i) => 0.55 ** (c - 1 - i));
+  const rawSum = raw.reduce((a, b) => a + b, 0) || 1;
+  const out = Array(c).fill(0) as number[];
+  for (const [i, w] of focus) out[i] = w;
+  rest.forEach((i, j) => {
+    out[i] = ((1 - focusSum) * raw[j]) / rawSum;
+  });
+  return out;
 }
 
 export default function MhaViz({ lang = "zh" }: { lang?: Locale }) {
-  const frames = useMemo(() => buildFrames(), []);
-  const player = useSimPlayer(frames.length - 1, 1.4);
+  const tokens = MHA_TOKENS[lang];
+  const n = tokens.length;
+  const player = useSimPlayer(n, 1.2);
   const wrapRef = useRef<HTMLDivElement>(null);
   const [hover, setHover] = useState<{ x: number; y: number; text: string } | null>(null);
 
-  const t = Math.min(player.t, frames.length - 1);
-  const frame = frames[t];
-  const maxCells = frames[frames.length - 1].tokens.length;
-  const width = maxCells * PITCH - GAP + 2;
-  const height = TOP + BAR_H + CELL + LABEL_H + 6;
+  const t = Math.min(player.t, n);
+  const cur = t - 1;
+  const weights = t >= 2 ? weightsFor(tokens, cur) : [];
+  const width = n * PITCH - GAP + 2;
+  const height = ARC_H + CELL + LABEL_H + 6;
+  const cellY = ARC_H + 2;
+  const cx = (i: number) => i * PITCH + CELL / 2;
+
+  const dot = Math.max(0, t - 1);
+  const cumDot = (t * (t - 1)) / 2;
 
   const showTooltip = (e: ReactMouseEvent, text: string) => {
     const wrap = wrapRef.current;
@@ -107,13 +62,9 @@ export default function MhaViz({ lang = "zh" }: { lang?: Locale }) {
   };
 
   const legend = [
-    { label: MHA.legendCell[lang], swatch: { background: "var(--series-1)" } },
+    { label: MHA.legendCell[lang], swatch: { background: "var(--series-1)", opacity: 0.55 } },
     {
-      label: MHA.legendOther[lang],
-      swatch: { background: "var(--axis)", opacity: 0.55 },
-    },
-    {
-      label: MHA.legendBar[lang],
+      label: MHA.legendLine[lang],
       swatch: { background: "color-mix(in srgb, var(--accent) 55%, transparent)" },
     },
     {
@@ -138,85 +89,84 @@ export default function MhaViz({ lang = "zh" }: { lang?: Locale }) {
       <div className="viz-section">
         <div className="viz-section-head">
           <span className="viz-section-stats">
-            {MHA.statCache[lang]} {frame.tokens.length} {MHA.cells[lang]} ·{" "}
-            {MHA.statDot[lang]} {Math.max(0, frame.tokens.length - 1)}{" "}
-            {MHA.times[lang]}
+            {MHA.statCache[lang]} {t} {MHA.cells[lang]} · {MHA.statDot[lang]} {dot}{" "}
+            {MHA.times[lang]} · {MHA.statTotal[lang]} {cumDot} {MHA.times[lang]}
           </span>
-          {frame.event && (
+          {t >= 1 && (
             <span className="k3a-chip">
-              t={t} {memEventText(lang, frame.event)}
+              t={t} {mhaChip(lang, tokens[cur].text)}
             </span>
           )}
         </div>
         <div className="viz-grid-wrap" ref={wrapRef}>
           <svg
             className="viz-grid"
-            style={{ minWidth: 430, maxWidth: 560 }}
+            style={{ minWidth: 420, maxWidth: 560 }}
             viewBox={`0 0 ${width} ${height}`}
             role="img"
             aria-label={MHA.title[lang]}
             onMouseLeave={() => setHover(null)}
           >
-            {Array.from({ length: maxCells }, (_, i) => {
-              const x = i * PITCH;
-              const entry = frame.tokens[i];
-              const isCurrent = entry && i === frame.tokens.length - 1;
-              const w = !isCurrent ? frame.weights?.[i] : undefined;
+            {/* 连线:当前 token 对之前每个位置各一次点积 */}
+            {weights.map((w, i) => {
+              const sx = cx(i);
+              const dx = cx(cur);
+              const lift = Math.min(ARC_H - 8, 14 + (dx - sx) * 0.28);
               return (
                 <g key={i}>
-                  {/* 当前 token 对该历史位置的权重条 */}
-                  {entry && w !== undefined && w !== null && (
-                    <>
-                      <rect
-                        x={x + 4}
-                        y={TOP + BAR_H - w * BAR_H}
-                        width={CELL - 8}
-                        height={Math.max(1.5, w * BAR_H)}
-                        rx={2.5}
-                        fill="color-mix(in srgb, var(--accent) 55%, transparent)"
-                        pointerEvents="none"
-                      />
-                      {w >= 0.2 && (
-                        <text
-                          x={x + CELL / 2}
-                          y={TOP + BAR_H - w * BAR_H - 4}
-                          textAnchor="middle"
-                          fontSize="8.5"
-                          fill="var(--ink-2)"
-                        >
-                          {w.toFixed(2)}
-                        </text>
-                      )}
-                    </>
+                  <path
+                    d={`M ${sx} ${cellY - 2} Q ${(sx + dx) / 2} ${cellY - lift} ${dx} ${
+                      cellY - 2
+                    }`}
+                    fill="none"
+                    stroke="var(--accent)"
+                    strokeWidth={Math.max(1, w * 14)}
+                    strokeLinecap="round"
+                    opacity={0.3 + 0.5 * w}
+                  />
+                  {w >= 0.1 && (
+                    <text
+                      x={sx}
+                      y={cellY - 7 - (dx - sx) * 0.13}
+                      textAnchor="middle"
+                      fontSize="8.5"
+                      fill="var(--ink-2)"
+                    >
+                      {w.toFixed(2)}
+                    </text>
                   )}
-                  {/* cache 格:每个 token(含查询与标记)都占一格 */}
-                  {entry ? (
+                </g>
+              );
+            })}
+
+            {/* token 格与词 */}
+            {tokens.map((tok, i) => {
+              const x = i * PITCH;
+              const seen = i < t;
+              const isCurrent = i === cur;
+              const w = !isCurrent && i < weights.length ? weights[i] : null;
+              return (
+                <g key={i}>
+                  {seen ? (
                     <rect
                       className="viz-cell"
                       x={x}
-                      y={TOP + BAR_H + 2}
+                      y={cellY}
                       width={CELL}
                       height={CELL}
                       rx={5}
-                      fill={
-                        entry.kind === "write"
-                          ? seriesColor(entry.value!)
-                          : "var(--axis)"
-                      }
-                      opacity={entry.kind === "write" ? 1 : 0.55}
+                      fill="var(--series-1)"
+                      opacity={0.55}
                       stroke={isCurrent ? "var(--accent)" : "none"}
                       strokeWidth={isCurrent ? 2.2 : 0}
                       onMouseEnter={(e) =>
-                        showTooltip(
-                          e,
-                          mhaCellTooltip(lang, i + 1, entry.kind, entry.key, w ?? null),
-                        )
+                        showTooltip(e, mhaCellTooltip(lang, i + 1, tok.text, w))
                       }
                     />
                   ) : (
                     <rect
                       x={x}
-                      y={TOP + BAR_H + 2}
+                      y={cellY}
                       width={CELL}
                       height={CELL}
                       rx={5}
@@ -225,16 +175,16 @@ export default function MhaViz({ lang = "zh" }: { lang?: Locale }) {
                       strokeWidth="1"
                     />
                   )}
-                  {entry && (
+                  {seen && (
                     <text
                       x={x + CELL / 2}
-                      y={TOP + BAR_H + CELL + LABEL_H}
+                      y={cellY + CELL + LABEL_H - 3}
                       textAnchor="middle"
                       fontSize="9.5"
                       fill={isCurrent ? "var(--accent)" : "var(--muted)"}
                       fontWeight={isCurrent ? 700 : 400}
                     >
-                      {cellLabel(entry)}
+                      {tok.text}
                     </text>
                   )}
                 </g>

@@ -71,34 +71,39 @@ whole history per generated token (O(N)); KDA updates a fixed-size state
 
 ### MHA: scan the whole history each step
 
-Start with what got replaced, and set up the test sequence all three
-diagrams share: a stream of variable assignments. `A=1` `B=2` `C=3` arrive
-in order, `A=4` later rebinds A, and then comes a token like `A?` (think
-`print(A)`: it needs A's latest value). There is no special step in
-attention: every token dots its q against every k in the cache, softmaxes
-the scores into weights, takes the weighted sum of the v's, and appends its
-own KV. The tokens to watch are the `A?` kind, whose weight has to land on
-`A=4`, not `A=1`:
+Start with what got replaced. Decode a sentence token by token: "The cat
+chased the mouse because it was hungry". Token N dots against each of the
+N−1 tokens already in the cache (the lines in the diagram), softmaxes the
+scores into weights, takes the weighted sum of the v's, and appends its own
+KV. Over the whole sentence that is ≈N²/2 dot products: O(N²) compute,
+O(N) cache. Watch "it" at t=7: its referent "cat" sits six tokens back,
+and that is where the weight should land:
 
 <MhaViz client:visible lang="en" />
 
-MHA delivers: weight can concentrate exactly on any position, keeping the
-two assignments apart. The cost is the math from the previous section: one
-more cache cell per step (`A?`'s KV takes a cell too), and a dot-product
-count equal to the cache length; memory and compute both grow linearly
-with context.
+Both sides of softmax attention in one picture: retrieval is exact at any
+distance, and the cost keeps climbing with context; the 1M-token bill was
+computed in the previous section.
 
 ### Linear attention: a fixed-size state
 
 Linear attention drops the softmax so the multiplication re-associates:
 Σ(q·kᵢ)·vᵢ becomes q·Σ(kᵢ·vᵢᵀ), and the sum accumulates into one
-fixed-size matrix S (≈128×128 per head). Writing is `S += k·vᵀ`, reading
-is `qᵀ·S`. The cache is gone; each step touches only S:
+fixed-size matrix S (≈128×128 per head). S is essentially a key-value
+table: each token's k picks the direction to write into, v is the content,
+and reading is `qᵀ·S`. The cache is gone; each step touches only S.
+
+A sentence doesn't expose S's internals, so switch to a stress test that
+does: 6 variable slots, where `A=1` writes value 1 into variable A and `A?`
+reads A back to see if the state still holds it; midway A is reassigned to
+`A=4`:
 
 <LinearViz client:visible lang="en" />
 
-Memory and compute flatten out, but at t=6 `A?` reads a blend of `A=1`
-and `A=4`: the state only adds, so reassignment blends old and new.
+Memory and compute flatten out, but at t=6 `A?` reads a blend of `A=1` and
+`A=4`: the state only adds, so reassignment blends old and new. The same
+test is a clean pass for last section's MHA: every assignment sits
+separately in the cache and the weights simply pick the latest.
 
 ### KDA: delta rule with per-channel gating
 

@@ -536,54 +536,73 @@ export const MHA = {
     en: "MHA: attention over the whole history, every step",
   },
   subtitle: {
-    zh: "每步一个新 token：先对全部历史算 softmax 权重(竖条，示意值)，再把自己的 KV 追加进 cache",
-    en: "One new token per step: softmax weights over the whole history (bars, illustrative), then its own KV joins the cache",
+    zh: "一句话逐 token 解码；每条连线 = 当前 token 和一个历史位置的点积，线宽 = softmax 权重(示意值)",
+    en: "Decoding a sentence token by token; each line = one dot product between the current token and a past position, width = softmax weight (illustrative)",
   },
   statCache: { zh: "cache", en: "cache" },
   cells: { zh: "格", en: "cells" },
   statDot: { zh: "本步点积", en: "dot products this step" },
+  statTotal: { zh: "累计", en: "cumulative" },
   times: { zh: "次", en: "" },
   legendCell: {
-    zh: "赋值 token 的 KV(颜色 = 值)",
-    en: "an assignment token's KV (color = value)",
+    zh: "cache 一格 = 一个 token 的 KV",
+    en: "one cache cell = one token's KV",
   },
-  legendOther: {
-    zh: "取用/标记 token 的 KV(也占一格)",
-    en: "a use or marker token's KV (also one cell)",
-  },
-  legendBar: { zh: "当前 token 的注意力权重", en: "the current token's attention weight" },
+  legendLine: { zh: "连线 = 一次点积(线宽 = softmax 权重)", en: "line = one dot product (width = softmax weight)" },
   legendCurrent: { zh: "描边 = 当前 token", en: "outline = current token" },
   verdict: {
-    zh: "每一步的处理完全相同：算权重、取加权和、自己的 KV 入 cache。A? 这类要用早前信息的 token，权重能精确压在 A 的最新一次赋值上(t=6)，旧值不会串进来。代价：cache 每步加一格，点积次数等于 cache 长度，都随上下文线性增长。",
-    en: "Every step is processed identically: compute weights, take the weighted sum, append its own KV. For tokens like A? that need earlier information, the weight lands exactly on A's latest assignment (t=6) with no bleed from the old value. The cost: one more cache cell per step and a dot-product count equal to the cache length, both growing linearly with context.",
+    zh: "第 N 步和之前 N−1 个 token 各点乘一次，整句累计 ≈ N²/2 次：计算 O(N²)，cache O(N)。换来的是精确检索：「它」那一步，权重跨过 5 个 token 聚在「猫」上，距离不打折。",
+    en: "Step N dots against all N−1 earlier tokens, ≈N²/2 dot products over the sentence: O(N²) compute, O(N) cache. In exchange, retrieval is exact: on \"it\", the weight crosses six tokens and lands on \"cat\", undiminished by distance.",
   },
 } satisfies Record<string, Localized>;
+
+export interface MhaToken {
+  text: string;
+  /** 该步注意力的焦点(手工示意)：[位置, 权重];未列出的位置按剩余权重就近衰减分摊 */
+  focus?: [number, number][];
+}
+
+/** 逐 token 解码的示例句(zh / en 各一套,焦点在代词步:它/it → 猫/cat) */
+export const MHA_TOKENS: Record<Locale, MhaToken[]> = {
+  zh: [
+    { text: "猫" },
+    { text: "追", focus: [[0, 0.55]] },
+    { text: "老鼠", focus: [[1, 0.4], [0, 0.2]] },
+    { text: "，" },
+    { text: "因为" },
+    { text: "它", focus: [[0, 0.72], [2, 0.15]] },
+    { text: "饿", focus: [[5, 0.45], [0, 0.25]] },
+    { text: "了" },
+  ],
+  en: [
+    { text: "The" },
+    { text: "cat" },
+    { text: "chased", focus: [[1, 0.55]] },
+    { text: "the" },
+    { text: "mouse", focus: [[2, 0.4], [1, 0.2]] },
+    { text: "because" },
+    { text: "it", focus: [[1, 0.72], [4, 0.15]] },
+    { text: "was" },
+    { text: "hungry", focus: [[6, 0.45], [1, 0.25]] },
+  ],
+};
 
 export function mhaCellTooltip(
   locale: Locale,
   pos: number,
-  kind: "write" | "query" | "shift",
-  key: string | null,
+  word: string,
   weight: number | null,
 ): string {
   const zh = locale === "zh";
-  const what =
-    kind === "write"
-      ? zh
-        ? `赋值 ${key} 的 KV`
-        : `KV of the ${key} assignment`
-      : kind === "query"
-        ? zh
-          ? `用到 ${key} 的 token 的 KV(也占一格)`
-          : `KV of a token using ${key} (takes a cell too)`
-        : zh
-          ? "新话题标记的 KV"
-          : "KV of the new-topic marker";
-  const base = zh ? `位置 ${pos} · ${what}` : `position ${pos} · ${what}`;
+  const base = zh ? `位置 ${pos} ·「${word}」的 KV` : `position ${pos} · KV of "${word}"`;
   if (weight === null) return base;
   return zh
     ? `${base} · 本步权重 ${weight.toFixed(2)}`
     : `${base} · weight ${weight.toFixed(2)} this step`;
+}
+
+export function mhaChip(locale: Locale, word: string): string {
+  return locale === "zh" ? `「${word}」` : `"${word}"`;
 }
 
 export const LIN = {
