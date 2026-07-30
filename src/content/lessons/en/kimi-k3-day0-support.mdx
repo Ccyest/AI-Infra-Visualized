@@ -32,7 +32,6 @@ references:
 import ArchViz from "../../../viz/kimi-k3-day0/ArchViz";
 import CacheViz from "../../../viz/kimi-k3-day0/CacheViz";
 import MhaViz from "../../../viz/kimi-k3-day0/MhaViz";
-import LinearViz from "../../../viz/kimi-k3-day0/LinearViz";
 import LinearFlowViz from "../../../viz/kimi-k3-day0/LinearFlowViz";
 import MemoryViz from "../../../viz/kimi-k3-day0/MemoryViz";
 import AttnResViz from "../../../viz/kimi-k3-day0/AttnResViz";
@@ -99,19 +98,23 @@ the same sentence again:
 
 The step for "it" is the whole point: last section had a 0.72 line straight
 to "cat", but S has no position axis, that line cannot be drawn, and the
-read is a blend of the whole history. How bad the blending gets is
-invisible in a sentence, so switch to a stress test that exposes the
-internals: 6 variable slots, where `A=1` writes value 1 into variable A and
-`A?` reads A back; midway A is reassigned to `A=4`:
-
-<LinearViz client:visible lang="en" />
-
-At t=6, `A?` reads a blend of `A=1` and `A=4`: the state only adds, so
-reassignment blends old and new. The same test is a clean pass for MHA,
-where every assignment sits separately in the cache and the weights simply
-pick the latest.
+read is a blend of the whole history.
 
 ### KDA: delta rule with per-channel gating
+
+A blend means degraded retrieval, and fixing it starts with measuring it.
+A sentence doesn't expose S's internals, so switch to a synthetic test
+that does: 6 variable slots, where `A=1` writes value 1 into variable A
+and `A?` reads A back; midway A is reassigned to `A=4`, and t=7 marks a
+topic shift.
+
+First, where the blending comes from: no step ever "accumulates" as an
+operation, S simply is the sum Σ k·vᵀ. Two assignments to the same
+variable share a key direction, so a read returns their sum; and keys of
+different variables cannot be fully orthogonal in limited dimensions, so
+every read also picks up crosstalk from the other slots. Each read in the
+diagram carries a swatch: the colored part is the target value, the gray
+share is crosstalk, and it widens as the state fills.
 
 DeltaNet replaces the write with the delta rule: read the old value with k,
 erase it with write strength β, then write the new one,
@@ -129,7 +132,7 @@ layers.
 
 <MemoryViz client:visible lang="en" />
 
-Three moments to watch: at t=6, using A, the additive panel blends (✗)
+Three moments to watch: at t=6, using A, the plain-sum panel blends (✗)
 while the other two read correctly; at t=11, using E, the delta panel
 shows clear crosstalk (△) while KDA decayed the old channels at the t=7
 topic shift and reads clean (✓); at t=13, using B, the KDA panel has

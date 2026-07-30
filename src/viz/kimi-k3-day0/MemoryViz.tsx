@@ -1,15 +1,31 @@
 import { useMemo } from "react";
+import type { CSSProperties } from "react";
 import Legend from "../../components/core/Legend";
 import VizStage from "../../components/core/VizStage";
 import { useSimPlayer } from "../../components/core/useSimPlayer";
 import type { Locale } from "../../lib/i18n";
+import { seriesColor } from "../../lib/palette";
 import { LIVE_ABOVE, simulateMemory } from "./memoryEngine";
-import type { MemMode, MemResult } from "./memoryEngine";
+import type { MemMode, MemRecall, MemResult } from "./memoryEngine";
 import SlotRow from "./SlotRow";
 import { MEM, memEventText, memRecallChip, memVerdict } from "./strings";
 import "./styles.css";
 
 const MODES: MemMode[] = ["additive", "delta", "kda"];
+
+/** 读出色块：彩色按纯度分给目标槽的各份内容，剩余灰色 = 串扰份额 */
+function readoutStyle(r: MemRecall): CSSProperties {
+  const total = r.contribs.reduce((s, c) => s + c.weight, 0);
+  const stops: string[] = [];
+  let acc = 0;
+  for (const c of r.contribs) {
+    const frac = total > 0 ? (c.weight / total) * r.purity * 100 : 0;
+    stops.push(`${seriesColor(c.value)} ${acc.toFixed(1)}% ${(acc + frac).toFixed(1)}%`);
+    acc += frac;
+  }
+  stops.push(`var(--axis) ${acc.toFixed(1)}% 100%`);
+  return { background: `linear-gradient(90deg, ${stops.join(", ")})` };
+}
 const MODE_LABEL = { additive: MEM.modeAdd, delta: MEM.modeDelta, kda: MEM.modeKda };
 
 function MemSection({
@@ -41,6 +57,7 @@ function MemSection({
         )}
         {pastRecalls.map((r) => (
           <span key={r.t} className={`k3a-chip k3a-grade-${r.grade}`}>
+            <span className="k3a-readout" style={readoutStyle(r)} />
             {memRecallChip(lang, r)}
           </span>
         ))}
@@ -75,6 +92,12 @@ export default function MemoryViz({ lang = "zh" }: { lang?: Locale }) {
     {
       label: MEM.legendRing[lang],
       swatch: { background: "transparent", border: "2px solid var(--accent)" },
+    },
+    {
+      label: MEM.legendReadout[lang],
+      swatch: {
+        background: "linear-gradient(90deg, var(--series-4) 0 55%, var(--axis) 55%)",
+      },
     },
   ];
 

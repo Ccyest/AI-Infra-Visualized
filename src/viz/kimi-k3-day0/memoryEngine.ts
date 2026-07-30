@@ -42,7 +42,9 @@ export type RecallGrade = "clean" | "mixed" | "noisy" | "faded";
 export interface MemRecall {
   t: number;
   key: string;
-  /** 目标槽强度 / (目标 + 同槽旧值 + 串扰) */
+  /** 查询时目标槽的内容快照(渲染读出色块用) */
+  contribs: SlotContrib[];
+  /** 目标槽强度 / (目标 + 串扰) */
   purity: number;
   grade: RecallGrade;
 }
@@ -135,6 +137,7 @@ export function simulateMemory(mode: MemMode): MemResult {
       recall = {
         t,
         key: event.key,
+        contribs: slot.contribs.map((c) => ({ ...c })),
         purity: w / (w + others * CROSSTALK || 1),
         grade: grade(slot, others),
       };

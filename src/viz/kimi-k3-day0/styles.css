@@ -128,3 +128,14 @@
   color: var(--accent);
   font-weight: 600;
 }
+
+/* 查询读出色块:彩色 = 目标值占比,灰色 = 串扰份额 */
+.k3a-readout {
+  display: inline-block;
+  width: 13px;
+  height: 10px;
+  border-radius: 3px;
+  margin-right: 0.32rem;
+  vertical-align: -1px;
+  border: 1px solid color-mix(in srgb, var(--ink) 20%, transparent);
+}

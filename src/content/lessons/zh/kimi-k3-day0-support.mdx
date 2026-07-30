@@ -32,7 +32,6 @@ references:
 import ArchViz from "../../../viz/kimi-k3-day0/ArchViz";
 import CacheViz from "../../../viz/kimi-k3-day0/CacheViz";
 import MhaViz from "../../../viz/kimi-k3-day0/MhaViz";
-import LinearViz from "../../../viz/kimi-k3-day0/LinearViz";
 import LinearFlowViz from "../../../viz/kimi-k3-day0/LinearFlowViz";
 import MemoryViz from "../../../viz/kimi-k3-day0/MemoryViz";
 import AttnResViz from "../../../viz/kimi-k3-day0/AttnResViz";
@@ -90,17 +89,18 @@ q·Σ(kᵢ·vᵢᵀ)，求和部分累加成一个固定大小的矩阵 S(每 he
 <LinearFlowViz client:visible />
 
 「它」这一步的差别就是全部要点：上一节有一条 0.72 的线直指「猫」，这里
-S 里没有位置轴，那条线画不出来，读出的是整段历史的混合。混得多严重，
-句子看不清，换一个能看清内部的压力测试：6 个变量槽，`A=1` 表示把值 1
-写进变量 A，`A?` 表示读取 A；中途 A 被重新赋值成 `A=4`：
-
-<LinearViz client:visible />
-
-t=6 的 `A?` 读出的是 `A=1` 和 `A=4` 的混合：状态只加不减，重新赋值就会
-混叠。同样的测试对 MHA 是满分，每次赋值都单独躺在 cache 里，权重挑最新
-那条就行。
+S 里没有位置轴，那条线画不出来，读出的是整段历史的混合。
 
 ### KDA：delta rule 加逐通道门控
+
+混合意味着检索质量下降，修它之前先要能度量它。句子看不清 S 的内部，换
+一个能看清的合成测试：6 个变量槽，`A=1` 表示把值 1 写进变量 A，`A?`
+表示读取 A；中途 A 被重新赋值成 `A=4`，t=7 有一次话题切换。
+
+先说清混合从哪来：没有哪一步在"主动累加"，S 就是 Σ k·vᵀ 这个和式本身。
+同一个变量的两次赋值共享键方向，读出自然是两者之和；不同变量的键在有限
+维度里也不完全正交，每次读出还会带上其他槽的串扰。图里每次读取旁有一个
+读出色块：彩色部分是目标值，灰色份额是串扰，状态越满灰色越宽。
 
 DeltaNet 把写入换成 delta rule：先用 k 读出旧值、按写入强度 β 擦掉，再写
 新值，`S_t = (I − β·k·kᵀ)·S_{t−1} + β·k·vᵀ`，等价于对“S·k = v”做在线
@@ -115,7 +115,7 @@ Kimi Linear 论文把它解释为一种可学习的位置编码，取代 RoPE �
 
 <MemoryViz client:visible />
 
-三个关键时刻：t=6 用到 A，累加面板混叠(✗)，另外两个面板读出正确；
+三个关键时刻：t=6 用到 A，求和面板混叠(✗)，另外两个面板读出正确；
 t=11 用到 E，delta 面板串扰明显(△)，KDA 面板在 t=7 的话题切换处衰减了
 旧通道，读出干净(✓)；t=13 用到 B，KDA 面板已经衰减到读不出(◌)。衰减
 哪些通道由门控从数据中学出，任务还需要的通道，模型会学到不衰减。

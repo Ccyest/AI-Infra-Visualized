@@ -275,14 +275,14 @@ export function cacheVerdict(
 
 export const MEM = {
   title: {
-    zh: "固定状态里的记忆：累加 vs delta rule vs KDA 门控",
-    en: "Memory in a fixed state: additive vs delta rule vs KDA gating",
+    zh: "固定状态里的记忆：直接求和 vs delta rule vs KDA 门控",
+    en: "Memory in a fixed state: plain sum vs delta rule vs KDA gating",
   },
   subtitle: {
     zh: "同一串赋值与取用，三种更新规则；颜色 = 值，透明度 = 记忆强度",
     en: "Same assignments and uses, three update rules; color = value, opacity = strength",
   },
-  modeAdd: { zh: "累加(朴素线性注意力)", en: "Additive (vanilla linear attention)" },
+  modeAdd: { zh: "直接求和(S = Σ k·vᵀ)", en: "Plain sum (S = Σ k·vᵀ)" },
   modeDelta: { zh: "Delta rule(DeltaNet)", en: "Delta rule (DeltaNet)" },
   modeKda: { zh: "Delta + 逐通道门控(KDA)", en: "Delta + per-channel gate (KDA)" },
   statLive: { zh: "占用", en: "in use" },
@@ -293,7 +293,11 @@ export const MEM = {
     en: "opacity = strength (after gating decay)",
   },
   legendMixed: { zh: "同槽多色 = 新旧值混叠", en: "two colors in a slot = old and new values blended" },
-  legendRing: { zh: "描边 = 本步写入/查询的槽", en: "outline = slot written/queried this step" },
+  legendRing: { zh: "描边 = 本步写入/读取的槽", en: "outline = slot written/read this step" },
+  legendReadout: {
+    zh: "读出色块：彩色 = 目标值，灰色 = 串扰份额",
+    en: "readout swatch: color = target value, gray = crosstalk share",
+  },
 } satisfies Record<string, Localized>;
 
 const GRADE_TEXT: Record<MemRecall["grade"], Localized> = {
@@ -331,8 +335,8 @@ export function memSlotTooltip(
     .join(" + ");
   if (contribs.length > 1) {
     return zh
-      ? `槽 ${key}：${parts}(累加模式下新旧值叠加，读出即混叠)`
-      : `slot ${key}: ${parts} (additive mode stacks old and new; reads come out blended)`;
+      ? `槽 ${key}：${parts}(同键方向的写入直接相加，读出即混叠)`
+      : `slot ${key}: ${parts} (writes to the same key direction simply add; reads come out blended)`;
   }
   if (mode === "kda" && contribs[0].weight < 0.3) {
     return zh
@@ -344,8 +348,8 @@ export function memSlotTooltip(
 
 export function memVerdict(locale: Locale): string {
   return locale === "zh"
-    ? "同一串输入：累加把 A 的新旧值叠在一起(✗)；delta rule 先擦后写，换绑正确，但状态只进不出，后半段查询全是串扰(△)；KDA 在话题切换处压低不再需要的通道，后半段查询保持干净(✓)，代价是久未使用的 B 被淡忘(◌)。衰减哪些通道由门控从数据中学出。"
-    : "Same input stream: additive stacks A's old and new values (✗); the delta rule erases before writing so rebinding works, but the state only ever fills up and late queries all suffer crosstalk (△); KDA damps no-longer-needed channels at the topic shift so late queries stay clean (✓), at the cost of forgetting the long-unused B (◌). Which channels decay is learned from data.";
+    ? "同一串输入：直接求和把 A 的新旧值叠在一起(✗)；delta rule 先擦后写，换绑正确，但状态只进不出，后半段查询全是串扰(△)；KDA 在话题切换处压低不再需要的通道，后半段查询保持干净(✓)，代价是久未使用的 B 被淡忘(◌)。衰减哪些通道由门控从数据中学出。"
+    : "Same input stream: the plain sum stacks A's old and new values (✗); the delta rule erases before writing so rebinding works, but the state only ever fills up and late queries all suffer crosstalk (△); KDA damps no-longer-needed channels at the topic shift so late queries stay clean (✓), at the cost of forgetting the long-unused B (◌). Which channels decay is learned from data.";
 }
 
 export const ATTN = {
@@ -604,23 +608,6 @@ export function mhaCellTooltip(
 export function mhaChip(locale: Locale, word: string): string {
   return locale === "zh" ? `「${word}」` : `"${word}"`;
 }
-
-export const LIN = {
-  title: {
-    zh: "Linear attention：历史压进固定状态",
-    en: "Linear attention: history compressed into a fixed state",
-  },
-  subtitle: {
-    zh: "同一串赋值；变量名决定槽位，值决定颜色；状态始终 6 个槽",
-    en: "Same assignments; the variable picks the slot, the value the color; the state stays 6 slots",
-  },
-  statState: { zh: "状态 6 槽(常数)", en: "state: 6 slots (constant)" },
-  statVs: { zh: "MHA 此时已存", en: "MHA by now holds" },
-  verdict: {
-    zh: "显存和每步计算都是常数，1M 上下文也不涨。代价在质量：状态只加不减，同一个变量赋值两次，读出是两次的混合(t=6 的 A? ✗)。在固定状态里把检索做对，是下一节 KDA 的内容。",
-    en: "Memory and per-step compute are both constant, even at 1M context. The cost is quality: the state only adds, so assigning the same variable twice makes reads a blend of both (A? at t=6, ✗). Making retrieval work inside a fixed state is what KDA addresses next.",
-  },
-} satisfies Record<string, Localized>;
 
 export const LINFLOW = {
   title: {
