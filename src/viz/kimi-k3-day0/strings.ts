@@ -279,8 +279,8 @@ export const MEM = {
     en: "Memory in a fixed state: plain sum vs delta rule vs KDA gating",
   },
   subtitle: {
-    zh: "同一串 token，三种更新规则；每个 token 都执行同一套写入与读出，X? 的输出用来检验状态",
-    en: "Same token stream, three update rules; every token runs the identical write and read, X? outputs grade the state",
+    zh: "同一串 token，三种更新规则；每步写入一个槽、从全部槽读出，X? 的输出用来检验状态",
+    en: "Same token stream, three update rules; each step writes one slot and reads across all of them, X? outputs grade the state",
   },
   modeAdd: { zh: "直接求和(S = Σ k·vᵀ)", en: "Plain sum (S = Σ k·vᵀ)" },
   modeDelta: { zh: "Delta rule(DeltaNet)", en: "Delta rule (DeltaNet)" },
@@ -293,7 +293,11 @@ export const MEM = {
     en: "opacity = strength (after gating decay)",
   },
   legendMixed: { zh: "同槽多色 = 新旧值混叠", en: "two colors in a slot = old and new values blended" },
-  legendRing: { zh: "描边 = 当前 token 涉及的槽", en: "outline = slot touched by the current token" },
+  legendRing: { zh: "描边 = 本步被写入的槽", en: "outline = the slot written this step" },
+  legendFan: {
+    zh: "连线 = 本步读出 o = qᵀ·S 的组成(粗 = 目标槽，细 = 串扰)",
+    en: "lines = this step's readout o = qᵀ·S (thick = target slot, thin = crosstalk)",
+  },
   legendReadout: {
     zh: "槽位下方 = X? 的输出(彩色 = 目标值，灰色 = 串扰)",
     en: "below a slot = X? outputs (color = target value, gray = crosstalk)",
@@ -313,6 +317,12 @@ export const GRADE_SYMBOL: Record<MemRecall["grade"], string> = {
   noisy: "△",
   faded: "◌",
 };
+
+export function outNodeTooltip(locale: Locale): string {
+  return locale === "zh"
+    ? "输出 o = qᵀ·S：每步都计算，所有槽位都参与；这个 token 的输出没有标准答案，不检验"
+    : "Output o = qᵀ·S: computed every step over every slot; this token's output has no ground truth to check";
+}
 
 export function recallMarkTooltip(locale: Locale, r: MemRecall): string {
   const pct = `${(r.purity * 100).toFixed(0)}%`;

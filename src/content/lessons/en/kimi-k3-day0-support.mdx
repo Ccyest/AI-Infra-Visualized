@@ -115,12 +115,15 @@ First, where the blending comes from: no step ever "accumulates" as an
 operation, S simply is the sum Σ k·vᵀ. Two assignments to the same
 variable share a key direction, so a read returns their sum; and keys of
 different variables cannot be fully orthogonal in limited dimensions, so
-every read also picks up crosstalk from the other slots. On the write
-side, assignment tokens go to their variable slot while the rest (`X?`
-and markers) land in the "…" slot, contributing only crosstalk. `X?`
-outputs are marked under their slot: the colored part of the swatch is
-the target value, the gray share is crosstalk, widening as the state
-fills.
+every read also picks up crosstalk from the other slots. The o on the
+right of each panel is that multiplication: every slot has a line into
+it, and on `X?` steps the target slot's line is thick while the thin
+lines from everything else are exactly where crosstalk comes from;
+assignment tokens have no specified q, so their lines draw uniformly
+thin. On the write side, assignment tokens go to their variable slot
+(outlined) and all other tokens land in the "…" slot. `X?` outputs are
+also archived under their slot: the colored part of the swatch is the
+target value, the gray share is crosstalk, widening as the state fills.
 
 DeltaNet replaces the write with the delta rule: read the old value with k,
 erase it with write strength β, then write the new one,

@@ -72,6 +72,13 @@ export default function MemoryViz({ lang = "zh" }: { lang?: Locale }) {
       swatch: { background: "transparent", border: "2px solid var(--accent)" },
     },
     {
+      label: MEM.legendFan[lang],
+      swatch: {
+        background:
+          "linear-gradient(180deg, transparent 0 3px, color-mix(in srgb, var(--accent) 60%, transparent) 3px 7px, transparent 7px 9px, color-mix(in srgb, var(--accent) 30%, transparent) 9px 10px, transparent 10px)",
+      },
+    },
+    {
       label: MEM.legendReadout[lang],
       swatch: {
         background: "linear-gradient(90deg, var(--series-4) 0 55%, var(--axis) 55%)",
