@@ -112,6 +112,20 @@ export default function LinearFlowViz({ lang = "zh" }: { lang?: Locale }) {
             aria-label={LINFLOW.title[lang]}
             onMouseLeave={() => setHover(null)}
           >
+            <defs>
+              <marker
+                id="lf-arrow"
+                viewBox="0 0 8 8"
+                refX="6.5"
+                refY="4"
+                markerWidth="8"
+                markerHeight="8"
+                markerUnits="userSpaceOnUse"
+                orient="auto"
+              >
+                <path d="M 0 0 L 8 4 L 0 8 z" fill="var(--accent)" />
+              </marker>
+            </defs>
             {/* 写入(实线,上方)与读出(虚线,下方) */}
             {cur >= 0 && (
               <g fill="none" strokeLinecap="round">
@@ -122,6 +136,7 @@ export default function LinearFlowViz({ lang = "zh" }: { lang?: Locale }) {
                   stroke="var(--accent)"
                   strokeWidth={2.4}
                   opacity={0.75}
+                  markerEnd="url(#lf-arrow)"
                 />
                 <path
                   d={`M ${boxX + BOX_W / 2} ${boxY + BOX_H + 2} Q ${(curX + boxX) / 2} ${
@@ -131,6 +146,7 @@ export default function LinearFlowViz({ lang = "zh" }: { lang?: Locale }) {
                   strokeWidth={2}
                   strokeDasharray="4 4"
                   opacity={0.6}
+                  markerEnd="url(#lf-arrow)"
                 />
               </g>
             )}

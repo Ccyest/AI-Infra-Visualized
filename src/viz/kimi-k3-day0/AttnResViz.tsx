@@ -74,6 +74,20 @@ export default function AttnResViz({ lang = "zh" }: { lang?: Locale }) {
           role="img"
           aria-label={ATTN[mode === "chain" ? "modeChain" : "modeRes"][lang]}
         >
+          <defs>
+            <marker
+              id="ar-arrow"
+              viewBox="0 0 8 8"
+              refX="6.5"
+              refY="4"
+              markerWidth="7"
+              markerHeight="7"
+              markerUnits="userSpaceOnUse"
+              orient="auto"
+            >
+              <path d="M 0 0 L 8 4 L 0 8 z" fill="var(--accent)" />
+            </marker>
+          </defs>
           {/* 取回弧线(res)或链式等宽箭头(chain) */}
           {mode === "chain"
             ? Array.from({ length: BLOCKS }, (_, i) => {
@@ -85,30 +99,35 @@ export default function AttnResViz({ lang = "zh" }: { lang?: Locale }) {
                     key={i}
                     x1={x1}
                     y1={y}
-                    x2={x2 - 2}
+                    x2={x2 - 4}
                     y2={y}
                     stroke="var(--accent)"
                     strokeWidth={6}
                     strokeLinecap="round"
                     opacity={0.55}
+                    markerEnd="url(#ar-arrow)"
                   />
                 );
               })
             : alphas.map((a, i) => {
                 const sx = nodeX(i) + NODE_W / 2;
                 const dx = nodeX(selected) + NODE_W / 2;
+                // 端点沿选中块顶边散开,避免箭头互相叠住
+                const endX =
+                  dx + (alphas.length > 1 ? (i / (alphas.length - 1)) * 28 - 14 : -8);
                 const lift = Math.min(64, 18 + (dx - sx) * 0.09);
                 return (
                   <g key={i}>
                     <path
-                      d={`M ${sx} ${NODE_Y - 2} Q ${(sx + dx) / 2} ${NODE_Y - lift} ${dx} ${
-                        NODE_Y - 2
+                      d={`M ${sx} ${NODE_Y - 2} Q ${(sx + endX) / 2} ${NODE_Y - lift} ${endX} ${
+                        NODE_Y - 4
                       }`}
                       fill="none"
                       stroke="var(--accent)"
                       strokeWidth={Math.max(1.2, a * 16)}
                       strokeLinecap="round"
                       opacity={0.5}
+                      markerEnd="url(#ar-arrow)"
                     />
                     <text
                       x={sx}

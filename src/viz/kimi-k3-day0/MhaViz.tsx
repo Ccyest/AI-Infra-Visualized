@@ -107,22 +107,39 @@ export default function MhaViz({ lang = "zh" }: { lang?: Locale }) {
             aria-label={MHA.title[lang]}
             onMouseLeave={() => setHover(null)}
           >
-            {/* 连线:当前 token 对之前每个位置各一次点积 */}
+            <defs>
+              <marker
+                id="mha-arrow"
+                viewBox="0 0 8 8"
+                refX="6.5"
+                refY="4"
+                markerWidth="6"
+                markerHeight="6"
+                markerUnits="userSpaceOnUse"
+                orient="auto"
+              >
+                <path d="M 0 0 L 8 4 L 0 8 z" fill="var(--accent)" />
+              </marker>
+            </defs>
+            {/* 连线:当前 token 对之前每个位置各一次点积,箭头指向当前 token */}
             {weights.map((w, i) => {
               const sx = cx(i);
               const dx = cx(cur);
+              // 端点沿当前格顶边散开,避免箭头互相叠住
+              const endX = dx + (cur > 1 ? (i / (cur - 1)) * 18 - 9 : -6);
               const lift = Math.min(ARC_H - 8, 14 + (dx - sx) * 0.28);
               return (
                 <g key={i}>
                   <path
-                    d={`M ${sx} ${cellY - 2} Q ${(sx + dx) / 2} ${cellY - lift} ${dx} ${
-                      cellY - 2
+                    d={`M ${sx} ${cellY - 2} Q ${(sx + endX) / 2} ${cellY - lift} ${endX} ${
+                      cellY - 4
                     }`}
                     fill="none"
                     stroke="var(--accent)"
                     strokeWidth={Math.max(1, w * 14)}
                     strokeLinecap="round"
                     opacity={0.3 + 0.5 * w}
+                    markerEnd="url(#mha-arrow)"
                   />
                   {w >= 0.1 && (
                     <text
