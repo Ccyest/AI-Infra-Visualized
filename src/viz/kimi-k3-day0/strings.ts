@@ -279,8 +279,8 @@ export const MEM = {
     en: "Memory in a fixed state: plain sum vs delta rule vs KDA gating",
   },
   subtitle: {
-    zh: "同一串 token，三种更新规则；每步先读后写，读取/标记 token 写进「…」槽",
-    en: "Same token stream, three update rules; every step reads then writes, read/marker tokens land in the \"…\" slot",
+    zh: "同一串 token，三种更新规则；每个 token 都执行同一套写入与读出，X? 的输出用来检验状态",
+    en: "Same token stream, three update rules; every token runs the identical write and read, X? outputs grade the state",
   },
   modeAdd: { zh: "直接求和(S = Σ k·vᵀ)", en: "Plain sum (S = Σ k·vᵀ)" },
   modeDelta: { zh: "Delta rule(DeltaNet)", en: "Delta rule (DeltaNet)" },
@@ -293,10 +293,10 @@ export const MEM = {
     en: "opacity = strength (after gating decay)",
   },
   legendMixed: { zh: "同槽多色 = 新旧值混叠", en: "two colors in a slot = old and new values blended" },
-  legendRing: { zh: "描边 = 本步写入/读取的槽", en: "outline = slot written/read this step" },
+  legendRing: { zh: "描边 = 当前 token 涉及的槽", en: "outline = slot touched by the current token" },
   legendReadout: {
-    zh: "槽位下方 = 该槽的读取结果(彩色 = 目标值，灰色 = 串扰)",
-    en: "below a slot = its read results (color = target value, gray = crosstalk)",
+    zh: "槽位下方 = X? 的输出(彩色 = 目标值，灰色 = 串扰)",
+    en: "below a slot = X? outputs (color = target value, gray = crosstalk)",
   },
 } satisfies Record<string, Localized>;
 
@@ -317,15 +317,15 @@ export const GRADE_SYMBOL: Record<MemRecall["grade"], string> = {
 export function recallMarkTooltip(locale: Locale, r: MemRecall): string {
   const pct = `${(r.purity * 100).toFixed(0)}%`;
   return locale === "zh"
-    ? `t=${r.t} 读取 ${r.key}：${GRADE_TEXT[r.grade].zh}，纯度 ${pct}`
-    : `t=${r.t} read ${r.key}: ${GRADE_TEXT[r.grade].en}, purity ${pct}`;
+    ? `t=${r.t} ${r.key}? 的输出：${GRADE_TEXT[r.grade].zh}，纯度 ${pct}`
+    : `t=${r.t} output of ${r.key}?: ${GRADE_TEXT[r.grade].en}, purity ${pct}`;
 }
 
+/** 事件 chip 只显示 token 本身:每个 token 走的计算完全相同 */
 export function memEventText(locale: Locale, ev: MemEvent): string {
-  const zh = locale === "zh";
-  if (ev.kind === "write") return zh ? `赋值 ${ev.key}=${ev.value}` : `assign ${ev.key}=${ev.value}`;
-  if (ev.kind === "query") return zh ? `读取 ${ev.key}` : `read ${ev.key}`;
-  return zh ? "新话题" : "new topic";
+  if (ev.kind === "write") return `${ev.key}=${ev.value}`;
+  if (ev.kind === "query") return `${ev.key}?`;
+  return locale === "zh" ? "~(新话题)" : "~ (new topic)";
 }
 
 export function memSlotTooltip(
@@ -338,8 +338,8 @@ export function memSlotTooltip(
   if (key === "…") {
     const total = contribs.reduce((s, c) => s + c.weight, 0);
     return zh
-      ? `「…」槽：读取/标记 token 的写入堆在这里(强度 ${total.toFixed(1)})，只贡献串扰`
-      : `The "…" slot: writes from read/marker tokens pile up here (strength ${total.toFixed(1)}), contributing only crosstalk`;
+      ? `「…」槽：非赋值 token 的写入堆在这里(强度 ${total.toFixed(1)})，只贡献串扰`
+      : `The "…" slot: writes from non-assignment tokens pile up here (strength ${total.toFixed(1)}), contributing only crosstalk`;
   }
   if (contribs.length === 0) {
     return zh ? `槽 ${key}：空` : `slot ${key}: empty`;

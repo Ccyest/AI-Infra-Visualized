@@ -104,20 +104,23 @@ read is a blend of the whole history.
 
 A blend means degraded retrieval, and fixing it starts with measuring it.
 A sentence doesn't expose S's internals, so switch to a synthetic test
-that does: 6 variable slots, where `A=1` writes value 1 into variable A
-and `A?` reads A back; midway A is reassigned to `A=4`, and t=7 marks a
-topic shift.
+that does. The input is still a stream of ordinary tokens: `A=1` is a
+token that assigns variable A, `A?` is a token that needs A (think
+`print(A)`). Every token runs the identical computation, writing into S
+and reading out qᵀ·S; the only difference is that for `A?` we know the
+correct answer, so its output grades the state. Midway A is reassigned to
+`A=4`, and t=7 marks a topic shift.
 
 First, where the blending comes from: no step ever "accumulates" as an
 operation, S simply is the sum Σ k·vᵀ. Two assignments to the same
 variable share a key direction, so a read returns their sum; and keys of
 different variables cannot be fully orthogonal in limited dimensions, so
-every read also picks up crosstalk from the other slots. As with MHA,
-every token writes at every step: assignments go to their variable slot,
-while read and marker tokens land in the "…" slot, contributing only
-crosstalk. Read results are marked under their slot: the colored part of
-the swatch is the target value, the gray share is crosstalk, widening as
-the state fills.
+every read also picks up crosstalk from the other slots. On the write
+side, assignment tokens go to their variable slot while the rest (`X?`
+and markers) land in the "…" slot, contributing only crosstalk. `X?`
+outputs are marked under their slot: the colored part of the swatch is
+the target value, the gray share is crosstalk, widening as the state
+fills.
 
 DeltaNet replaces the write with the delta rule: read the old value with k,
 erase it with write strength β, then write the new one,
@@ -135,10 +138,10 @@ layers.
 
 <MemoryViz client:visible lang="en" />
 
-Three moments to watch: at t=6, reading A, the plain-sum panel blends (✗)
-while the other two read correctly; at t=11, reading E, the delta panel
-shows clear crosstalk (△) while KDA decayed the old channels at the t=7
-topic shift and reads clean (✓); at t=13, reading B, the KDA panel has
+Three moments to watch: on `A?` at t=6, the plain-sum panel's output
+blends (✗) while the other two are correct; on `E?` at t=11, the delta
+panel shows clear crosstalk (△) while KDA decayed the old channels at the
+t=7 topic shift and outputs clean (✓); on `B?` at t=13, the KDA panel has
 decayed it below readability (◌). Which channels decay is learned from
 data; channels a task still needs, the model learns not to decay.
 
