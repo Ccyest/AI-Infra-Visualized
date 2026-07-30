@@ -18,6 +18,21 @@ const ITEMS: MappingItem[] = [
     ),
   },
   {
+    id: "sbox",
+    label: { zh: "S 状态箱的条纹", en: "The S box stripes" },
+    real: {
+      zh: "状态是每 head 约 128×128 的稠密矩阵；条纹只表示「历史都叠在一起」，不是真实内部布局，写入/读出每步各一次",
+      en: "The state is a dense ≈128×128 matrix per head; stripes only mean “history is superimposed”, not the real layout. One write and one read per step",
+    },
+    visual: (
+      <MiniRow>
+        <MiniCell kind="faded" color="var(--series-1)" />
+        <MiniCell kind="faded" color="var(--series-2)" />
+        <MiniCell kind="faded" color="var(--series-3)" />
+      </MiniRow>
+    ),
+  },
+  {
     id: "slot",
     label: { zh: "记忆槽格子", en: "One memory slot" },
     real: {

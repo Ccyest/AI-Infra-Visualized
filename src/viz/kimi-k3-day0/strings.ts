@@ -621,3 +621,37 @@ export const LIN = {
     en: "Memory and per-step compute are both constant, even at 1M context. The cost is quality: the state only adds, so assigning the same variable twice makes reads a blend of both (A? at t=6, ✗). Making retrieval work inside a fixed state is what KDA addresses next.",
   },
 } satisfies Record<string, Localized>;
+
+export const LINFLOW = {
+  title: {
+    zh: "同一句话，换成线性注意力",
+    en: "The same sentence, through linear attention",
+  },
+  subtitle: {
+    zh: "每步：token 写进固定大小的状态 S(实线)，再从 S 读出(虚线)；S 不随长度变化",
+    en: "Each step: the token folds into the fixed-size state S (solid), then reads from S (dashed); S never grows",
+  },
+  statState: { zh: "状态大小 常数", en: "state size constant" },
+  statStep: { zh: "本步计算 常数", en: "per-step compute constant" },
+  statCum: { zh: "累计", en: "cumulative" },
+  statMha: { zh: "MHA 对照：cache", en: "MHA for comparison: cache" },
+  statMhaCum: { zh: "格，累计点积", en: "cells, cumulative dot products" },
+  sLabel: { zh: "S(固定大小)", en: "S (fixed size)" },
+  legendToken: {
+    zh: "token(颜色仅用于看它们在 S 里混合)",
+    en: "token (colors only to watch them blend inside S)",
+  },
+  legendStripe: { zh: "S 的条纹 = 已叠加的历史", en: "stripes in S = superimposed history" },
+  legendWrite: { zh: "实线 = 写入 S", en: "solid = write into S" },
+  legendRead: { zh: "虚线 = 从 S 读出", en: "dashed = read from S" },
+  verdict: {
+    zh: "计算 O(N)、显存 O(1)，1M 上下文也不涨。但 S 里没有位置轴：「它」这一步画不出上一节那条指向「猫」的线，读出的是整段历史的混合。混叠有多严重、能不能修，需要能看清内部的测试，见下图。",
+    en: "O(N) compute, O(1) memory, flat even at 1M context. But S has no position axis: on \"it\" there is no line to draw back to \"cat\" like last section; the read is a blend of the whole history. How bad the blending gets, and whether it can be fixed, needs a test that exposes the internals, next.",
+  },
+} satisfies Record<string, Localized>;
+
+export function linflowBoxTooltip(locale: Locale, count: number): string {
+  return locale === "zh"
+    ? `状态 S：${count} 个 token 的 k·vᵀ 叠加，大小固定(真实约 128×128/head)`
+    : `State S: the superposition of ${count} tokens' k·vᵀ, fixed size (really ≈128×128 per head)`;
+}

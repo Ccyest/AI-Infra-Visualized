@@ -33,6 +33,7 @@ import ArchViz from "../../../viz/kimi-k3-day0/ArchViz";
 import CacheViz from "../../../viz/kimi-k3-day0/CacheViz";
 import MhaViz from "../../../viz/kimi-k3-day0/MhaViz";
 import LinearViz from "../../../viz/kimi-k3-day0/LinearViz";
+import LinearFlowViz from "../../../viz/kimi-k3-day0/LinearFlowViz";
 import MemoryViz from "../../../viz/kimi-k3-day0/MemoryViz";
 import AttnResViz from "../../../viz/kimi-k3-day0/AttnResViz";
 import MoeViz from "../../../viz/kimi-k3-day0/MoeViz";
@@ -83,17 +84,21 @@ N 个 token 进来，和 cache 里之前 N−1 个 token 各做一次点积(图�
 线性注意力去掉 softmax，乘法可以重新结合：Σ(q·kᵢ)·vᵢ 改写成
 q·Σ(kᵢ·vᵢᵀ)，求和部分累加成一个固定大小的矩阵 S(每 head 约
 128×128)。S 本质是一张键值表：每个 token 的 k 决定写进哪个方向，v 是
-写进去的内容，读出是 `qᵀ·S`。cache 没有了，每步只碰 S。
+写进去的内容，读出是 `qᵀ·S`。cache 没有了，每步只碰 S。同一句话再走
+一遍：
 
-句子看不清 S 的内部，换一个能看清的压力测试：6 个变量槽，`A=1` 表示把
-值 1 写进变量 A，`A?` 表示读取 A，看状态还能不能把它找回来；中途 A 被
-重新赋值成 `A=4`：
+<LinearFlowViz client:visible />
+
+「它」这一步的差别就是全部要点：上一节有一条 0.72 的线直指「猫」，这里
+S 里没有位置轴，那条线画不出来，读出的是整段历史的混合。混得多严重，
+句子看不清，换一个能看清内部的压力测试：6 个变量槽，`A=1` 表示把值 1
+写进变量 A，`A?` 表示读取 A；中途 A 被重新赋值成 `A=4`：
 
 <LinearViz client:visible />
 
-显存和计算的曲线被压平，但 t=6 的 `A?` 读出的是 `A=1` 和 `A=4` 的
-混合：状态只加不减，重新赋值就会混叠。同样的测试对上一节的 MHA 是满分：
-每次赋值都单独躺在 cache 里，权重挑最新那条就行。
+t=6 的 `A?` 读出的是 `A=1` 和 `A=4` 的混合：状态只加不减，重新赋值就会
+混叠。同样的测试对 MHA 是满分，每次赋值都单独躺在 cache 里，权重挑最新
+那条就行。
 
 ### KDA：delta rule 加逐通道门控
 
