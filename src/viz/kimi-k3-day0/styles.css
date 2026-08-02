@@ -294,6 +294,33 @@
   font-size: 0.78rem;
 }
 
+.kda-key-scope {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem 0.8rem;
+  margin: 0.1rem 0 0.55rem;
+  padding: 0.5rem 0.65rem;
+  border-left: 3px solid var(--accent);
+  background: color-mix(in srgb, var(--accent) 4%, transparent);
+}
+
+.kda-key-scope > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.kda-key-scope > span > b {
+  color: var(--accent);
+}
+
+.kda-key-scope small {
+  flex: 1 1 220px;
+  color: var(--muted);
+  font-size: 0.74rem;
+}
+
 .key-overlap-grid {
   cursor: crosshair;
   user-select: none;

@@ -192,11 +192,13 @@ real state is a matrix <code>S ∈ ℝ<sup>dₖ×dᵥ</sup></code>, while the ga
 a vector <code>αₜ ∈ (0,1)<sup>dₖ</sup></code>; each entry scales one key
 channel of S. KDA also does not rotate non-orthogonal keys into orthogonal ones.
 Instead, before a new write, it shrinks old state components channel by channel
-so that some old influence on later readouts can decay. The diagram slices out
-only ch₁/ch₂ from those many channels. Two is the smallest example that can show
-<code>α₁ ≠ α₂</code>; with one channel, channel-wise and uniform decay look identical.
-C=5 is another new write with β fixed at 1. After adjusting α₁/α₂, q₁/q₂ in
-the diagram separately show the two old-channel readouts.
+so that some old influence on later readouts can decay. The diagram keeps the
+full A/B key-direction scope and opens up a minimal 2D interior:
+<code>k<sub>A</sub>=(1/√2)[1,1]ᵀ</code> and
+<code>k<sub>B</sub>=(1/√2)[1,−1]ᵀ</code>. Both A and B therefore span ch₁/ch₂;
+neither equals one channel. <code>α₁ ≠ α₂</code> first scales the two rows of S,
+then qₐ/qᵦ read the complete A/B directions. C=5 is another new write with β
+fixed at 1.
 
 <KdaGateViz client:visible lang="en" />
 
