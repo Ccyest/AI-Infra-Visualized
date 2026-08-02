@@ -475,8 +475,8 @@ export const MHA = {
   legendLine: { zh: "连线 = 一次点积(线宽 = softmax 权重)", en: "line = one dot product (width = softmax weight)" },
   legendCurrent: { zh: "描边 = 当前 token", en: "outline = current token" },
   verdict: {
-    zh: "第 N 步和之前 N−1 个 token 各点乘一次，整句累计 ≈ N²/2 次：计算 O(N²)，cache O(N)。换来的是精确检索：「它」那一步，权重跨过 5 个 token 聚在「猫」上，距离不打折。",
-    en: "Step N dots against all N−1 earlier tokens, ≈N²/2 dot products over the sentence: O(N²) compute, O(N) cache. In exchange, retrieval is exact: on \"it\", the weight crosses six tokens and lands on \"cat\", undiminished by distance.",
+    zh: "第 N 步和之前 N−1 个 token 各点乘一次，整句累计 ≈ N²/2 次：计算 O(N²)，cache O(N)。换来的是逐位置打分：「它」那一步，权重可以跨过 5 个 token 聚在「猫」上，不会因递归距离自动衰减。",
+    en: "Step N dots against all N−1 earlier tokens, ≈N²/2 dot products over the sentence: O(N²) compute, O(N) cache. In exchange, every position is scored independently: on \"it\", the weight can cross six tokens and land on \"cat\" without recurrent distance decay.",
   },
 } satisfies Record<string, Localized>;
 

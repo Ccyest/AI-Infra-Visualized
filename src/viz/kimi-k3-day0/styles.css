@@ -167,3 +167,48 @@
 .key-overlap-handle:active {
   cursor: grabbing;
 }
+
+.mha-formula-chain {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 0.45rem;
+  margin-top: 0.55rem;
+  padding: 0.55rem 0.65rem;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--accent) 5%, transparent);
+}
+
+.mha-formula-chain > span:not(.mha-formula-arrow) {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.2rem;
+  color: var(--ink-2);
+  font-size: 0.76rem;
+}
+
+.mha-formula-chain code {
+  width: fit-content;
+  max-width: 100%;
+  overflow-x: auto;
+  white-space: nowrap;
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.mha-formula-arrow {
+  color: var(--accent);
+  font-weight: 750;
+}
+
+@media (max-width: 760px) {
+  .mha-formula-chain {
+    grid-template-columns: 1fr;
+  }
+
+  .mha-formula-arrow {
+    transform: rotate(90deg);
+    justify-self: start;
+  }
+}

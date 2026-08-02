@@ -13,15 +13,17 @@ type ExampleMode = "sentence" | "math";
 interface DemoToken {
   text: string;
   focus?: [number, number][];
+  scores?: [number, number][];
   kind?: "write" | "query";
   color?: number;
+  value?: number;
 }
 
 const MATH_TOKENS: DemoToken[] = [
-  { text: "A=1", kind: "write", color: 1 },
-  { text: "B=2", kind: "write", color: 2, focus: [[0, 0.2]] },
-  { text: "A=4", kind: "write", color: 4, focus: [[0, 0.45]] },
-  { text: "A?", kind: "query", color: 0, focus: [[2, 0.9], [0, 0.05]] },
+  { text: "A=1", kind: "write", color: 1, value: 1 },
+  { text: "B=2", kind: "write", color: 2, value: 2, focus: [[0, 0.2]] },
+  { text: "A=4", kind: "write", color: 4, value: 4, focus: [[0, 0.45]] },
+  { text: "A?", kind: "query", color: 0, scores: [[0, 0], [1, 0], [2, 2.89]] },
 ];
 
 const CELL = 30;
@@ -39,6 +41,15 @@ const WIDTH = 620;
 const HEIGHT = 205;
 
 function weightsFor(tokens: { focus?: [number, number][] }[], c: number): number[] {
+  const scores = (tokens[c] as DemoToken).scores;
+  if (scores) {
+    const scoreMap = new Map(scores);
+    const logits = Array.from({ length: c }, (_, i) => scoreMap.get(i) ?? Number.NEGATIVE_INFINITY);
+    const maxLogit = Math.max(...logits);
+    const exps = logits.map((score) => Math.exp(score - maxLogit));
+    const denominator = exps.reduce((sum, value) => sum + value, 0);
+    return exps.map((value) => value / denominator);
+  }
   const focus = tokens[c].focus ?? [];
   const focusMap = new Map(focus);
   const focusSum = focus.reduce((a, [, w]) => a + w, 0);
@@ -62,6 +73,16 @@ export default function MhaViz({ lang = "zh" }: { lang?: Locale }) {
   const t = Math.min(player.t, tokens.length);
   const cur = t - 1;
   const weights = t >= 2 ? weightsFor(tokens, cur) : [];
+  const cacheEntries = tokens.slice(0, t)
+    .map((token, index) => ({ token, index }))
+    .filter(({ token }) => token.kind !== "query");
+  const scoreVector = cur >= 0 && tokens[cur].scores
+    ? Array.from({ length: cur }, (_, i) => new Map(tokens[cur].scores).get(i) ?? Number.NEGATIVE_INFINITY)
+    : null;
+  const mathQuery = mode === "math" && cur >= 0 && tokens[cur].kind === "query";
+  const weightedOutput = mathQuery
+    ? weights.reduce((sum, weight, i) => sum + weight * (tokens[i].value ?? 0), 0)
+    : null;
   const dot = Math.max(0, t - 1);
   const cumDot = (t * (t - 1)) / 2;
 
@@ -84,7 +105,7 @@ export default function MhaViz({ lang = "zh" }: { lang?: Locale }) {
   return (
     <VizStage
       title={MHA.title[lang]}
-      subtitle={mode === "sentence" ? MHA.subtitle[lang] : (lang === "zh" ? "A=1 → B=2 → A=4 → A?；每次写入保留在独立的 KV 位置" : "A=1 → B=2 → A=4 → A?; every write remains at a separate KV position")}
+      subtitle={mode === "sentence" ? MHA.subtitle[lang] : (lang === "zh" ? "A=1 → B=2 → A=4 → A?；KV 逐格保留，A? 对全部 key 打分后做 softmax" : "A=1 → B=2 → A=4 → A?; KV entries stay separate, then A? scores every key and applies softmax")}
       player={player}
       lang={lang}
       headExtra={
@@ -100,13 +121,13 @@ export default function MhaViz({ lang = "zh" }: { lang?: Locale }) {
             { label: MHA.legendLine[lang], swatch: { background: "color-mix(in srgb, var(--accent) 55%, transparent)" } },
             { label: MHA.legendCurrent[lang], swatch: { background: "transparent", border: "2px solid var(--accent)" } },
           ]} />
-          <div className="viz-verdict">{mode === "sentence" ? MHA.verdict[lang] : (lang === "zh" ? <>KV cache 把 `A=1` 和 `A=4` 保存在两个独立位置。到 `A?` 时，q 可以把主要权重放在最近的 `A=4` 上；旧的 `A=1` 仍在 cache 中，但不会被迫和 4 先相加。</> : <>The KV cache keeps `A=1` and `A=4` at separate positions. On `A?`, q can place most weight on the latest `A=4`; old `A=1` remains in cache but is not forced to add into 4 first.</>)}</div>
+          <div className="viz-verdict">{mode === "sentence" ? MHA.verdict[lang] : (lang === "zh" ? <>KV cache 把 <code>A=1</code> 和 <code>A=4</code> 保存在两个独立位置。到 <code>A?</code> 时，先计算 <code>qᵀkᵢ</code>，再经 softmax 得到归一化权重，最后对 value 加权求和。图中示意权重读出 <code>0.05×1 + 0.05×2 + 0.90×4 = 3.75</code>，不是把 1 和 4 先合并成一格。</> : <>The KV cache keeps <code>A=1</code> and <code>A=4</code> at separate positions. On <code>A?</code>, it first computes <code>qᵀkᵢ</code>, softmax-normalizes those scores, then takes a weighted sum of the values. The illustrative weights produce <code>0.05×1 + 0.05×2 + 0.90×4 = 3.75</code>; 1 and 4 are never merged into one cache entry first.</>)}</div>
         </>
       }
     >
       <div className="viz-section">
         <div className="viz-section-head">
-          <span className="viz-section-stats">{MHA.statCache[lang]} {t} {MHA.cells[lang]} · {MHA.statDot[lang]} {dot} {MHA.times[lang]} · {MHA.statTotal[lang]} {cumDot} {MHA.times[lang]}</span>
+          <span className="viz-section-stats">{MHA.statCache[lang]} {cacheEntries.length} {MHA.cells[lang]} · {MHA.statDot[lang]} {dot} {MHA.times[lang]} · {MHA.statTotal[lang]} {cumDot} {MHA.times[lang]}</span>
           {t >= 1 && <span className="k3a-chip">t={t} {mhaChip(lang, tokens[cur].text)}</span>}
         </div>
         <div className="viz-grid-wrap" ref={wrapRef}>
@@ -121,12 +142,12 @@ export default function MhaViz({ lang = "zh" }: { lang?: Locale }) {
               </g>;
             })}
 
-            <text x={CACHE_X + CACHE_W / 2} y={CACHE_Y - 12} textAnchor="middle" fontSize="10" fill="var(--muted)" fontWeight="650">{lang === "zh" ? "KV cache（本步结束后）" : "KV cache (after this step)"}</text>
+            <text x={CACHE_X + CACHE_W / 2} y={CACHE_Y - 24} textAnchor="middle" fontSize="10" fill="var(--muted)" fontWeight="650">{lang === "zh" ? "KV cache（本步结束后）" : "KV cache (after this step)"}</text>
             <rect x={CACHE_X} y={CACHE_Y} width={CACHE_W} height={CACHE_H} rx={8} fill="none" stroke="var(--ink)" strokeOpacity={0.4} strokeWidth={1.3} />
-            {tokens.slice(0, t).map((tok, i) => {
+            {cacheEntries.map(({ token: tok, index: originalIndex }, i) => {
               const x = CACHE_X + 4 + i * (CACHE_CELL + 3);
-              return <g key={`cache-${i}`} onMouseEnter={(e) => showTooltip(e, mhaCellTooltip(lang, i + 1, tok.text, i < weights.length ? weights[i] : null))}>
-                <rect x={x} y={CACHE_Y + 4} width={CACHE_CELL} height={CACHE_H - 8} rx={3} fill={tokenFill(tok, i)} opacity={i === cur || tok.kind === "query" ? 0.35 : 0.8} stroke={i === cur ? "var(--accent)" : "none"} strokeDasharray={i === cur ? "3 2" : undefined} />
+              return <g key={`cache-${originalIndex}`} onMouseEnter={(e) => showTooltip(e, mhaCellTooltip(lang, originalIndex + 1, tok.text, originalIndex < weights.length ? weights[originalIndex] : null))}>
+                <rect x={x} y={CACHE_Y + 4} width={CACHE_CELL} height={CACHE_H - 8} rx={3} fill={tokenFill(tok, originalIndex)} opacity={originalIndex === cur ? 0.35 : 0.8} stroke={originalIndex === cur ? "var(--accent)" : "none"} strokeDasharray={originalIndex === cur ? "3 2" : undefined} />
                 <text x={x + CACHE_CELL / 2} y={CACHE_Y + CACHE_H + 13} textAnchor="middle" fontSize="8" fill="var(--muted)">{tok.text}</text>
               </g>;
             })}
@@ -139,18 +160,28 @@ export default function MhaViz({ lang = "zh" }: { lang?: Locale }) {
 
             {weights.map((weight, i) => {
               const sx = QUERY_X;
-              const sy = CACHE_Y + 24;
+              const laneGap = weights.length > 1 ? 22 / (weights.length - 1) : 0;
+              const sy = CACHE_Y + 13 + i * laneGap;
               const ex = CACHE_X + 4 + i * (CACHE_CELL + 3) + CACHE_CELL;
-              const ey = CACHE_Y + 24;
-              const lift = 15 + (weights.length - i) * 4;
+              const ey = CACHE_Y + 10 + i * laneGap;
+              const bendY = CACHE_Y - 18 + i * 10;
+              const labelX = CACHE_X + 4 + i * (CACHE_CELL + 3) + CACHE_CELL / 2;
               return <g key={`attn-${i}`}>
-                <path d={`M ${sx} ${sy} Q ${(sx + ex) / 2} ${sy - lift} ${ex} ${ey}`} fill="none" stroke="var(--accent)" strokeWidth={Math.max(1, weight * 12)} strokeLinecap="round" opacity={0.3 + weight * 0.55} />
-                {weight >= 0.1 && <text x={(sx + ex) / 2} y={sy - lift / 2 - 3} textAnchor="middle" fontSize="8" fill="var(--ink-2)">{weight.toFixed(2)}</text>}
+                <path d={`M ${sx} ${sy} C ${sx - 70} ${sy}, ${ex + 110} ${bendY}, ${ex} ${ey}`} fill="none" stroke="var(--accent)" strokeWidth={Math.max(1.2, weight * 12)} strokeLinecap="round" opacity={0.38 + weight * 0.5} />
+                <circle cx={ex} cy={ey} r="2" fill="var(--accent)" opacity={0.55 + weight * 0.4} />
+                <text x={labelX} y={CACHE_Y - 6} textAnchor="middle" fontSize="8" fill="var(--ink-2)" fontWeight="650">{weight.toFixed(2)}</text>
               </g>;
             })}
           </svg>
           {hover && <div className="viz-tooltip" style={{ left: hover.x, top: hover.y, transform: "translate(-50%, -130%)" }}>{hover.text}</div>}
         </div>
+        {t >= 2 && <div className="mha-formula-chain" aria-label={lang === "zh" ? "MHA softmax 计算步骤" : "MHA softmax calculation steps"}>
+          <span><b>{lang === "zh" ? "① 点积打分" : "① dot-product scores"}</b><code>zᵢ = qᵀkᵢ / √d{scoreVector ? ` = [${scoreVector.map((score) => score.toFixed(2)).join(", ")}]` : ""}</code></span>
+          <span className="mha-formula-arrow">→</span>
+          <span><b>{lang === "zh" ? "② softmax 归一化" : "② softmax normalization"}</b><code>aᵢ = softmax(z)ᵢ{mathQuery ? ` = [${weights.map((weight) => weight.toFixed(2)).join(", ")}]` : ""}</code></span>
+          <span className="mha-formula-arrow">→</span>
+          <span><b>{lang === "zh" ? "③ value 加权求和" : "③ weighted value sum"}</b><code>o = Σᵢ aᵢvᵢ{weightedOutput === null ? "" : ` = ${weightedOutput.toFixed(2)}`}</code></span>
+        </div>}
       </div>
     </VizStage>
   );

@@ -64,28 +64,29 @@ RoPE(NoPE)，位置信息由 KDA 的递归隐式提供：
 <CacheViz client:visible />
 
 24 层 MLA 在 1M token 时约 28 GB，是全 MLA 假想值的 1/3.9。计算量同理：
-softmax attention 每生成一个 token 要扫一遍全部历史(O(N))，KDA 每步只
-更新固定大小的状态(O(1))。
+softmax attention 每生成一个 token 要扫一遍全部历史(`O(N)`)，KDA 每步只
+更新固定大小的状态(`O(1)`)。
 
 ### MHA：每步扫全部历史
 
 先看被换掉的东西。给一句话逐 token 解码：「猫追老鼠，因为它饿了」。第
-N 个 token 进来，和 cache 里之前 N−1 个 token 各做一次点积(图中的
-连线)，softmax 成权重后加权求和 v，然后自己的 KV 追加进 cache。整句
-下来点积次数累计约 N²/2：计算 O(N²)，cache O(N)。重点看 t=6 的「它」：
+`N` 个 token 进来，和 cache 里之前 `N−1` 个 token 各做一次点积(图中的
+连线)：先得到分数 `zᵢ = qᵀkᵢ / √d`，再用 `aᵢ = softmax(z)ᵢ` 归一化，最后
+计算加权和 `o = Σᵢaᵢvᵢ`，然后把自己的 KV 追加进 cache。整句的点积次数
+累计约 `N²/2`：计算 `O(N²)`，cache `O(N)`。重点看 `t=6` 的「它」：
 指代对象是 5 个 token 之前的「猫」，权重就该聚在那里：
 
 <MhaViz client:visible />
 
-这就是 softmax attention 的两面：检索精确，任意距离不打折；开销随
+这就是 softmax attention 的两面：每个历史位置都能独立打分，远距离不会因递归自动衰减；开销随
 上下文一路涨，1M token 的账上一节已经算过。
 
 ### Linear attention：固定大小的状态
 
-线性注意力去掉 softmax，乘法可以重新结合：Σ(q·kᵢ)·vᵢ 改写成
-q·Σ(kᵢ·vᵢᵀ)，求和部分累加成一个固定大小的矩阵 S(每 head 约
-128×128)。S 本质是一张键值表：每个 token 的 k 决定写进哪个方向，v 是
-写进去的内容，读出是 `qᵀ·S`。cache 没有了，每步只碰 S。同一句话再走
+线性注意力去掉 softmax，把所有历史写入先累加成固定大小的矩阵
+`S = Σᵢkᵢvᵢᵀ`(每 head 约 `128×128`)，再通过
+`o = Sᵀq = Σᵢ(qᵀkᵢ)vᵢ` 读取。S 本质是一张键值表：每个 token 的 k 决定
+写进哪个方向，v 是写进去的内容。cache 没有了，每步只碰 S。同一句话再走
 一遍：
 
 <LinearFlowViz client:visible />
@@ -110,7 +111,7 @@ S 里没有位置轴，那条线画不出来，读出的是整段历史的混合
 
 DeltaNet 把写入换成 delta rule：写新值之前，先用当前 k 从 S 里读出这个
 方向的旧值，算出“旧值和新值差多少”，再把差值写回去。常见写法是
-`S_t = S_{t−1} + β·k·(v − S_{t−1}ᵀk)ᵀ`。若旧读出是 r，那么更新后的
+`Sₜ = Sₜ₋₁ + β·k·(v − Sₜ₋₁ᵀk)ᵀ`。若旧读出是 r，那么更新后的
 读出是 `r′ = r + β(v−r) = (1−β)r + βv`。因此它等价于擦掉 β 比例的旧
 关联，再写入 β 比例的新关联；只有 β=1 时才是完整替换。
 
@@ -126,9 +127,11 @@ DeltaNet 把写入换成 delta rule：写新值之前，先用当前 k 从 S 里
 处理的部分。
 
 这里还有一个必须先说清楚的现象：真实的 key 向量通常不完全正交。假设
-`q_A = k_A`，状态里同时写入 `k_A·v_Aᵀ` 和 `k_B·v_Bᵀ`，那么读 A 时：
-`o_A = Sᵀq_A = v_A + (k_Aᵀk_B)·v_B`。第二项就是 B 漏进 A 的串扰；它的
-大小由两个 key 的内积决定。下面把问题压成二维、取 `v_A=v_B=1`：固定 A，
+<code>q<sub>A</sub> = k<sub>A</sub></code>，状态里同时写入
+<code>k<sub>A</sub>v<sub>A</sub>ᵀ</code> 和 <code>k<sub>B</sub>v<sub>B</sub>ᵀ</code>，那么读 A 时：
+<code>o<sub>A</sub> = Sᵀq<sub>A</sub> = v<sub>A</sub> + (k<sub>A</sub>ᵀk<sub>B</sub>)v<sub>B</sub></code>。
+第二项就是 B 漏进 A 的串扰；它的大小由两个 key 的内积决定。下面把问题压成
+二维、取 <code>v<sub>A</sub> = v<sub>B</sub> = 1</code>：固定 A，
 拖动 B 改变夹角，观察 B 在 A 上的投影如何进入 S 的读出。
 
 <KeyOverlapViz client:visible />
@@ -136,15 +139,18 @@ DeltaNet 把写入换成 delta rule：写新值之前，先用当前 k 从 S 里
 ### KDA：delta rule 加逐通道门控
 
 KDA 可以理解成两层改动叠在一起：底层仍然是 DeltaNet 的“先擦后写”，解决
-同键重绑定；上层再加一个由当前 token 算出的逐通道门 `Diag(α_t)`。完整顺序
+同键重绑定；上层再加一个由当前 token 算出的逐通道门 `Diag(αₜ)`。完整顺序
 是先衰减进入本步的旧状态，再做 delta update：
-`S_t = (I−β_t k_t k_tᵀ) Diag(α_t) S_{t−1} + β_t k_t v_tᵀ`。
+`Sₜ = (I−βₜkₜkₜᵀ)·Diag(αₜ)·Sₜ₋₁ + βₜkₜvₜᵀ`。
 
-这里的 α 不是给“A、B 这些变量”各发一个开关，而是 S 的 key-channel 维度上
-的保留系数向量。KDA 也不会把不正交的 key 自动旋转成正交；它做的是在新写入
-之前，按通道缩小旧状态，让某些旧成分对后续读出的影响衰减。下面的图把
-`Diag(α)` 单独放大：ch₁/ch₂ 是两个示意 channel，C=5 是本步新写入。为只观察
-α，C 的 β 固定为 1；拖动 α₁/α₂，旧通道和最终读出会一起变化。
+这里的 α 不是给“A、B 这些变量”各发一个开关。真实状态是矩阵
+<code>S ∈ ℝ<sup>dₖ×dᵥ</sup></code>，门控是向量
+<code>αₜ ∈ (0,1)<sup>dₖ</sup></code>；它的每一项缩放 S 的一条 key channel。
+KDA 也不会把不正交的 key 自动旋转成正交；它做的是在新写入之前，按通道
+缩小旧状态，让某些旧成分对后续读出的影响衰减。下图只从众多通道里截取
+ch₁/ch₂ 两条，这是能显示 <code>α₁ ≠ α₂</code> 的最小例子；如果只画一条，就无法说明
+“逐通道”和“统一衰减”的区别。C=5 是本步的另一个新写入，其 β 固定为 1；
+调节 α₁/α₂ 后，图中的 q₁/q₂ 会分别显示两条旧通道的读出。
 
 <KdaGateViz client:visible />
 

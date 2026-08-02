@@ -68,32 +68,34 @@ implicitly from the KDA recurrence:
 
 The 24 MLA layers hold about 28 GB at 1M tokens, 1/3.9 of the all-MLA
 hypothetical. Compute follows the same pattern: softmax attention scans the
-whole history per generated token (O(N)); KDA updates a fixed-size state
-(O(1)).
+whole history per generated token (`O(N)`); KDA updates a fixed-size state
+(`O(1)`).
 
 ### MHA: scan the whole history each step
 
 Start with what got replaced. Decode a sentence token by token: "The cat
-chased the mouse because it was hungry". Token N dots against each of the
-N−1 tokens already in the cache (the lines in the diagram), softmaxes the
-scores into weights, takes the weighted sum of the v's, and appends its own
-KV. Over the whole sentence that is ≈N²/2 dot products: O(N²) compute,
-O(N) cache. Watch "it" at t=7: its referent "cat" sits six tokens back,
+chased the mouse because it was hungry". Token `N` dots against each of the
+`N−1` tokens already in the cache (the lines in the diagram). This first gives
+scores `zᵢ = qᵀkᵢ / √d`, then `aᵢ = softmax(z)ᵢ` normalizes them, and finally
+`o = Σᵢaᵢvᵢ` takes the weighted value sum before the token's own KV is appended.
+Over the whole sentence that is about `N²/2` dot products: `O(N²)` compute,
+`O(N)` cache. Watch "it" at `t=7`: its referent "cat" sits six tokens back,
 and that is where the weight should land:
 
 <MhaViz client:visible lang="en" />
 
-Both sides of softmax attention in one picture: retrieval is exact at any
-distance, and the cost keeps climbing with context; the 1M-token bill was
-computed in the previous section.
+Both sides of softmax attention in one picture: every historical position is
+scored independently, so distance does not automatically decay through a
+recurrence; the cost still keeps climbing with context, as the previous
+section's 1M-token bill showed.
 
 ### Linear attention: a fixed-size state
 
-Linear attention drops the softmax so the multiplication re-associates:
-Σ(q·kᵢ)·vᵢ becomes q·Σ(kᵢ·vᵢᵀ), and the sum accumulates into one
-fixed-size matrix S (≈128×128 per head). S is essentially a key-value
-table: each token's k picks the direction to write into, v is the content,
-and reading is `qᵀ·S`. The cache is gone; each step touches only S. Run
+Linear attention drops the softmax and first accumulates all historical writes
+into the fixed-size matrix `S = Σᵢkᵢvᵢᵀ` (about `128×128` per head), then reads it with
+`o = Sᵀq = Σᵢ(qᵀkᵢ)vᵢ`. S is essentially a key-value table: each token's k
+picks the direction to write into, while v is the content. The cache is gone;
+each step touches only S. Run
 the same sentence again:
 
 <LinearFlowViz client:visible lang="en" />
@@ -123,7 +125,7 @@ in S, so the next `A?` reads a blend rather than just the latest value.
 DeltaNet replaces the write with the delta rule. Before writing the new value,
 it reads the old value along the current k, computes the gap between old and
 new, and writes that gap back. One common form is
-`S_t = S_{t−1} + β·k·(v − S_{t−1}ᵀk)ᵀ`. If the old readout is r, the new one is
+`Sₜ = Sₜ₋₁ + β·k·(v − Sₜ₋₁ᵀk)ᵀ`. If the old readout is r, the new one is
 `r′ = r + β(v−r) = (1−β)r + βv`. The update therefore erases a β fraction of
 the old association and writes a β fraction of the new one; only β=1 performs
 a full replacement.
@@ -140,11 +142,13 @@ question: as more unrelated history fills the fixed-size S, which content
 should decay and which should stay? That is the part KDA adds.
 
 One more phenomenon has to be explicit first: real key vectors are generally
-not perfectly orthogonal. Let `q_A = k_A`, and let the state contain both
-`k_A·v_Aᵀ` and `k_B·v_Bᵀ`. Reading A gives
-`o_A = Sᵀq_A = v_A + (k_Aᵀk_B)·v_B`. The second term is B leaking into A;
-its size is set by the inner product of the two keys. The diagram below reduces
-the geometry to 2D and sets `v_A=v_B=1`. Keep A fixed and drag B to see its
+not perfectly orthogonal. Let <code>q<sub>A</sub> = k<sub>A</sub></code>, and let
+the state contain both <code>k<sub>A</sub>v<sub>A</sub>ᵀ</code> and
+<code>k<sub>B</sub>v<sub>B</sub>ᵀ</code>. Reading A gives
+<code>o<sub>A</sub> = Sᵀq<sub>A</sub> = v<sub>A</sub> + (k<sub>A</sub>ᵀk<sub>B</sub>)v<sub>B</sub></code>.
+The second term is B leaking into A; its size is set by the inner product of
+the two keys. The diagram below reduces the geometry to 2D and sets
+<code>v<sub>A</sub> = v<sub>B</sub> = 1</code>. Keep A fixed and drag B to see its
 projection onto A enter the readout from S.
 
 <KeyOverlapViz client:visible lang="en" />
@@ -153,17 +157,20 @@ projection onto A enter the readout from S.
 
 KDA is easiest to read as two changes stacked together. The bottom layer is
 still DeltaNet's erase-before-write rule, which fixes same-key rebinding. On
-top of that, KDA adds a per-channel gate `Diag(α_t)` computed from the current
+top of that, KDA adds a per-channel gate `Diag(αₜ)` computed from the current
 token. The exact order is old-state decay first, then the delta update:
-`S_t = (I−β_t k_t k_tᵀ) Diag(α_t) S_{t−1} + β_t k_t v_tᵀ`.
+`Sₜ = (I−βₜkₜkₜᵀ)·Diag(αₜ)·Sₜ₋₁ + βₜkₜvₜᵀ`.
 
-The entries of α do not assign one switch to each toy “variable” A or B; they
-are retention factors along the key-channel dimension of S. KDA also does not
-rotate non-orthogonal keys into orthogonal ones. Instead, before the new write,
-it shrinks old state components channel by channel so that some old influence
-on later readouts can decay. The next diagram magnifies `Diag(α)`: ch₁/ch₂ are
-two illustrative channels and C=5 is the new write. C uses β=1 so the diagram
-can isolate α; adjust α₁/α₂ and both the old channels and readout change.
+The entries of α do not assign one switch to each toy “variable” A or B. The
+real state is a matrix <code>S ∈ ℝ<sup>dₖ×dᵥ</sup></code>, while the gate is
+a vector <code>αₜ ∈ (0,1)<sup>dₖ</sup></code>; each entry scales one key
+channel of S. KDA also does not rotate non-orthogonal keys into orthogonal ones.
+Instead, before a new write, it shrinks old state components channel by channel
+so that some old influence on later readouts can decay. The diagram slices out
+only ch₁/ch₂ from those many channels. Two is the smallest example that can show
+<code>α₁ ≠ α₂</code>; with one channel, channel-wise and uniform decay look identical.
+C=5 is another new write with β fixed at 1. After adjusting α₁/α₂, q₁/q₂ in
+the diagram separately show the two old-channel readouts.
 
 <KdaGateViz client:visible lang="en" />
 

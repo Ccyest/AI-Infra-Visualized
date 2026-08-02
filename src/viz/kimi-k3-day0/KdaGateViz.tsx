@@ -12,16 +12,18 @@ const STEPS = [
   { label: "ch₂=2", color: 2, kind: "write" },
   { label: "C=5", color: 5, kind: "gate-write" },
   { label: "q₁?", color: 0, kind: "query" },
+  { label: "q₂?", color: 0, kind: "query" },
 ] as const;
 
 const COPY = {
   title: { zh: "KDA：先逐通道衰减，再做 delta update", en: "KDA: channel-wise decay, then a delta update" },
-  subtitle: { zh: "调节 C=5 这一步的 α₁ / α₂；两条旧通道可以用不同速度遗忘", en: "Adjust α₁ / α₂ on the C=5 step; old channels can forget at different rates" },
+  subtitle: { zh: "只截取真实状态中的 2 条旧 key channel；调节 α₁ / α₂，对比 q₁ / q₂ 的读出", en: "A two-old-channel slice of the real state; adjust α₁ / α₂ and compare the q₁ / q₂ readouts" },
   before: { zh: "进入本步的 S", en: "S entering this step" },
   after: { zh: "门控 + 写入后的 S", en: "S after gate + write" },
   gate: { zh: "① 逐通道衰减", en: "① channel-wise decay" },
   write: { zh: "② delta 写入 C=5", en: "② delta-write C=5" },
-  query: { zh: "q₁ 读出通道 1", en: "q₁ reads channel 1" },
+  query1: { zh: "q₁ 读出 ch₁", en: "q₁ reads ch₁" },
+  query2: { zh: "q₂ 读出 ch₂", en: "q₂ reads ch₂" },
 };
 
 function text(lang: Locale, value: { zh: string; en: string }) {
@@ -39,7 +41,7 @@ interface Channel {
   color: number;
 }
 
-function drawState(channels: Channel[], x: number, y: number, highlight?: string) {
+function drawState(channels: Channel[], x: number, y: number, highlights: string[] = []) {
   const slotW = 34;
   const boxW = 150;
   const boxH = 48;
@@ -50,7 +52,7 @@ function drawState(channels: Channel[], x: number, y: number, highlight?: string
       return <g key={channel.label}>
         <rect x={xx} y={y + 4} width={slotW} height={boxH - 8} rx={3} fill="none" stroke="var(--grid)" strokeWidth="1" />
         <rect x={xx} y={y + 4} width={slotW * channel.retention} height={boxH - 8} rx={3} fill={seriesColor(channel.color)} opacity="0.86" />
-        <text x={xx + slotW / 2} y={y + boxH + 13} textAnchor="middle" fontSize="8.5" fill={highlight === channel.label ? "var(--accent)" : "var(--muted)"} fontWeight={highlight === channel.label ? 700 : 400}>{channel.label}={format(channel.value)}</text>
+        <text x={xx + slotW / 2} y={y + boxH + 13} textAnchor="middle" fontSize="8.5" fill={highlights.includes(channel.label) ? "var(--accent)" : "var(--muted)"} fontWeight={highlights.includes(channel.label) ? 700 : 400}>{channel.label}={format(channel.value)}</text>
       </g>;
     })}
   </g>;
@@ -95,8 +97,9 @@ export default function KdaGateViz({ lang = "zh" }: { lang?: Locale }) {
           <Legend items={[
             { label: lang === "zh" ? "彩色宽度 = 该通道保留强度" : "colored width = retained channel strength", swatch: { background: "linear-gradient(90deg, var(--series-1) 0 65%, var(--grid) 65%)" } },
             { label: lang === "zh" ? "C=5 固定 β=1，只为单独观察 α" : "C=5 uses β=1 to isolate α", swatch: { background: "var(--series-5)" } },
+            { label: lang === "zh" ? "q₁ / q₂ = 分别读取两条旧通道" : "q₁ / q₂ = read the two old channels separately", swatch: { background: "var(--axis)" } },
           ]} />
-          <div className="viz-verdict">{lang === "zh" ? <>KDA 的顺序是 <b>先 Diag(α) 衰减旧状态，再做 delta update</b>。这里 α₁={alpha1}、α₂={alpha2}：ch₁ 从 4 变成 {format(4 * alpha1)}，ch₂ 从 2 变成 {format(2 * alpha2)}，随后写入 C=5。</> : <>KDA applies <b>Diag(α) to decay the old state before the delta update</b>. Here α₁={alpha1}, α₂={alpha2}: ch₁ goes from 4 to {format(4 * alpha1)}, ch₂ from 2 to {format(2 * alpha2)}, then C=5 is written.</>}</div>
+          <div className="viz-verdict">{lang === "zh" ? <>图中的 ch₁ / ch₂ 只是从真实状态众多 key channels 里截取的<b>最小对比例</b>；只画一条就看不出“逐通道”的差异。KDA 先用 <code>Diag(α)</code> 衰减旧状态，再做 delta update。当前 <code>α₁={alpha1}</code>、<code>α₂={alpha2}</code>，所以 <code>q₁ → {format(4 * alpha1)}</code>、<code>q₂ → {format(2 * alpha2)}</code>，随后另外写入 <code>C=5</code>。</> : <>ch₁ / ch₂ are only a <b>minimal comparison</b> sliced from the real state's many key channels; one channel cannot show what “channel-wise” means. KDA decays the old state with <code>Diag(α)</code> before the delta update. With <code>α₁={alpha1}</code> and <code>α₂={alpha2}</code>, <code>q₁ → {format(4 * alpha1)}</code> while <code>q₂ → {format(2 * alpha2)}</code>, then <code>C=5</code> is written separately.</>}</div>
         </>
       }
     >
@@ -124,7 +127,7 @@ export default function KdaGateViz({ lang = "zh" }: { lang?: Locale }) {
           <text x="93" y="103" textAnchor="middle" fontSize="10" fill="var(--muted)" fontWeight="650">{text(lang, COPY.before)}</text>
           {drawState(stateBefore, 18, 115)}
           <text x="525" y="103" textAnchor="middle" fontSize="10" fill="var(--muted)" fontWeight="650">{text(lang, COPY.after)}</text>
-          {drawState(stateAfter, 450, 115, t === 3 ? "C" : t === 4 ? "ch₁" : undefined)}
+          {drawState(stateAfter, 450, 115, t === 3 ? ["C"] : t === 4 ? ["ch₁"] : t === 5 ? ["ch₁", "ch₂"] : [])}
 
           <g transform="translate(225 111)">
             {t === 3 ? <>
@@ -132,7 +135,10 @@ export default function KdaGateViz({ lang = "zh" }: { lang?: Locale }) {
               <text x="0" y="17" fontSize="9.5" fill="var(--ink-2)">ch₁: 4×{alpha1} = {format(4 * alpha1)}</text>
               <text x="0" y="33" fontSize="9.5" fill="var(--ink-2)">ch₂: 2×{alpha2} = {format(2 * alpha2)}</text>
               <text x="0" y="53" fontSize="10" fill="var(--good)" fontWeight="700">{text(lang, COPY.write)} (β=1)</text>
-            </> : t === 4 ? <text x="0" y="26" fontSize="10.5" fill="var(--good)" fontWeight="700">{text(lang, COPY.query)}: {format(4 * alpha1)}</text> : t >= 1 ? <text x="0" y="26" fontSize="10" fill="var(--accent)" fontWeight="700">delta write: {STEPS[cur].label} (β=1)</text> : null}
+            </> : t === 4 ? <text x="0" y="26" fontSize="10.5" fill="var(--good)" fontWeight="700">{text(lang, COPY.query1)}: {format(4 * alpha1)}</text> : t === 5 ? <>
+              <text x="0" y="17" fontSize="10.5" fill="var(--good)" fontWeight="700">{text(lang, COPY.query1)}: {format(4 * alpha1)}</text>
+              <text x="0" y="41" fontSize="10.5" fill="var(--good)" fontWeight="700">{text(lang, COPY.query2)}: {format(2 * alpha2)}</text>
+            </> : t >= 1 ? <text x="0" y="26" fontSize="10" fill="var(--accent)" fontWeight="700">delta write: {STEPS[cur].label} (β=1)</text> : null}
           </g>
         </svg>
       </div>

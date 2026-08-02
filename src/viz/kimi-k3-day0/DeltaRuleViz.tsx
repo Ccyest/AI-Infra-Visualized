@@ -124,7 +124,7 @@ export default function DeltaRuleViz({ lang = "zh" }: { lang?: Locale }) {
         <>
           <Legend items={[{ label: lang === "zh" ? "彩色 token = 写入(k, v)" : "colored token = write (k, v)", swatch: { background: "linear-gradient(90deg, var(--series-1) 0 50%, var(--series-2) 50%)" } }, { label: lang === "zh" ? "灰色 token = 读取(q)" : "gray token = read (q)", swatch: { background: "var(--axis)" } }]} />
           <div className="viz-verdict">
-            {lang === "zh" ? <>β={beta}：r′ = 1 + {beta}×(4−1) = <b>{formatValue(1 + beta * 3)}</b>；等价于 (1−{beta})×1 + {beta}×4。蓝色是保留的旧关联，黄色是写入的新关联。</> : <>β={beta}: r′ = 1 + {beta}×(4−1) = <b>{formatValue(1 + beta * 3)}</b>; equivalently, (1−{beta})×1 + {beta}×4. Blue is the retained old association; yellow is the newly written association.</>}
+            {lang === "zh" ? <><code>β={beta}</code>：<code>r′ = 1 + {beta}×(4−1) = {formatValue(1 + beta * 3)}</code>；等价于 <code>(1−{beta})×1 + {beta}×4</code>。蓝色是保留的旧关联，黄色是写入的新关联。</> : <><code>β={beta}</code>: <code>r′ = 1 + {beta}×(4−1) = {formatValue(1 + beta * 3)}</code>; equivalently, <code>(1−{beta})×1 + {beta}×4</code>. Blue is the retained old association; yellow is the newly written association.</>}
           </div>
         </>
       }

@@ -90,7 +90,7 @@ export default function LinearFlowViz({ lang = "zh" }: { lang?: Locale }) {
             { label: LINFLOW.legendWrite[lang], swatch: { background: "color-mix(in srgb, var(--accent) 60%, transparent)" } },
             { label: LINFLOW.legendRead[lang], swatch: { background: "repeating-linear-gradient(90deg, var(--accent) 0 3px, transparent 3px 6px)" } },
           ]} />
-          <div className="viz-verdict">{mode === "sentence" ? LINFLOW.verdict[lang] : (lang === "zh" ? <>Naive linear attention 直接累加 `k·vᵀ`。因此 `A=1` 和 `A=4` 都写进同一个 A 方向；到 `A?` 时，q_A 从 S 读到的是 <b>1+4</b> 的叠加，而不是可寻址的最新值 4。</> : <>Naive linear attention directly accumulates `k·vᵀ`. Both `A=1` and `A=4` therefore write along the same A direction; on `A?`, q_A reads the superposition <b>1+4</b> from S rather than an addressable latest value of 4.</>)}</div>
+          <div className="viz-verdict">{mode === "sentence" ? LINFLOW.verdict[lang] : (lang === "zh" ? <>Naive linear attention 直接累加 <code>kvᵀ</code>。因此 <code>A=1</code> 和 <code>A=4</code> 都写进同一个 A 方向；到 <code>A?</code> 时，<code>qₐ</code> 从 S 读到的是 <code>1+4=5</code> 的叠加，而不是可寻址的最新值 4。</> : <>Naive linear attention directly accumulates <code>kvᵀ</code>. Both <code>A=1</code> and <code>A=4</code> therefore write along the same A direction; on <code>A?</code>, <code>qₐ</code> reads the superposition <code>1+4=5</code> from S rather than an addressable latest value of 4.</>)}</div>
         </>
       }
     >
@@ -123,11 +123,11 @@ export default function LinearFlowViz({ lang = "zh" }: { lang?: Locale }) {
             {t >= 1 && <g transform="translate(225 120)">
               {mode === "math" && currentIsQuery ? <>
                 <text x="0" y="0" fontSize="10" fill="var(--muted)">{lang === "zh" ? "本步只读，不写入" : "read only; no write this step"}</text>
-                <text x="0" y="22" fontSize="10" fill="var(--ink-2)">o_A = Sᵀq_A</text>
+                <text x="0" y="22" fontSize="10" fill="var(--ink-2)">oₐ = Sᵀqₐ</text>
                 <text x="0" y="44" fontSize="10" fill="var(--series-8)" fontWeight="700">A: 1 + 4 = 5</text>
               </> : <>
                 <text x="0" y="0" fontSize="10" fill="var(--ink-2)">{lang === "zh" ? "写入" : "write"}: <tspan fill="var(--ink)" fontWeight="700">Sₜ = Sₜ₋₁ + kₜvₜᵀ</tspan></text>
-                <text x="0" y="22" fontSize="10" fill="var(--accent)" fontWeight="700">{mode === "math" && tokens[cur]?.text === "A=4" ? (lang === "zh" ? "与 A=1 沿同一 k_A 方向累加" : "adds along the same k_A as A=1") : (lang === "zh" ? "固定状态原地更新" : "fixed state updated in place")}</text>
+                <text x="0" y="22" fontSize="10" fill="var(--accent)" fontWeight="700">{mode === "math" && tokens[cur]?.text === "A=4" ? (lang === "zh" ? "与 A=1 沿同一 kₐ 方向累加" : "adds along the same kₐ as A=1") : (lang === "zh" ? "固定状态原地更新" : "fixed state updated in place")}</text>
                 <text x="0" y="44" fontSize="10" fill="var(--ink-2)">{lang === "zh" ? "读出" : "read"}: <tspan fill="var(--ink)" fontWeight="700">oₜ = Sₜᵀqₜ</tspan></text>
               </>}
             </g>}
