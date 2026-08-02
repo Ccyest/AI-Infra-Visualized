@@ -456,12 +456,12 @@ export const ARCH_DETAILS: ArchDetail[] = [
 
 export const MHA = {
   title: {
-    zh: "MHA：每步对全部历史做注意力",
-    en: "MHA: attention over the whole history, every step",
+    zh: "MHA：读取随历史增长的 KV cache",
+    en: "MHA: read from a KV cache that grows with history",
   },
   subtitle: {
-    zh: "一句话逐 token 解码；每条连线 = 当前 token 和一个历史位置的点积，线宽 = softmax 权重(示意值)",
-    en: "Decoding a sentence token by token; each line = one dot product between the current token and a past position, width = softmax weight (illustrative)",
+    zh: "同一句话逐 token 解码；q 对每个历史位置分别点积，线宽 = softmax 权重（示意值）",
+    en: "The same sentence decoded token by token; q dots with every past position, line width = softmax weight (illustrative)",
   },
   statCache: { zh: "cache", en: "cache" },
   cells: { zh: "格", en: "cells" },
@@ -531,12 +531,12 @@ export function mhaChip(locale: Locale, word: string): string {
 
 export const LINFLOW = {
   title: {
-    zh: "同一句话，换成线性注意力",
-    en: "The same sentence, through linear attention",
+    zh: "Naive linear attention：把历史压进固定状态",
+    en: "Naive linear attention: fold history into a fixed state",
   },
   subtitle: {
-    zh: "每步：token 写进固定大小的状态 S(实线)，再从 S 读出(虚线)；S 不随长度变化",
-    en: "Each step: the token folds into the fixed-size state S (solid), then reads from S (dashed); S never grows",
+    zh: "同一句话逐 token 解码；每步写入 k·vᵀ，再用 q 从固定大小的 S 读出",
+    en: "The same sentence decoded token by token; each step writes k·vᵀ, then q reads from fixed-size S",
   },
   statState: { zh: "状态大小 常数", en: "state size constant" },
   statStep: { zh: "本步计算 常数", en: "per-step compute constant" },
@@ -552,8 +552,8 @@ export const LINFLOW = {
   legendWrite: { zh: "实线 = 写入 S", en: "solid = write into S" },
   legendRead: { zh: "虚线 = 从 S 读出", en: "dashed = read from S" },
   verdict: {
-    zh: "计算 O(N)、显存 O(1)，1M 上下文也不涨。但 S 里没有位置轴：「它」这一步画不出上一节那条指向「猫」的线，读出的是整段历史的混合。混叠有多严重、能不能修，需要能看清内部的测试，见下图。",
-    en: "O(N) compute, O(1) memory, flat even at 1M context. But S has no position axis: on \"it\" there is no line to draw back to \"cat\" like last section; the read is a blend of the whole history. How bad the blending gets, and whether it can be fixed, needs a test that exposes the internals, next.",
+    zh: "计算 O(N)、显存 O(1)，1M 上下文也不涨。但 S 里没有位置轴：「它」这一步画不出上一节那条指向「猫」的线，q 只能从叠加后的固定状态中读出。下一节的 delta rule 解决其中的同键改写问题。",
+    en: "O(N) compute and O(1) memory stay flat even at 1M context. But S has no position axis: on \"it\" there is no line back to \"cat\" like in MHA; q can only read from the superimposed fixed state. The next section's delta rule addresses same-key rebinding within that state.",
   },
 } satisfies Record<string, Localized>;
 

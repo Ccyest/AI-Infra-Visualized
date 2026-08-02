@@ -4,23 +4,24 @@ import Legend from "../../components/core/Legend";
 import VizStage from "../../components/core/VizStage";
 import { useSimPlayer } from "../../components/core/useSimPlayer";
 import type { Locale } from "../../lib/i18n";
+import { seriesColor } from "../../lib/palette";
 import { MHA, MHA_TOKENS, mhaCellTooltip, mhaChip } from "./strings";
 import "./styles.css";
 
-/**
- * MHA:一句话逐 token 解码。第 N 步的当前 token 和之前 N−1 个 token
- * 各做一次点积(一条连线),线宽 = softmax 权重;算完自己的 KV 入 cache。
- * 权重为手工示意值:代词等有明确指代的步用 MHA_TOKENS 里的 focus,
- * 其余按就近衰减分摊。
- */
-
 const CELL = 30;
-const GAP = 10;
-const PITCH = CELL + GAP;
-const ARC_H = 66;
-const LABEL_H = 16;
+const PITCH = 47;
+const TOKEN_X = 18;
+const TOKEN_Y = 28;
+const CACHE_X = 18;
+const CACHE_Y = 118;
+const CACHE_W = 390;
+const CACHE_H = 48;
+const CACHE_CELL = 36;
+const QUERY_X = 500;
+const QUERY_SIZE = 34;
+const WIDTH = 620;
+const HEIGHT = 205;
 
-/** 第 c 个 token(0 起)对位置 i < c 的权重 */
 function weightsFor(tokens: { focus?: [number, number][] }[], c: number): number[] {
   const focus = tokens[c].focus ?? [];
   const focusMap = new Map(focus);
@@ -30,48 +31,27 @@ function weightsFor(tokens: { focus?: [number, number][] }[], c: number): number
   const rawSum = raw.reduce((a, b) => a + b, 0) || 1;
   const out = Array(c).fill(0) as number[];
   for (const [i, w] of focus) out[i] = w;
-  rest.forEach((i, j) => {
-    out[i] = ((1 - focusSum) * raw[j]) / rawSum;
-  });
+  rest.forEach((i, j) => { out[i] = ((1 - focusSum) * raw[j]) / rawSum; });
   return out;
 }
 
 export default function MhaViz({ lang = "zh" }: { lang?: Locale }) {
   const tokens = MHA_TOKENS[lang];
-  const n = tokens.length;
-  const player = useSimPlayer(n, 1.2);
+  const player = useSimPlayer(tokens.length, 1.2);
   const wrapRef = useRef<HTMLDivElement>(null);
   const [hover, setHover] = useState<{ x: number; y: number; text: string } | null>(null);
-
-  const t = Math.min(player.t, n);
+  const t = Math.min(player.t, tokens.length);
   const cur = t - 1;
   const weights = t >= 2 ? weightsFor(tokens, cur) : [];
-  const width = n * PITCH - GAP + 2;
-  const height = ARC_H + CELL + LABEL_H + 6;
-  const cellY = ARC_H + 2;
-  const cx = (i: number) => i * PITCH + CELL / 2;
-
   const dot = Math.max(0, t - 1);
   const cumDot = (t * (t - 1)) / 2;
 
-  const showTooltip = (e: ReactMouseEvent, text: string) => {
+  const showTooltip = (e: ReactMouseEvent, message: string) => {
     const wrap = wrapRef.current;
     if (!wrap) return;
     const rect = wrap.getBoundingClientRect();
-    setHover({ x: e.clientX - rect.left, y: e.clientY - rect.top, text });
+    setHover({ x: e.clientX - rect.left, y: e.clientY - rect.top, text: message });
   };
-
-  const legend = [
-    { label: MHA.legendCell[lang], swatch: { background: "var(--series-1)", opacity: 0.55 } },
-    {
-      label: MHA.legendLine[lang],
-      swatch: { background: "color-mix(in srgb, var(--accent) 55%, transparent)" },
-    },
-    {
-      label: MHA.legendCurrent[lang],
-      swatch: { background: "transparent", border: "2px solid var(--accent)" },
-    },
-  ];
 
   return (
     <VizStage
@@ -81,141 +61,61 @@ export default function MhaViz({ lang = "zh" }: { lang?: Locale }) {
       lang={lang}
       footer={
         <>
-          <Legend items={legend} />
+          <Legend items={[
+            { label: lang === "zh" ? "颜色 = 同一个 token 及其 KV" : "color = the same token and its KV", swatch: { background: "linear-gradient(90deg, var(--series-1) 0 50%, var(--series-2) 50%)" } },
+            { label: MHA.legendLine[lang], swatch: { background: "color-mix(in srgb, var(--accent) 55%, transparent)" } },
+            { label: MHA.legendCurrent[lang], swatch: { background: "transparent", border: "2px solid var(--accent)" } },
+          ]} />
           <div className="viz-verdict">{MHA.verdict[lang]}</div>
         </>
       }
     >
       <div className="viz-section">
         <div className="viz-section-head">
-          <span className="viz-section-stats">
-            {MHA.statCache[lang]} {t} {MHA.cells[lang]} · {MHA.statDot[lang]} {dot}{" "}
-            {MHA.times[lang]} · {MHA.statTotal[lang]} {cumDot} {MHA.times[lang]}
-          </span>
-          {t >= 1 && (
-            <span className="k3a-chip">
-              t={t} {mhaChip(lang, tokens[cur].text)}
-            </span>
-          )}
+          <span className="viz-section-stats">{MHA.statCache[lang]} {t} {MHA.cells[lang]} · {MHA.statDot[lang]} {dot} {MHA.times[lang]} · {MHA.statTotal[lang]} {cumDot} {MHA.times[lang]}</span>
+          {t >= 1 && <span className="k3a-chip">t={t} {mhaChip(lang, tokens[cur].text)}</span>}
         </div>
         <div className="viz-grid-wrap" ref={wrapRef}>
-          <svg
-            className="viz-grid"
-            style={{ minWidth: 420, maxWidth: 560 }}
-            viewBox={`0 0 ${width} ${height}`}
-            role="img"
-            aria-label={MHA.title[lang]}
-            onMouseLeave={() => setHover(null)}
-          >
-            <defs>
-              <marker
-                id="mha-arrow"
-                viewBox="0 0 8 8"
-                refX="6.5"
-                refY="4"
-                markerWidth="6"
-                markerHeight="6"
-                markerUnits="userSpaceOnUse"
-                orient="auto"
-              >
-                <path d="M 0 0 L 8 4 L 0 8 z" fill="var(--accent)" />
-              </marker>
-            </defs>
-            {/* 连线:当前 token 对之前每个位置各一次点积,箭头指向当前 token */}
-            {weights.map((w, i) => {
-              const sx = cx(i);
-              const dx = cx(cur);
-              // 端点沿当前格顶边散开,避免箭头互相叠住
-              const endX = dx + (cur > 1 ? (i / (cur - 1)) * 18 - 9 : -6);
-              const lift = Math.min(ARC_H - 8, 14 + (dx - sx) * 0.28);
-              return (
-                <g key={i}>
-                  <path
-                    d={`M ${sx} ${cellY - 2} Q ${(sx + endX) / 2} ${cellY - lift} ${endX} ${
-                      cellY - 4
-                    }`}
-                    fill="none"
-                    stroke="var(--accent)"
-                    strokeWidth={Math.max(1, w * 14)}
-                    strokeLinecap="round"
-                    opacity={0.3 + 0.5 * w}
-                    markerEnd="url(#mha-arrow)"
-                  />
-                  {w >= 0.1 && (
-                    <text
-                      x={sx}
-                      y={cellY - 7 - (dx - sx) * 0.13}
-                      textAnchor="middle"
-                      fontSize="8.5"
-                      fill="var(--ink-2)"
-                    >
-                      {w.toFixed(2)}
-                    </text>
-                  )}
-                </g>
-              );
+          <svg className="viz-grid" style={{ minWidth: 500, maxWidth: 680 }} viewBox={`0 0 ${WIDTH} ${HEIGHT}`} role="img" aria-label={MHA.title[lang]} onMouseLeave={() => setHover(null)}>
+            {tokens.map((tok, i) => {
+              const x = TOKEN_X + i * PITCH;
+              const seen = i < t;
+              const current = i === cur;
+              return <g key={i}>
+                <rect className="viz-cell" x={x} y={TOKEN_Y} width={CELL} height={CELL} rx={5} fill={seen ? seriesColor(i + 1) : "none"} opacity={seen ? 0.86 : 1} stroke={current ? "var(--accent)" : "var(--grid)"} strokeWidth={current ? 2 : 1} onMouseEnter={seen ? (e) => showTooltip(e, mhaCellTooltip(lang, i + 1, tok.text, i < weights.length ? weights[i] : null)) : undefined} />
+                {seen && <text x={x + CELL / 2} y={TOKEN_Y + 43} textAnchor="middle" fontSize="9" fill={current ? "var(--accent)" : "var(--muted)"} fontWeight={current ? 700 : 400}>{tok.text}</text>}
+              </g>;
             })}
 
-            {/* token 格与词 */}
-            {tokens.map((tok, i) => {
-              const x = i * PITCH;
-              const seen = i < t;
-              const isCurrent = i === cur;
-              const w = !isCurrent && i < weights.length ? weights[i] : null;
-              return (
-                <g key={i}>
-                  {seen ? (
-                    <rect
-                      className="viz-cell"
-                      x={x}
-                      y={cellY}
-                      width={CELL}
-                      height={CELL}
-                      rx={5}
-                      fill="var(--series-1)"
-                      opacity={0.55}
-                      stroke={isCurrent ? "var(--accent)" : "none"}
-                      strokeWidth={isCurrent ? 2.2 : 0}
-                      onMouseEnter={(e) =>
-                        showTooltip(e, mhaCellTooltip(lang, i + 1, tok.text, w))
-                      }
-                    />
-                  ) : (
-                    <rect
-                      x={x}
-                      y={cellY}
-                      width={CELL}
-                      height={CELL}
-                      rx={5}
-                      fill="none"
-                      stroke="var(--grid)"
-                      strokeWidth="1"
-                    />
-                  )}
-                  {seen && (
-                    <text
-                      x={x + CELL / 2}
-                      y={cellY + CELL + LABEL_H - 3}
-                      textAnchor="middle"
-                      fontSize="9.5"
-                      fill={isCurrent ? "var(--accent)" : "var(--muted)"}
-                      fontWeight={isCurrent ? 700 : 400}
-                    >
-                      {tok.text}
-                    </text>
-                  )}
-                </g>
-              );
+            <text x={CACHE_X + CACHE_W / 2} y={CACHE_Y - 12} textAnchor="middle" fontSize="10" fill="var(--muted)" fontWeight="650">{lang === "zh" ? "KV cache（本步结束后）" : "KV cache (after this step)"}</text>
+            <rect x={CACHE_X} y={CACHE_Y} width={CACHE_W} height={CACHE_H} rx={8} fill="none" stroke="var(--ink)" strokeOpacity={0.4} strokeWidth={1.3} />
+            {tokens.slice(0, t).map((tok, i) => {
+              const x = CACHE_X + 4 + i * (CACHE_CELL + 3);
+              return <g key={`cache-${i}`} onMouseEnter={(e) => showTooltip(e, mhaCellTooltip(lang, i + 1, tok.text, i < weights.length ? weights[i] : null))}>
+                <rect x={x} y={CACHE_Y + 4} width={CACHE_CELL} height={CACHE_H - 8} rx={3} fill={seriesColor(i + 1)} opacity={i === cur ? 0.35 : 0.8} stroke={i === cur ? "var(--accent)" : "none"} strokeDasharray={i === cur ? "3 2" : undefined} />
+                <text x={x + CACHE_CELL / 2} y={CACHE_Y + CACHE_H + 13} textAnchor="middle" fontSize="8" fill="var(--muted)">{tok.text}</text>
+              </g>;
+            })}
+
+            {t >= 1 && <g>
+              <rect x={QUERY_X} y={CACHE_Y + 7} width={QUERY_SIZE} height={QUERY_SIZE} rx={6} fill="var(--axis)" opacity={0.5} stroke="var(--accent)" strokeWidth="1.8" />
+              <text x={QUERY_X + QUERY_SIZE / 2} y={CACHE_Y + 28} textAnchor="middle" fontSize="11" fill="var(--accent-ink)" fontWeight="750">q</text>
+              <text x={QUERY_X + QUERY_SIZE / 2} y={CACHE_Y + CACHE_H + 13} textAnchor="middle" fontSize="8.5" fill="var(--muted)">{tokens[cur].text}</text>
+            </g>}
+
+            {weights.map((weight, i) => {
+              const sx = QUERY_X;
+              const sy = CACHE_Y + 24;
+              const ex = CACHE_X + 4 + i * (CACHE_CELL + 3) + CACHE_CELL;
+              const ey = CACHE_Y + 24;
+              const lift = 15 + (weights.length - i) * 4;
+              return <g key={`attn-${i}`}>
+                <path d={`M ${sx} ${sy} Q ${(sx + ex) / 2} ${sy - lift} ${ex} ${ey}`} fill="none" stroke="var(--accent)" strokeWidth={Math.max(1, weight * 12)} strokeLinecap="round" opacity={0.3 + weight * 0.55} />
+                {weight >= 0.1 && <text x={(sx + ex) / 2} y={sy - lift / 2 - 3} textAnchor="middle" fontSize="8" fill="var(--ink-2)">{weight.toFixed(2)}</text>}
+              </g>;
             })}
           </svg>
-          {hover && (
-            <div
-              className="viz-tooltip"
-              style={{ left: hover.x, top: hover.y, transform: "translate(-50%, -130%)" }}
-            >
-              {hover.text}
-            </div>
-          )}
+          {hover && <div className="viz-tooltip" style={{ left: hover.x, top: hover.y, transform: "translate(-50%, -130%)" }}>{hover.text}</div>}
         </div>
       </div>
     </VizStage>
