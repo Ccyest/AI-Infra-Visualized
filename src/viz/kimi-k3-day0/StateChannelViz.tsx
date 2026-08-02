@@ -72,6 +72,9 @@ export default function StateChannelViz({ lang = "zh" }: { lang?: Locale }) {
           <code>kₜʰ, vₜʰ ∈ ℝ<sup>{dimension}</sup></code>
           <div className="state-channel-vector-wrap">
             <code>kₜʰ =</code>
+            <span className="state-channel-vector-brace" aria-hidden="true">
+              {["⎧", "⎪", "⎨", "⎪", "⎩"].map((part, index) => <span key={index}>{part}</span>)}
+            </span>
             <div className="state-channel-vector" role="group" aria-label={lang === "zh" ? "kₜʰ 列向量；选择一个 key 坐标" : "kₜʰ column vector; select one key coordinate"}>
               {KEY_VALUES.slice(0, 3).map((value, index) => (
                 <button key={index} type="button" className={selectedRow === index ? "selected" : ""} onClick={() => setSelectedRow(index)} aria-pressed={selectedRow === index}>
@@ -85,6 +88,9 @@ export default function StateChannelViz({ lang = "zh" }: { lang?: Locale }) {
                 <b>{KEY_VALUES[3]}</b>
               </button>
             </div>
+            <span className="state-channel-vector-brace" aria-hidden="true">
+              {["⎫", "⎪", "⎬", "⎪", "⎭"].map((part, index) => <span key={index}>{part}</span>)}
+            </span>
           </div>
           <small>{lang === "zh" ? `kₜʰ 有 ${dimension} 个坐标 = ${dimension} 条 key channels` : `the ${dimension} coordinates of kₜʰ are ${dimension} key channels`}</small>
           <small className="state-channel-index-note">{lang === "zh" ? "h = head 编号；chⱼ = 这个 head 内的第 j 个坐标，不是第 j 个 head" : "h = head index; chⱼ = coordinate j inside this head, not head j"}</small>

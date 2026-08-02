@@ -427,14 +427,35 @@
 
 .state-channel-vector-wrap {
   display: grid;
-  width: min(100%, 12rem);
-  grid-template-columns: auto minmax(0, 1fr);
+  width: min(100%, 15rem);
+  grid-template-columns: auto auto minmax(0, 1fr) auto;
   align-items: center;
-  gap: 0.45rem;
+  gap: 0.18rem;
 }
 
 .state-channel-vector-wrap > code {
+  margin-right: 0.25rem;
   white-space: nowrap;
+}
+
+.state-channel-vector-brace {
+  display: grid;
+  align-self: stretch;
+  grid-template-rows: repeat(5, 1fr);
+  align-items: center;
+  color: var(--ink-2);
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 1.65rem;
+  line-height: 0.62;
+  user-select: none;
+}
+
+.state-channel-vector-brace > span {
+  display: flex;
+  height: 100%;
+  align-items: center;
+  justify-content: center;
+  transform: scaleX(0.72);
 }
 
 .state-channel-vector {

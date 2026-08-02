@@ -135,7 +135,10 @@ same key direction twice leaves the old and new values together in S. Here A
 is neither a token nor a query; it is a toy name for one direction in
 the state space. From the first write token, the model computes a key vector
 `k₁` and value vector `v₁`. The diagram abbreviates “`k₁` points along A and
-`v₁` represents 1” as `A=1`. The later `A=4` is a different write token whose
+`v₁` represents 1” as `A=1`. A therefore denotes the full key direction `kₐ`,
+not one `chⱼ` from the preceding diagram. Only in a one-hot toy case would
+`kₐ` line up with one channel; a real `kₐ` is usually dense across many
+channels. The later `A=4` is a different write token whose
 `k₂` points in approximately the same direction while `v₂` represents 4.
 `A?` is a third, read token: its query q points along A and reads the value
 currently bound to that direction through `Sᵀq`. These labels only make the

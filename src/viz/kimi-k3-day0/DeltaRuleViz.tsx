@@ -17,7 +17,7 @@ const BETAS = [1, 0.8, 0.5, 0.3, 0] as const;
 
 const COPY = {
   title: { zh: "DeltaNet：同键改写时，先读、再擦、后写", en: "DeltaNet: read, erase, then write on rebinding" },
-  subtitle: { zh: "调节 A=4 这次写入的 β，观察旧关联保留多少、新关联写入多少", en: "Adjust β for the A=4 write to see how much old association remains and how much new association is written" },
+  subtitle: { zh: "A / B = 完整 key 方向 kₐ / kᵦ，不是单条 channel；调节 A=4 的 β", en: "A / B are full key directions kₐ / kᵦ, not individual channels; adjust β for A=4" },
   betaLabel: { zh: "A=4 的 β", en: "β for A=4" },
   before: { zh: "写入前的 S", en: "S before write" },
   after: { zh: "写回后的 S", en: "S after delta write" },
