@@ -34,7 +34,6 @@ import CacheViz from "../../../viz/kimi-k3-day0/CacheViz";
 import MhaViz from "../../../viz/kimi-k3-day0/MhaViz";
 import LinearFlowViz from "../../../viz/kimi-k3-day0/LinearFlowViz";
 import DeltaRuleViz from "../../../viz/kimi-k3-day0/DeltaRuleViz";
-import MemoryViz from "../../../viz/kimi-k3-day0/MemoryViz";
 import AttnResViz from "../../../viz/kimi-k3-day0/AttnResViz";
 import MoeViz from "../../../viz/kimi-k3-day0/MoeViz";
 import PoolViz from "../../../viz/kimi-k3-day0/PoolViz";
@@ -106,19 +105,24 @@ read is a blend of the whole history.
 The first problem with linear attention is not that it cannot remember, but
 that it cannot delete. With the plain accumulation `S = Σ k·vᵀ`, writing the
 same key direction twice leaves the old and new values together in S. If the
-stream first contains `A=1` and later `A=4`, the next `A?` points its q at A's
-key direction and reads a blend of 1 and 4, not just the latest value.
+Here A is neither a token nor a query; it is a toy name for one key direction.
+`A=1` and `A=4` are two write tokens whose keys both point approximately along
+`k_A`, while their values represent 1 and 4. `A?` is a read token whose query
+points along `k_A`. With plain accumulation, it reads a blend of 1 and 4 rather
+than just the latest value.
 
 DeltaNet replaces the write with the delta rule. Before writing the new value,
 it reads the old value along the current k, computes the gap between old and
 new, and writes that gap back. One common form is
-`S_t = S_{t−1} + β·k·(v − S_{t−1}ᵀk)ᵀ`; equivalently, erase the old stripe with
-write strength β, then write the new stripe. Rebinding the same key now leaves
-the latest binding in the state.
+`S_t = S_{t−1} + β·k·(v − S_{t−1}ᵀk)ᵀ`. If the old readout is r, the new one is
+`r′ = r + β(v−r) = (1−β)r + βv`. The update therefore erases a β fraction of
+the old association and writes a β fraction of the new one; only β=1 performs
+a full replacement.
 
 Break one rebinding into its actual steps: when `A=4` arrives, DeltaNet uses
-A's `k` to read the old value 1, computes the delta `4−1=3`, and writes that
-delta back. The A slot ends at 4 instead of storing 1 and 4 together:
+A's `k` to read the old value 1 and computes `4−1=3`. The diagram uses β=1,
+so the same matrix update can be read either as `1+(4−1)=4`, or as subtracting
+the old association 1 and adding the new association 4:
 
 <DeltaRuleViz client:visible lang="en" />
 
@@ -137,34 +141,6 @@ off-topic channels can give capacity back faster. The Kimi Linear paper reads
 this gate as a learned position encoding replacing RoPE's fixed rotation. A
 chunkwise kernel for the constrained DPLR form runs about twice as fast as the
 general implementation, which is what lets KDA cover 69 layers.
-
-The synthetic test below separates the three ideas. The input is still a
-stream of ordinary tokens: `A=1` assigns variable A, and `A?` needs A (think
-`print(A)`). Every token runs the identical computation: its k·vᵀ folds into
-the fixed-size state box while it reads out o = qᵀ·S. Note that "reading A" is
-a false premise here: the state has no addressable position; the q of `A?`
-merely points at A's key direction (the dashed arrow to the assignment it
-wants), and what comes back is a projection along that direction. Midway A is
-reassigned to `A=4`, and t=7 marks a topic shift.
-
-The three update rules differ only in how the box is maintained. The plain sum
-takes everything: stripes only ever enter, and A's old and new stripes
-coexist. DeltaNet erases the old stripe before writing the same key, leaving
-only A's latest, but unrelated history still occupies the fixed capacity. KDA
-then narrows stripes over time and at topic shifts, handing capacity back to
-still-relevant content. Stripe width = absolute share of the fixed capacity;
-blank space = available capacity; in the o swatch, color is the target share
-and gray is crosstalk from other stripes, with past `X?` verdicts lined up to
-the right of o.
-
-<MemoryViz client:visible lang="en" />
-
-Three moments to watch: on `A?` at t=6, the plain-sum panel's output
-blends (✗) while the other two are correct; on `E?` at t=11, the delta
-panel shows clear crosstalk (△) while KDA decayed the old channels at the
-t=7 topic shift and outputs clean (✓); on `B?` at t=13, the KDA panel has
-decayed it below readability (◌). Which channels decay is learned from
-data; channels a task still needs, the model learns not to decay.
 
 ### Attention Residual
 
