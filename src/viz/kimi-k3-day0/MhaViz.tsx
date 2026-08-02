@@ -8,6 +8,22 @@ import { seriesColor } from "../../lib/palette";
 import { MHA, MHA_TOKENS, mhaCellTooltip, mhaChip } from "./strings";
 import "./styles.css";
 
+type ExampleMode = "sentence" | "math";
+
+interface DemoToken {
+  text: string;
+  focus?: [number, number][];
+  kind?: "write" | "query";
+  color?: number;
+}
+
+const MATH_TOKENS: DemoToken[] = [
+  { text: "A=1", kind: "write", color: 1 },
+  { text: "B=2", kind: "write", color: 2, focus: [[0, 0.2]] },
+  { text: "A=4", kind: "write", color: 4, focus: [[0, 0.45]] },
+  { text: "A?", kind: "query", color: 0, focus: [[2, 0.9], [0, 0.05]] },
+];
+
 const CELL = 30;
 const PITCH = 47;
 const TOKEN_X = 18;
@@ -36,7 +52,10 @@ function weightsFor(tokens: { focus?: [number, number][] }[], c: number): number
 }
 
 export default function MhaViz({ lang = "zh" }: { lang?: Locale }) {
-  const tokens = MHA_TOKENS[lang];
+  const [mode, setMode] = useState<ExampleMode>("sentence");
+  const tokens: DemoToken[] = mode === "sentence"
+    ? MHA_TOKENS[lang].map((token, i) => ({ ...token, kind: "write", color: i + 1 }))
+    : MATH_TOKENS;
   const player = useSimPlayer(tokens.length, 1.2);
   const wrapRef = useRef<HTMLDivElement>(null);
   const [hover, setHover] = useState<{ x: number; y: number; text: string } | null>(null);
@@ -45,6 +64,15 @@ export default function MhaViz({ lang = "zh" }: { lang?: Locale }) {
   const weights = t >= 2 ? weightsFor(tokens, cur) : [];
   const dot = Math.max(0, t - 1);
   const cumDot = (t * (t - 1)) / 2;
+
+  const switchMode = (next: ExampleMode) => {
+    setMode(next);
+    player.reset();
+    setHover(null);
+  };
+
+  const tokenFill = (token: DemoToken, index: number) =>
+    token.kind === "query" ? "var(--axis)" : seriesColor(token.color ?? index + 1);
 
   const showTooltip = (e: ReactMouseEvent, message: string) => {
     const wrap = wrapRef.current;
@@ -56,9 +84,15 @@ export default function MhaViz({ lang = "zh" }: { lang?: Locale }) {
   return (
     <VizStage
       title={MHA.title[lang]}
-      subtitle={MHA.subtitle[lang]}
+      subtitle={mode === "sentence" ? MHA.subtitle[lang] : (lang === "zh" ? "A=1 → B=2 → A=4 → A?；每次写入保留在独立的 KV 位置" : "A=1 → B=2 → A=4 → A?; every write remains at a separate KV position")}
       player={player}
       lang={lang}
+      headExtra={
+        <span className="viz-presets" role="group" aria-label={lang === "zh" ? "示例类型" : "example type"}>
+          <button type="button" className={`viz-btn${mode === "sentence" ? " primary" : ""}`} onClick={() => switchMode("sentence")}>{lang === "zh" ? "句子例子" : "Sentence"}</button>
+          <button type="button" className={`viz-btn${mode === "math" ? " primary" : ""}`} onClick={() => switchMode("math")}>{lang === "zh" ? "数学解释" : "Math"}</button>
+        </span>
+      }
       footer={
         <>
           <Legend items={[
@@ -66,7 +100,7 @@ export default function MhaViz({ lang = "zh" }: { lang?: Locale }) {
             { label: MHA.legendLine[lang], swatch: { background: "color-mix(in srgb, var(--accent) 55%, transparent)" } },
             { label: MHA.legendCurrent[lang], swatch: { background: "transparent", border: "2px solid var(--accent)" } },
           ]} />
-          <div className="viz-verdict">{MHA.verdict[lang]}</div>
+          <div className="viz-verdict">{mode === "sentence" ? MHA.verdict[lang] : (lang === "zh" ? <>KV cache 把 `A=1` 和 `A=4` 保存在两个独立位置。到 `A?` 时，q 可以把主要权重放在最近的 `A=4` 上；旧的 `A=1` 仍在 cache 中，但不会被迫和 4 先相加。</> : <>The KV cache keeps `A=1` and `A=4` at separate positions. On `A?`, q can place most weight on the latest `A=4`; old `A=1` remains in cache but is not forced to add into 4 first.</>)}</div>
         </>
       }
     >
@@ -82,7 +116,7 @@ export default function MhaViz({ lang = "zh" }: { lang?: Locale }) {
               const seen = i < t;
               const current = i === cur;
               return <g key={i}>
-                <rect className="viz-cell" x={x} y={TOKEN_Y} width={CELL} height={CELL} rx={5} fill={seen ? seriesColor(i + 1) : "none"} opacity={seen ? 0.86 : 1} stroke={current ? "var(--accent)" : "var(--grid)"} strokeWidth={current ? 2 : 1} onMouseEnter={seen ? (e) => showTooltip(e, mhaCellTooltip(lang, i + 1, tok.text, i < weights.length ? weights[i] : null)) : undefined} />
+                <rect className="viz-cell" x={x} y={TOKEN_Y} width={CELL} height={CELL} rx={5} fill={seen ? tokenFill(tok, i) : "none"} opacity={seen ? (tok.kind === "query" ? 0.5 : 0.86) : 1} stroke={current ? "var(--accent)" : "var(--grid)"} strokeWidth={current ? 2 : 1} onMouseEnter={seen ? (e) => showTooltip(e, mhaCellTooltip(lang, i + 1, tok.text, i < weights.length ? weights[i] : null)) : undefined} />
                 {seen && <text x={x + CELL / 2} y={TOKEN_Y + 43} textAnchor="middle" fontSize="9" fill={current ? "var(--accent)" : "var(--muted)"} fontWeight={current ? 700 : 400}>{tok.text}</text>}
               </g>;
             })}
@@ -92,7 +126,7 @@ export default function MhaViz({ lang = "zh" }: { lang?: Locale }) {
             {tokens.slice(0, t).map((tok, i) => {
               const x = CACHE_X + 4 + i * (CACHE_CELL + 3);
               return <g key={`cache-${i}`} onMouseEnter={(e) => showTooltip(e, mhaCellTooltip(lang, i + 1, tok.text, i < weights.length ? weights[i] : null))}>
-                <rect x={x} y={CACHE_Y + 4} width={CACHE_CELL} height={CACHE_H - 8} rx={3} fill={seriesColor(i + 1)} opacity={i === cur ? 0.35 : 0.8} stroke={i === cur ? "var(--accent)" : "none"} strokeDasharray={i === cur ? "3 2" : undefined} />
+                <rect x={x} y={CACHE_Y + 4} width={CACHE_CELL} height={CACHE_H - 8} rx={3} fill={tokenFill(tok, i)} opacity={i === cur || tok.kind === "query" ? 0.35 : 0.8} stroke={i === cur ? "var(--accent)" : "none"} strokeDasharray={i === cur ? "3 2" : undefined} />
                 <text x={x + CACHE_CELL / 2} y={CACHE_Y + CACHE_H + 13} textAnchor="middle" fontSize="8" fill="var(--muted)">{tok.text}</text>
               </g>;
             })}
