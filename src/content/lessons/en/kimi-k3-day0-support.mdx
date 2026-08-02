@@ -105,11 +105,18 @@ read is a blend of the whole history.
 The first problem with linear attention is not that it cannot remember, but
 that it cannot delete. With the plain accumulation `S = Σ k·vᵀ`, writing the
 same key direction twice leaves the old and new values together in S. If the
-Here A is neither a token nor a query; it is a toy name for one key direction.
-`A=1` and `A=4` are two write tokens whose keys both point approximately along
-`k_A`, while their values represent 1 and 4. `A?` is a read token whose query
-points along `k_A`. With plain accumulation, it reads a blend of 1 and 4 rather
-than just the latest value.
+Here A is neither a token nor a query; it is a toy name for one direction in
+the state space. From the first write token, the model computes a key vector
+`k₁` and value vector `v₁`. The diagram abbreviates “`k₁` points along A and
+`v₁` represents 1” as `A=1`. The later `A=4` is a different write token whose
+`k₂` points in approximately the same direction while `v₂` represents 4.
+`A?` is a third, read token: its query q points along A and reads the value
+currently bound to that direction through `Sᵀq`. These labels only make the
+vector operations drawable; the model does not literally receive text tokens
+named “A=1” or “A?”.
+
+With plain accumulation, the contributions from `A=1` and `A=4` both remain
+in S, so the next `A?` reads a blend rather than just the latest value.
 
 DeltaNet replaces the write with the delta rule. Before writing the new value,
 it reads the old value along the current k, computes the gap between old and
