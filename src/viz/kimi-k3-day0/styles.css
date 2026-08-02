@@ -425,15 +425,28 @@
   white-space: nowrap;
 }
 
+.state-channel-vector-wrap {
+  display: grid;
+  width: min(100%, 12rem);
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.state-channel-vector-wrap > code {
+  white-space: nowrap;
+}
+
 .state-channel-vector {
   display: grid;
   width: 100%;
-  grid-template-columns: repeat(3, minmax(0, 1fr)) auto minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: 0.28rem;
 }
 
 .state-channel-vector-gap {
   display: flex;
+  min-height: 0.7rem;
   align-items: center;
   justify-content: center;
   color: var(--muted);
@@ -443,10 +456,11 @@
 .state-channel-vector button {
   display: flex;
   min-width: 0;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
+  justify-content: space-between;
   gap: 0.1rem;
-  padding: 0.35rem 0.2rem;
+  padding: 0.3rem 0.55rem;
   border: 1px solid var(--border);
   border-radius: 6px;
   background: var(--surface);

@@ -98,7 +98,10 @@ token 的 k 决定写进哪个方向，v 是写进去的内容。cache 没有了
 dimension 是 `128`。这不是把 7168 个坐标原样切成 96 份，而是学习到的新
 特征空间。这里 `h` 是 head 的编号；先固定某个 head `h`，其中
 `chⱼ = kₜʰ[j]` 才表示这个 head 内 k 的第 `j` 个坐标，而不是“第 `j` 个
-head”。这 128 个坐标就是 128 条 key channels，`Sʰ` 的每一行对应其中一条：
+head”。这 128 个坐标在 naive linear attention 里本来就存在，更准确地说是
+key feature dimensions；这里称为 channels，是为了和后面 KDA 的逐通道门控
+保持一致。naive 规则只按 `k[j]` 累加更新 `Sʰ` 的第 `j` 行，KDA 才额外用
+`Diag(αₜ)` 对这些行分别衰减：
 
 <StateChannelViz client:visible />
 

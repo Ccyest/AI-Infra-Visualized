@@ -8,12 +8,12 @@ const VALUE_VALUES = [0.6, -0.3, 0.8, 0.1];
 
 const COPY = {
   title: {
-    zh: "Linear attention 的 channel：Sʰ 的每一行是 head h 内的一条 key 特征轴",
-    en: "Channels in linear attention: each row of Sʰ is a key feature axis inside head h",
+    zh: "Linear attention 的 key 特征维度：kₜʰ 是列向量，Sʰ 每一行对应它的一个坐标",
+    en: "Key feature dimensions in linear attention: kₜʰ is a column vector, and each row of Sʰ matches one coordinate",
   },
   subtitle: {
-    zh: "先固定一个 head h：若 kₜʰ、vₜʰ 都是 d 维，外积就是 d×d；K3 取 d=128",
-    en: "Fix one head h: if kₜʰ and vₜʰ are both d-dimensional, their outer product is d×d; K3 uses d=128",
+    zh: "这些坐标在 naive linear attention 里就存在；KDA 后面才对它们做逐 channel 门控",
+    en: "These coordinates already exist in naive linear attention; KDA later adds channel-wise gating over them",
   },
 };
 
@@ -70,18 +70,21 @@ export default function StateChannelViz({ lang = "zh" }: { lang?: Locale }) {
         <section className="state-channel-step state-channel-head" aria-label={lang === "zh" ? "固定一个 attention head h" : "fix one attention head h"}>
           <b>{lang === "zh" ? "② 固定一个 head h" : "② fix one head h"}</b>
           <code>kₜʰ, vₜʰ ∈ ℝ<sup>{dimension}</sup></code>
-          <div className="state-channel-vector" role="group" aria-label={lang === "zh" ? "选择一条 key channel" : "select a key channel"}>
-            {KEY_VALUES.slice(0, 3).map((value, index) => (
-              <button key={index} type="button" className={selectedRow === index ? "selected" : ""} onClick={() => setSelectedRow(index)} aria-pressed={selectedRow === index}>
-                <span>{rowLabels[index]}</span>
-                <b>{value}</b>
+          <div className="state-channel-vector-wrap">
+            <code>kₜʰ =</code>
+            <div className="state-channel-vector" role="group" aria-label={lang === "zh" ? "kₜʰ 列向量；选择一个 key 坐标" : "kₜʰ column vector; select one key coordinate"}>
+              {KEY_VALUES.slice(0, 3).map((value, index) => (
+                <button key={index} type="button" className={selectedRow === index ? "selected" : ""} onClick={() => setSelectedRow(index)} aria-pressed={selectedRow === index}>
+                  <span>{rowLabels[index]}</span>
+                  <b>{value}</b>
+                </button>
+              ))}
+              <span className="state-channel-vector-gap" aria-hidden="true">⋮</span>
+              <button type="button" className={selectedRow === 3 ? "selected" : ""} onClick={() => setSelectedRow(3)} aria-pressed={selectedRow === 3}>
+                <span>{rowLabels[3]}</span>
+                <b>{KEY_VALUES[3]}</b>
               </button>
-            ))}
-            <span className="state-channel-vector-gap" aria-hidden="true">…</span>
-            <button type="button" className={selectedRow === 3 ? "selected" : ""} onClick={() => setSelectedRow(3)} aria-pressed={selectedRow === 3}>
-              <span>{rowLabels[3]}</span>
-              <b>{KEY_VALUES[3]}</b>
-            </button>
+            </div>
           </div>
           <small>{lang === "zh" ? `kₜʰ 有 ${dimension} 个坐标 = ${dimension} 条 key channels` : `the ${dimension} coordinates of kₜʰ are ${dimension} key channels`}</small>
           <small className="state-channel-index-note">{lang === "zh" ? "h = head 编号；chⱼ = 这个 head 内的第 j 个坐标，不是第 j 个 head" : "h = head index; chⱼ = coordinate j inside this head, not head j"}</small>
@@ -130,7 +133,7 @@ export default function StateChannelViz({ lang = "zh" }: { lang?: Locale }) {
 
       <div className="state-channel-equation">
         <code>j={selectedIndex}: ΔSₜʰ[j, :] = kₜʰ[j]·(vₜʰ)ᵀ = {selectedKey}·(vₜʰ)ᵀ</code>
-        <span>{lang === "zh" ? "当 k 是稠密向量时，一个 token 会同时更新多行；channel 不是 token 槽，而是学出来的特征坐标。" : "When k is dense, one token updates many rows at once; a channel is a learned feature coordinate, not a token slot."}</span>
+        <span>{lang === "zh" ? "naive linear attention 已经会按 k[j] 更新 S 的第 j 行；KDA 新增的是对这些行做逐 channel 衰减。channel 不是 token 槽。" : "Naive linear attention already updates row j of S by k[j]; KDA adds channel-wise decay over those rows. A channel is not a token slot."}</span>
       </div>
 
       <div className="viz-footer">

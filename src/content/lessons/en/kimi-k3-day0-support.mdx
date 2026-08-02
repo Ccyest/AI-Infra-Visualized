@@ -107,8 +107,11 @@ learned Q/K/V projections produce `96` KDA heads, each with head dimension `128`
 This is a learned feature space, not a literal partition of the 7168 input
 coordinates into 96 pieces. Here `h` is the head index. Once a particular head
 `h` is fixed, `chⱼ = kₜʰ[j]` means coordinate `j` inside that head—not head
-`j`. Those 128 coordinates are the 128 key channels, and each row of `Sʰ`
-corresponds to one of them:
+`j`. Those 128 coordinates already exist in naive linear attention; more
+precisely, they are key feature dimensions. We call them channels here to match
+KDA's later channel-wise gate. The naive rule merely accumulates into row `j`
+of `Sʰ` according to `k[j]`; KDA additionally applies `Diag(αₜ)` to decay those
+rows independently:
 
 <StateChannelViz client:visible lang="en" />
 
