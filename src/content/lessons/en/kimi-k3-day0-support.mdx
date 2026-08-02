@@ -100,43 +100,55 @@ The step for "it" is the whole point: last section had a 0.72 line straight
 to "cat", but S has no position axis, that line cannot be drawn, and the
 read is a blend of the whole history.
 
+### DeltaNet: adding a delete operation to the fixed state
+
+The first problem with linear attention is not that it cannot remember, but
+that it cannot delete. With the plain accumulation `S = Σ k·vᵀ`, writing the
+same key direction twice leaves the old and new values together in S. If the
+stream first contains `A=1` and later `A=4`, the next `A?` points its q at A's
+key direction and reads a blend of 1 and 4, not just the latest value.
+
+DeltaNet replaces the write with the delta rule. Before writing the new value,
+it reads the old value along the current k, computes the gap between old and
+new, and writes that gap back. One common form is
+`S_t = S_{t−1} + β·k·(v − S_{t−1}ᵀk)ᵀ`; equivalently, erase the old stripe with
+write strength β, then write the new stripe. Rebinding the same key now leaves
+the latest binding in the state.
+
+But DeltaNet only solves same-key rebinding. It does not answer the next
+question: as more unrelated history fills the fixed-size S, which content
+should decay and which should stay? That is the part KDA adds.
+
 ### KDA: delta rule with per-channel gating
 
-A blend means degraded retrieval, and fixing it starts with measuring it.
-A sentence doesn't expose S's internals, so switch to a synthetic test
-that does. The input is still a stream of ordinary tokens: `A=1` is a
-token that assigns variable A, `A?` is a token that needs A (think
-`print(A)`). Every token runs the identical computation: its k·vᵀ folds
-into the fixed-size state box while it reads out o = qᵀ·S. Note that
-"reading A" is a false premise here: the state has no addressable
-position; the q of `A?` merely points at A's key direction (the dashed
-arrow to the assignment it wants), and what comes back is always a
-projection of the whole summed box. Midway A is reassigned to `A=4`, and
-t=7 marks a topic shift.
+KDA is easiest to read as two changes stacked together. The bottom layer is
+still DeltaNet's erase-before-write rule, which fixes same-key rebinding. On
+top of that, KDA adds a per-channel diagonal gate `Diag(a_t)` computed from
+the current token, so different channels can forget at different rates.
+Channels that may still matter can decay slowly, while clearly stale or
+off-topic channels can give capacity back faster. The Kimi Linear paper reads
+this gate as a learned position encoding replacing RoPE's fixed rotation. A
+chunkwise kernel for the constrained DPLR form runs about twice as fast as the
+general implementation, which is what lets KDA cover 69 layers.
 
-The three update rules differ only in how the box is maintained. The
-plain sum takes everything: stripes only ever enter, A's old and new
-stripes coexist, and the box gets more and more crowded. The delta rule
-erases the old stripe before writing the same key, leaving only A's
-latest. KDA additionally narrows stripes over time and at topic shifts,
-handing capacity back to recent content. Stripe width = share of the
-fixed capacity; in the o swatch, color is the target share and gray is
-the crosstalk from every other stripe, with past `X?` verdicts lined up
-to the right of o.
+The synthetic test below separates the three ideas. The input is still a
+stream of ordinary tokens: `A=1` assigns variable A, and `A?` needs A (think
+`print(A)`). Every token runs the identical computation: its k·vᵀ folds into
+the fixed-size state box while it reads out o = qᵀ·S. Note that "reading A" is
+a false premise here: the state has no addressable position; the q of `A?`
+merely points at A's key direction (the dashed arrow to the assignment it
+wants), and what comes back is a projection along that direction. Midway A is
+reassigned to `A=4`, and t=7 marks a topic shift.
 
-DeltaNet replaces the write with the delta rule: read the old value with k,
-erase it with write strength β, then write the new one,
-`S_t = (I − β·k·kᵀ)·S_{t−1} + β·k·vᵀ`, which is online gradient descent on
-"S·k = v". Rebinding a key no longer blends, but the state still only fills
-up: the more is written, the more crosstalk each read picks up.
-
-Gated DeltaNet adds a forget gate on top, one scalar per head. KDA refines
-the scalar into a per-channel diagonal gate `Diag(a_t)`, computed from the
-current input, so every channel has its own forgetting rate; the Kimi Linear
-paper reads it as a learnable position encoding replacing RoPE's fixed
-rotation. A chunkwise kernel for the constrained DPLR form runs about twice
-as fast as the general implementation, which is what lets KDA cover 69
-layers.
+The three update rules differ only in how the box is maintained. The plain sum
+takes everything: stripes only ever enter, and A's old and new stripes
+coexist. DeltaNet erases the old stripe before writing the same key, leaving
+only A's latest, but unrelated history still occupies the fixed capacity. KDA
+then narrows stripes over time and at topic shifts, handing capacity back to
+still-relevant content. Stripe width = absolute share of the fixed capacity;
+blank space = available capacity; in the o swatch, color is the target share
+and gray is crosstalk from other stripes, with past `X?` verdicts lined up to
+the right of o.
 
 <MemoryViz client:visible lang="en" />
 

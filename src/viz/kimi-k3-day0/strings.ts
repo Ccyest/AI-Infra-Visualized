@@ -279,12 +279,24 @@ export const MEM = {
     en: "Memory in a fixed state: plain sum vs delta rule vs KDA gating",
   },
   subtitle: {
-    zh: "同一串 token 压进三个固定大小的状态箱；输出 o = qᵀ·S 永远是整箱之和的投影",
-    en: "One token stream folds into three fixed-size state boxes; the output o = qᵀ·S is always a projection of the whole sum",
+    zh: "同一串 token，三种状态维护规则；箱内空白 = 还没被历史占掉的容量",
+    en: "One token stream, three state-update rules; blank space in the box is capacity not yet occupied by history",
   },
   modeAdd: { zh: "直接求和(S = Σ k·vᵀ)", en: "Plain sum (S = Σ k·vᵀ)" },
   modeDelta: { zh: "Delta rule(DeltaNet)", en: "Delta rule (DeltaNet)" },
   modeKda: { zh: "Delta + 逐通道门控(KDA)", en: "Delta + per-channel gate (KDA)" },
+  noteAdd: {
+    zh: "只追加：同键新旧值会并存",
+    en: "Append-only: old and new values for the same key coexist",
+  },
+  noteDelta: {
+    zh: "同键先擦后写：能改写，但不会遗忘无关历史",
+    en: "Erase-before-write for the same key: rebinding works, unrelated history stays",
+  },
+  noteKda: {
+    zh: "先擦后写 + 门控衰减：把容量留给仍相关的通道",
+    en: "Erase-before-write plus gated decay: capacity is kept for still-relevant channels",
+  },
   sLabel: { zh: "S(固定大小)", en: "S (fixed size)" },
   legendToken: {
     zh: "token 格：赋值 = 值的颜色，X?/~ = 灰",
@@ -295,8 +307,8 @@ export const MEM = {
     en: "dashed arrow = the assignment X? wants (the state has no such address)",
   },
   legendStripe: {
-    zh: "箱内条纹 = 一次写入，宽度 = 占固定容量的份额；描边 = 本步写入",
-    en: "stripe = one write, width = its share of the fixed capacity; outline = this step's write",
+    zh: "箱内条纹 = 一次写入，宽度 = 占固定容量的绝对份额；空白 = 可用容量",
+    en: "stripe = one write, width = absolute share of fixed capacity; blank = free capacity",
   },
   legendO: {
     zh: "o = 实际读出：X? 步为目标份额(彩) + 串扰(灰)，其余步为整箱混合",
@@ -352,6 +364,12 @@ export function recallMarkTooltip(locale: Locale, r: MemRecall): string {
     : `t=${r.t} output of ${r.key}?: ${GRADE_TEXT[r.grade].en}, purity ${pct}`;
 }
 
+export function memRecallSummary(locale: Locale, r: MemRecall): string {
+  return locale === "zh"
+    ? `当前 ${r.key}?：${GRADE_TEXT[r.grade].zh}`
+    : `Current ${r.key}?: ${GRADE_TEXT[r.grade].en}`;
+}
+
 /** 事件 chip 只显示 token 本身:每个 token 走的计算完全相同 */
 export function memEventText(locale: Locale, ev: MemEvent): string {
   if (ev.kind === "write") return `${ev.key}=${ev.value}`;
@@ -362,8 +380,8 @@ export function memEventText(locale: Locale, ev: MemEvent): string {
 
 export function memVerdict(locale: Locale): string {
   return locale === "zh"
-    ? "同一串输入：直接求和把 A 的新旧值叠在一起(✗)；delta rule 先擦后写，换绑正确，但状态只进不出，后半段查询全是串扰(△)；KDA 在话题切换处压低不再需要的通道，后半段查询保持干净(✓)，代价是久未使用的 B 被淡忘(◌)。衰减哪些通道由门控从数据中学出。"
-    : "Same input stream: the plain sum stacks A's old and new values (✗); the delta rule erases before writing so rebinding works, but the state only ever fills up and late queries all suffer crosstalk (△); KDA damps no-longer-needed channels at the topic shift so late queries stay clean (✓), at the cost of forgetting the long-unused B (◌). Which channels decay is learned from data.";
+    ? "这张图只想说明三件事：直接求和没有删除动作，所以 A=1 和 A=4 会同时留在箱里；delta rule 增加“同键先擦后写”，解决改写问题，但无关历史仍会把固定状态塞满；KDA 再增加数据依赖的逐通道衰减，让不相关内容让出容量。KDA 不是永远记得更多，而是学会保留该保留的、淡忘可淡忘的。"
+    : "This diagram separates three ideas: the plain sum has no delete operation, so A=1 and A=4 remain together; the delta rule adds erase-before-write for the same key, fixing rebinding, but unrelated history still fills the fixed state; KDA adds data-dependent per-channel decay so irrelevant content gives capacity back. KDA is not “remember more forever”; it learns what to keep and what can fade.";
 }
 
 export const ATTN = {

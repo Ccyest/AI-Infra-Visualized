@@ -12,6 +12,7 @@ import {
   MEM,
   intentTooltip,
   memEventText,
+  memRecallSummary,
   memVerdict,
   outNodeTooltip,
   recallMarkTooltip,
@@ -34,7 +35,8 @@ const BOX_H = 34;
 const O_GAP = 34;
 const O = 26;
 const HIST_GAP = 14;
-const MARK_W = 22;
+const MARK_W = 30;
+const STATE_CAPACITY = 8;
 
 function tokenLabel(ev: MemEvent): string {
   if (ev.kind === "write") return `${ev.key}=${ev.value}`;
@@ -46,15 +48,15 @@ function tokenColor(ev: MemEvent): string {
   return ev.kind === "write" ? seriesColor(ev.value) : "var(--axis)";
 }
 
-/** 条纹 = 各槽 contrib 按写入时刻排序;宽度 = 占当前总强度的份额 */
+/** 条纹 = 各槽 contrib 按写入时刻排序;宽度 = 占固定容量的绝对份额 */
 function stripesOf(result: MemResult, t: number) {
   const frame = result.frames[t];
   const all = frame.slots.flatMap((s) =>
     s.contribs.map((c) => ({ key: s.key, ...c })),
   );
   all.sort((a, b) => a.t - b.t);
-  const total = all.reduce((s, c) => s + c.weight, 0);
-  return { all, total };
+  const used = all.reduce((s, c) => s + c.weight, 0);
+  return { all, used };
 }
 
 const GRADE_FILL: Record<MemRecall["grade"], string> = {
@@ -62,6 +64,12 @@ const GRADE_FILL: Record<MemRecall["grade"], string> = {
   mixed: "var(--ink-2)",
   noisy: "var(--ink-2)",
   faded: "var(--muted)",
+};
+
+const MODE_NOTE = {
+  additive: MEM.noteAdd,
+  delta: MEM.noteDelta,
+  kda: MEM.noteKda,
 };
 
 function contribColor(value: number): string {
@@ -247,13 +255,15 @@ export default function MemoryViz({ lang = "zh" }: { lang?: Locale }) {
 
         {/* 三个状态箱面板 */}
         {results.map((result) => {
-          const { all, total } = stripesOf(result, t);
+          const { all, used } = stripesOf(result, t);
           const recall = result.frames[t].recall;
           const pastRecalls = result.recalls.filter((r) => r.t <= t);
           return (
             <div className="viz-section" key={result.mode}>
               <div className="viz-section-head">
                 <b>{MODE_LABEL[result.mode][lang]}</b>
+                <span className="viz-section-stats">{MODE_NOTE[result.mode][lang]}</span>
+                {recall && <span className="k3a-chip">{memRecallSummary(lang, recall)}</span>}
               </div>
               <div className="viz-grid-wrap">
                 <svg
@@ -310,17 +320,34 @@ export default function MemoryViz({ lang = "zh" }: { lang?: Locale }) {
                     strokeOpacity={0.4}
                     strokeWidth={1.2}
                   />
-                  {total > 0.02 &&
+                  {used > STATE_CAPACITY && (
+                    <rect
+                      x={1.5}
+                      y={1.5}
+                      width={BOX_W - 2}
+                      height={BOX_H - 2}
+                      rx={6}
+                      fill="none"
+                      stroke="var(--series-8)"
+                      strokeWidth={1.4}
+                      strokeDasharray="3 2"
+                      opacity={0.8}
+                    />
+                  )}
+                  {used > 0.02 &&
                     (() => {
                       let acc = 0;
+                      const drawable = BOX_W - 4;
                       return all.map((c) => {
-                        const w = (c.weight / total) * (BOX_W - 4);
+                        const w = (c.weight / STATE_CAPACITY) * drawable;
+                        const visibleW = Math.min(w, Math.max(0, drawable - acc));
+                        if (visibleW <= 0) return null;
                         const rect = (
                           <rect
                             key={`${c.key}-${c.t}`}
                             x={2.5 + acc}
                             y={2.5}
-                            width={Math.max(0.6, w - 0.6)}
+                            width={Math.max(0.6, visibleW - 0.6)}
                             height={BOX_H - 4}
                             rx={2}
                             fill={contribColor(c.value)}
@@ -349,9 +376,10 @@ export default function MemoryViz({ lang = "zh" }: { lang?: Locale }) {
                     y={BOX_H + 13}
                     textAnchor="middle"
                     fontSize="8.5"
-                    fill="var(--muted)"
+                      fill="var(--muted)"
                   >
-                    {MEM.sLabel[lang]}
+                    {MEM.sLabel[lang]} · {Math.min(used, STATE_CAPACITY).toFixed(1)}/
+                    {STATE_CAPACITY}
                   </text>
 
                   {/* S → o */}
@@ -390,9 +418,10 @@ export default function MemoryViz({ lang = "zh" }: { lang?: Locale }) {
                     />
                     {!recall &&
                       t >= 1 &&
-                      total > 0.02 &&
+                      used > 0.02 &&
                       (() => {
                         let acc = 0;
+                        const total = all.reduce((s, c) => s + c.weight, 0);
                         return all.map((c) => {
                           const w = (c.weight / total) * (O - 4);
                           const rect = (
@@ -443,8 +472,16 @@ export default function MemoryViz({ lang = "zh" }: { lang?: Locale }) {
                         />
                         <text
                           x={mx + 13}
-                          y={my + 9}
-                          fontSize="9"
+                          y={my + 4}
+                          fontSize="6.5"
+                          fill="var(--muted)"
+                        >
+                          {r.key}?
+                        </text>
+                        <text
+                          x={mx + 14}
+                          y={my + 12}
+                          fontSize="8.5"
                           fontWeight={700}
                           fill={GRADE_FILL[r.grade]}
                         >
