@@ -258,6 +258,18 @@ export default function MemoryViz({ lang = "zh" }: { lang?: Locale }) {
           const { all, used } = stripesOf(result, t);
           const recall = result.frames[t].recall;
           const pastRecalls = result.recalls.filter((r) => r.t <= t);
+          const targetColor = recall?.contribs[recall.contribs.length - 1]
+            ? contribColor(recall.contribs[recall.contribs.length - 1].value)
+            : "var(--series-1)";
+          const noisySources = recall
+            ? Array.from(
+                new Set(
+                  all
+                    .filter((c) => c.key !== recall.key && c.value !== 0 && c.weight > 0.04)
+                    .map((c) => c.key),
+                ),
+              ).join(" / ") || (lang === "zh" ? "其它通道" : "other channels")
+            : "";
           return (
             <div className="viz-section" key={result.mode}>
               <div className="viz-section-head">
@@ -492,6 +504,22 @@ export default function MemoryViz({ lang = "zh" }: { lang?: Locale }) {
                   })}
                 </svg>
               </div>
+              {recall && (
+                <div className="k3-crosstalk" aria-label={lang === "zh" ? "串扰分解" : "crosstalk breakdown"}>
+                  <div className="k3-crosstalk-head">
+                    <b>{lang === "zh" ? `读 ${recall.key}? 的 o` : `readout o for ${recall.key}?`}</b>
+                    <span>{lang === "zh" ? "不是只取目标条纹，而是目标 + 串扰" : "not target alone: target + crosstalk"}</span>
+                  </div>
+                  <div className="k3-crosstalk-track" role="img" aria-label={`${Math.round(recall.purity * 100)}% target, ${Math.round((1 - recall.purity) * 100)}% crosstalk`}>
+                    <span className="k3-crosstalk-target" style={{ width: `${Math.max(4, recall.purity * 100)}%`, background: targetColor }} />
+                    <span className="k3-crosstalk-noise" style={{ width: `${Math.max(2, (1 - recall.purity) * 100)}%` }} />
+                  </div>
+                  <div className="k3-crosstalk-labels">
+                    <span style={{ color: targetColor }}>{lang === "zh" ? `目标 ${recall.key} · ${Math.round(recall.purity * 100)}%` : `target ${recall.key} · ${Math.round(recall.purity * 100)}%`}</span>
+                    <span className="k3-crosstalk-noise-label">{lang === "zh" ? `串扰 ← ${noisySources} · ${Math.round((1 - recall.purity) * 100)}%` : `crosstalk ← ${noisySources} · ${Math.round((1 - recall.purity) * 100)}%`}</span>
+                  </div>
+                </div>
+              )}
             </div>
           );
         })}

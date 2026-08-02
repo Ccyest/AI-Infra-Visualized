@@ -33,6 +33,7 @@ import ArchViz from "../../../viz/kimi-k3-day0/ArchViz";
 import CacheViz from "../../../viz/kimi-k3-day0/CacheViz";
 import MhaViz from "../../../viz/kimi-k3-day0/MhaViz";
 import LinearFlowViz from "../../../viz/kimi-k3-day0/LinearFlowViz";
+import DeltaRuleViz from "../../../viz/kimi-k3-day0/DeltaRuleViz";
 import MemoryViz from "../../../viz/kimi-k3-day0/MemoryViz";
 import AttnResViz from "../../../viz/kimi-k3-day0/AttnResViz";
 import MoeViz from "../../../viz/kimi-k3-day0/MoeViz";
@@ -103,6 +104,12 @@ DeltaNet 把写入换成 delta rule：写新值之前，先用当前 k 从 S 里
 `S_t = S_{t−1} + β·k·(v − S_{t−1}ᵀk)ᵀ`；等价地看，就是先按写入强度 β
 擦掉旧条纹，再写入新条纹。这样同一个键被重新赋值时，状态里保留的是最新
 绑定。
+
+把一次改写拆开看：`A=4` 到来时，DeltaNet 先用 A 的 `k` 从状态里读出旧
+值 1，再计算差值 `4−1=3`。这个差值会覆盖旧条纹，最后 A 的位置只留下
+4，而不是把 1 和 4 相加：
+
+<DeltaRuleViz client:visible />
 
 但 DeltaNet 只解决“同键改写”。它没有回答另一个问题：固定大小的 S 被越来
 越多无关历史塞满以后，哪些内容该衰减、哪些内容该保留？这就是 KDA 要继续

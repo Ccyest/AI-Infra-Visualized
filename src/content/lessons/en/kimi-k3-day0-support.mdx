@@ -33,6 +33,7 @@ import ArchViz from "../../../viz/kimi-k3-day0/ArchViz";
 import CacheViz from "../../../viz/kimi-k3-day0/CacheViz";
 import MhaViz from "../../../viz/kimi-k3-day0/MhaViz";
 import LinearFlowViz from "../../../viz/kimi-k3-day0/LinearFlowViz";
+import DeltaRuleViz from "../../../viz/kimi-k3-day0/DeltaRuleViz";
 import MemoryViz from "../../../viz/kimi-k3-day0/MemoryViz";
 import AttnResViz from "../../../viz/kimi-k3-day0/AttnResViz";
 import MoeViz from "../../../viz/kimi-k3-day0/MoeViz";
@@ -114,6 +115,12 @@ new, and writes that gap back. One common form is
 `S_t = S_{t−1} + β·k·(v − S_{t−1}ᵀk)ᵀ`; equivalently, erase the old stripe with
 write strength β, then write the new stripe. Rebinding the same key now leaves
 the latest binding in the state.
+
+Break one rebinding into its actual steps: when `A=4` arrives, DeltaNet uses
+A's `k` to read the old value 1, computes the delta `4−1=3`, and writes that
+delta back. The A slot ends at 4 instead of storing 1 and 4 together:
+
+<DeltaRuleViz client:visible lang="en" />
 
 But DeltaNet only solves same-key rebinding. It does not answer the next
 question: as more unrelated history fills the fixed-size S, which content
