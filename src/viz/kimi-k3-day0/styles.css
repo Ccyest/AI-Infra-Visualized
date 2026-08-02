@@ -128,3 +128,42 @@
   color: var(--accent);
   font-weight: 600;
 }
+
+.kda-parameter-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem 1.2rem;
+  align-items: center;
+  margin: 0.2rem 0 0.55rem;
+  padding: 0.45rem 0.6rem;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--accent) 5%, transparent);
+}
+
+.kda-parameter-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: var(--ink-2);
+  font-size: 0.82rem;
+}
+
+.kda-parameter-row .viz-btn {
+  min-width: 2.15rem;
+  height: 1.75rem;
+  padding: 0 0.45rem;
+  font-size: 0.78rem;
+}
+
+.key-overlap-grid {
+  cursor: crosshair;
+  user-select: none;
+}
+
+.key-overlap-handle {
+  cursor: grab;
+}
+
+.key-overlap-handle:active {
+  cursor: grabbing;
+}

@@ -34,6 +34,8 @@ import CacheViz from "../../../viz/kimi-k3-day0/CacheViz";
 import MhaViz from "../../../viz/kimi-k3-day0/MhaViz";
 import LinearFlowViz from "../../../viz/kimi-k3-day0/LinearFlowViz";
 import DeltaRuleViz from "../../../viz/kimi-k3-day0/DeltaRuleViz";
+import KeyOverlapViz from "../../../viz/kimi-k3-day0/KeyOverlapViz";
+import KdaGateViz from "../../../viz/kimi-k3-day0/KdaGateViz";
 import AttnResViz from "../../../viz/kimi-k3-day0/AttnResViz";
 import MoeViz from "../../../viz/kimi-k3-day0/MoeViz";
 import PoolViz from "../../../viz/kimi-k3-day0/PoolViz";
@@ -123,14 +125,33 @@ DeltaNet 把写入换成 delta rule：写新值之前，先用当前 k 从 S 里
 越多无关历史塞满以后，哪些内容该衰减、哪些内容该保留？这就是 KDA 要继续
 处理的部分。
 
+这里还有一个必须先说清楚的现象：真实的 key 向量通常不完全正交。假设
+`q_A = k_A`，状态里同时写入 `k_A·v_Aᵀ` 和 `k_B·v_Bᵀ`，那么读 A 时：
+`o_A = Sᵀq_A = v_A + (k_Aᵀk_B)·v_B`。第二项就是 B 漏进 A 的串扰；它的
+大小由两个 key 的内积决定。下面把问题压成二维、取 `v_A=v_B=1`：固定 A，
+拖动 B 改变夹角，观察 B 在 A 上的投影如何进入 S 的读出。
+
+<KeyOverlapViz client:visible />
+
 ### KDA：delta rule 加逐通道门控
 
 KDA 可以理解成两层改动叠在一起：底层仍然是 DeltaNet 的“先擦后写”，解决
-同键重绑定；上层再加一个由当前 token 算出的逐通道门 `Diag(a_t)`，让不同
-通道有不同遗忘速率。任务还可能用到的通道可以慢慢衰减，明显过期或话题外
-的通道可以更快让出容量。Kimi Linear 论文把这个门控解释为一种可学习的位置
-编码，取代 RoPE 的固定旋转；配套的 chunkwise kernel 在受约束的 DPLR 形式下
-比通用实现快约一倍，KDA 才能铺满 69 层。
+同键重绑定；上层再加一个由当前 token 算出的逐通道门 `Diag(α_t)`。完整顺序
+是先衰减进入本步的旧状态，再做 delta update：
+`S_t = (I−β_t k_t k_tᵀ) Diag(α_t) S_{t−1} + β_t k_t v_tᵀ`。
+
+这里的 α 不是给“A、B 这些变量”各发一个开关，而是 S 的 key-channel 维度上
+的保留系数向量。KDA 也不会把不正交的 key 自动旋转成正交；它做的是在新写入
+之前，按通道缩小旧状态，让某些旧成分对后续读出的影响衰减。下面的图把
+`Diag(α)` 单独放大：ch₁/ch₂ 是两个示意 channel，C=5 是本步新写入。为只观察
+α，C 的 β 固定为 1；拖动 α₁/α₂，旧通道和最终读出会一起变化。
+
+<KdaGateViz client:visible />
+
+任务还可能用到的通道可以慢慢衰减，明显过期或话题外的通道可以更快让出
+容量。Kimi Linear 论文把这个门控解释为一种可学习的位置编码，取代 RoPE 的
+固定旋转；配套的 chunkwise kernel 在受约束的 DPLR 形式下比通用实现快约
+一倍，KDA 才能铺满 69 层。
 
 ### Attention Residual
 

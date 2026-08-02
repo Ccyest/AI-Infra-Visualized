@@ -34,6 +34,8 @@ import CacheViz from "../../../viz/kimi-k3-day0/CacheViz";
 import MhaViz from "../../../viz/kimi-k3-day0/MhaViz";
 import LinearFlowViz from "../../../viz/kimi-k3-day0/LinearFlowViz";
 import DeltaRuleViz from "../../../viz/kimi-k3-day0/DeltaRuleViz";
+import KeyOverlapViz from "../../../viz/kimi-k3-day0/KeyOverlapViz";
+import KdaGateViz from "../../../viz/kimi-k3-day0/KdaGateViz";
 import AttnResViz from "../../../viz/kimi-k3-day0/AttnResViz";
 import MoeViz from "../../../viz/kimi-k3-day0/MoeViz";
 import PoolViz from "../../../viz/kimi-k3-day0/PoolViz";
@@ -137,12 +139,34 @@ But DeltaNet only solves same-key rebinding. It does not answer the next
 question: as more unrelated history fills the fixed-size S, which content
 should decay and which should stay? That is the part KDA adds.
 
+One more phenomenon has to be explicit first: real key vectors are generally
+not perfectly orthogonal. Let `q_A = k_A`, and let the state contain both
+`k_A·v_Aᵀ` and `k_B·v_Bᵀ`. Reading A gives
+`o_A = Sᵀq_A = v_A + (k_Aᵀk_B)·v_B`. The second term is B leaking into A;
+its size is set by the inner product of the two keys. The diagram below reduces
+the geometry to 2D and sets `v_A=v_B=1`. Keep A fixed and drag B to see its
+projection onto A enter the readout from S.
+
+<KeyOverlapViz client:visible lang="en" />
+
 ### KDA: delta rule with per-channel gating
 
 KDA is easiest to read as two changes stacked together. The bottom layer is
 still DeltaNet's erase-before-write rule, which fixes same-key rebinding. On
-top of that, KDA adds a per-channel diagonal gate `Diag(a_t)` computed from
-the current token, so different channels can forget at different rates.
+top of that, KDA adds a per-channel gate `Diag(α_t)` computed from the current
+token. The exact order is old-state decay first, then the delta update:
+`S_t = (I−β_t k_t k_tᵀ) Diag(α_t) S_{t−1} + β_t k_t v_tᵀ`.
+
+The entries of α do not assign one switch to each toy “variable” A or B; they
+are retention factors along the key-channel dimension of S. KDA also does not
+rotate non-orthogonal keys into orthogonal ones. Instead, before the new write,
+it shrinks old state components channel by channel so that some old influence
+on later readouts can decay. The next diagram magnifies `Diag(α)`: ch₁/ch₂ are
+two illustrative channels and C=5 is the new write. C uses β=1 so the diagram
+can isolate α; adjust α₁/α₂ and both the old channels and readout change.
+
+<KdaGateViz client:visible lang="en" />
+
 Channels that may still matter can decay slowly, while clearly stale or
 off-topic channels can give capacity back faster. The Kimi Linear paper reads
 this gate as a learned position encoding replacing RoPE's fixed rotation. A
