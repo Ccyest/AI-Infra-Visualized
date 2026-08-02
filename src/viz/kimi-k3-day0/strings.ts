@@ -11,18 +11,18 @@ export const POOL = {
     zh: "同一批请求：KDA 固定块从左入，MLA KV 逐页从右入",
     en: "Same requests: fixed KDA blocks fill from the left, MLA KV pages from the right",
   },
-  splitLabel: { zh: "静态双池(启动时切死)", en: "Static split pools (fixed at startup)" },
-  unifiedLabel: { zh: "统一池(SGLang)", en: "Unified pool (SGLang)" },
+  splitLabel: { zh: "静态双池（启动时切死）", en: "Static split pools (fixed at startup)" },
+  unifiedLabel: { zh: "统一池（SGLang）", en: "Unified pool (SGLang)" },
   kdaRegion: { zh: "KDA 区", en: "KDA region" },
   mlaRegion: { zh: "MLA 区", en: "MLA region" },
   kdaFrom: { zh: "KDA →", en: "KDA →" },
   mlaFrom: { zh: "← MLA", en: "← MLA" },
   legendKda: {
-    zh: "KDA 递归状态(固定大小，原地覆写)",
+    zh: "KDA 递归状态（固定大小，原地覆写）",
     en: "KDA recurrent state (fixed size, overwritten in place)",
   },
   legendMla: {
-    zh: "MLA KV cache(随生成逐页追加)",
+    zh: "MLA KV cache（随生成逐页追加）",
     en: "MLA KV cache (appends page by page)",
   },
   legendFree: { zh: "空闲页", en: "free page" },
@@ -96,9 +96,9 @@ export const PIPE = {
   },
   tpLabel: { zh: "TP8：8 卡合算一个 chunk", en: "TP8: 8 GPUs share each chunk" },
   ppLabel: { zh: "PP8：按层切 8 段流水", en: "PP8: layers split into an 8-stage pipeline" },
-  legendCompute: { zh: "计算(颜色 = prompt)", en: "compute (color = prompt)" },
-  legendSync: { zh: "AllReduce 同步(关键路径开销)", en: "AllReduce sync (critical-path cost)" },
-  legendBubble: { zh: "流水线预热气泡(只付一次)", en: "pipeline warm-up bubble (paid once)" },
+  legendCompute: { zh: "计算（颜色 = prompt）", en: "compute (color = prompt)" },
+  legendSync: { zh: "AllReduce 同步（关键路径开销）", en: "AllReduce sync (critical-path cost)" },
+  legendBubble: { zh: "流水线预热气泡（只付一次）", en: "pipeline warm-up bubble (paid once)" },
   statChunks: { zh: "出炉 chunk", en: "chunks done" },
   statSync: { zh: "同步开销", en: "sync cost" },
   statUtil: { zh: "利用率", en: "Utilization" },
@@ -150,11 +150,11 @@ export const DCP = {
   tokens: { zh: "个 token", en: "tokens" },
   rank: { zh: "Rank", en: "Rank" },
   legendStored: {
-    zh: "该 rank 存有此位置的 KV(颜色 = rank)",
+    zh: "该 rank 存有此位置的 KV（颜色 = rank）",
     en: "this rank stores that position's KV (color = rank)",
   },
   legendEmpty: {
-    zh: "不存(该位置分片在别的 rank)",
+    zh: "不存（该位置分片在别的 rank）",
     en: "not stored (that position lives on another rank)",
   },
   position: { zh: "token 位置 →", en: "token position →" },
@@ -169,7 +169,7 @@ export const DCP = {
 
 export const DCP_PHASES: Localized[] = [
   {
-    zh: "① 新 token 的 query 复制到所有 rank(query 很小，复制不亏)",
+    zh: "① 新 token 的 query 复制到所有 rank（query 很小，复制不亏）",
     en: "① The new token's query is replicated to every rank (queries are tiny)",
   },
   {
@@ -219,11 +219,11 @@ export const CACHE = {
     en: "3 KDA + 1 MLA interleaved, ×23 blocks, plus one final MLA layer: 93 total",
   },
   legendMla: {
-    zh: "MLA KV cache(随上下文逐格增长)",
+    zh: "MLA KV cache（随上下文逐格增长）",
     en: "MLA KV cache (grows cell by cell with context)",
   },
   legendKda: {
-    zh: "KDA 递归状态(固定约 0.4 GB，不随上下文变化)",
+    zh: "KDA 递归状态（固定约 0.4 GB，不随上下文变化）",
     en: "KDA recurrent state (fixed at ≈0.4 GB, independent of context)",
   },
   statContext: { zh: "上下文", en: "context" },
@@ -234,7 +234,7 @@ export const CACHE = {
     en: "KDA layer: linear attention, fixed-size state overwritten in place",
   },
   mLayerTip: {
-    zh: "MLA 层：全局 attention(NoPE)，KV 随上下文增长",
+    zh: "MLA 层：全局 attention（NoPE），KV 随上下文增长",
     en: "MLA layer: global attention (NoPE), KV grows with context",
   },
 } satisfies Record<string, Localized>;
@@ -293,7 +293,7 @@ export const ATTN = {
     en: "The selected block scores the embedding and every preceding block with a learned pseudo-query and retrieves by weight α",
   },
   alphaNote: {
-    zh: "线宽与数值 = α(取回权重，手工示意值)",
+    zh: "线宽与数值 = α（取回权重，手工示意值）",
     en: "line width and numbers = α (retrieval weights, hand-crafted for illustration)",
   },
   costNote: {
@@ -312,60 +312,30 @@ export function attnBlockTooltip(locale: Locale, block: number): string {
 
 export const MOE = {
   title: {
-    zh: "LatentMoE：896 个 expert 里选 16 个",
-    en: "LatentMoE: picking 16 of 896 experts",
+    zh: "LatentMoE：896 个 routed expert 只激活 16 个",
+    en: "LatentMoE: only 16 of 896 routed experts are active",
   },
   subtitle: {
-    zh: "每步一个 token；高亮 = 本步选中，底色深浅 = 累计被选次数",
-    en: "One token per step; highlight = chosen this step, shading = cumulative picks",
+    zh: "饼图只统计 routed pool；2 个 shared expert 不在这个分母里",
+    en: "The pie covers only the routed pool; the 2 shared experts are outside this denominator",
   },
-  toggleLatent: { zh: "隐空间分发(3584 维)", en: "Latent dispatch (3584-d)" },
-  toggleFull: { zh: "若在全维分发(7168 维)", en: "If dispatched at full width (7168-d)" },
-  hiddenBar: { zh: "hidden 7168", en: "hidden 7168" },
-  latentBar: { zh: "latent 3584", en: "latent 3584" },
-  routeArrow: { zh: "降维 → 打分 → 分发", en: "project down → score → dispatch" },
-  routeArrowFull: { zh: "打分 → 分发", en: "score → dispatch" },
-  sharedLabel: { zh: "shared ×2", en: "shared ×2" },
-  statActive: { zh: "每 token 激活", en: "active per token" },
-  statParams: { zh: "激活参数", en: "active params" },
-  statTraffic: { zh: "相对 dispatch 流量", en: "relative dispatch traffic" },
-  legendCurrent: {
-    zh: "本步选中的 16 个 routed expert(颜色 = token)",
-    en: "the 16 routed experts chosen this step (color = token)",
+  routedActive: { zh: "每个 token 的 routed 选择", en: "Routed selection per token" },
+  routedPercent: { zh: "只占 routed pool 的 1.8%", en: "Just 1.8% of the routed pool" },
+  activeSlice: { zh: "本 token 选中的 routed experts", en: "routed experts selected for this token" },
+  idleSlice: { zh: "本 token 未选中的 routed experts", en: "routed experts not selected for this token" },
+  sharedTitle: { zh: "另有 2 个 shared experts", en: "Plus 2 shared experts" },
+  sharedNote: {
+    zh: "它们每个 token 都会经过，不参与 top-16 路由，也不属于 896 这个 routed pool。",
+    en: "Every token passes through them. They do not join top-16 routing and are not part of the 896-expert routed pool.",
   },
-  legendHeat: { zh: "累计被选(越深越多)", en: "cumulative picks (darker = more)" },
-  legendShared: { zh: "2 个 shared expert，每 token 常驻", en: "2 shared experts, always on" },
-  experts: { zh: "expert", en: "experts" },
+  statRouted: { zh: "routed 激活率（分母：896）", en: "routed activation (denominator: 896)" },
+  statParams: { zh: "整模型参数激活率（另一分母）", en: "whole-model parameter activation (different denominator)" },
+  statLatent: { zh: "expert 计算宽度", en: "expert compute width" },
+  verdict: {
+    zh: "这张饼图只回答一件事：一个 token 在 896 个 routed expert 中只选 16 个。104B / 2.8T 是整模型层面的参数比例，不能当成同一张饼的另一块。LatentMoE 再把 expert 计算放到 3584 维隐空间，最后投影回 7168 维。",
+    en: "This pie answers one question only: each token chooses 16 of 896 routed experts. The 104B / 2.8T figure is a whole-model parameter ratio, not another slice of this pie. LatentMoE additionally runs expert computation in a 3584-d latent space before projecting back to 7168-d.",
+  },
 } satisfies Record<string, Localized>;
-
-export function moeExpertTooltip(
-  locale: Locale,
-  id: number,
-  count: number,
-  isCurrent: boolean,
-): string {
-  const zh = locale === "zh";
-  const base = zh
-    ? `Expert #${id} · 累计被选 ${count} 次`
-    : `Expert #${id} · picked ${count} time${count === 1 ? "" : "s"} so far`;
-  if (!isCurrent) return base;
-  return zh ? `${base}(本步选中)` : `${base} (chosen this step)`;
-}
-
-export function moeVerdict(locale: Locale, latent: boolean): string {
-  const zh = locale === "zh";
-  const traffic = zh
-    ? `分发在 ${latent ? "3584 维隐空间，16 份下发的流量和 expert 权重都省一半" : "7168 维全宽上，16 份下发的流量是隐空间方案的 2 倍"}。`
-    : `Dispatch runs at ${
-        latent
-          ? "3584-d, halving both the 16-way traffic and the expert weights"
-          : "the full 7168-d width, doubling the 16-way traffic of the latent scheme"
-      }. `;
-  const balance = zh
-    ? "负载均衡靠 Quantile Balancing：expert 配额直接从 router 分数的分位数导出，不再需要敏感的 aux-loss 系数。"
-    : "Load balance comes from Quantile Balancing: expert quotas derive directly from router-score quantiles, with no sensitive aux-loss coefficient to tune.";
-  return traffic + balance;
-}
 
 export const ARCH = {
   title: { zh: "K3 整体结构", en: "K3 at a glance" },
@@ -377,7 +347,7 @@ export const ARCH = {
   vision: { zh: "视觉", en: "vision" },
   text: { zh: "文本 token", en: "text tokens" },
   repeat: { zh: "×23 组，末尾再加 1 层 MLA，共 93 层", en: "×23 blocks plus one final MLA layer: 93 total" },
-  attnresArc: { zh: "AttnRes(每 12 层)", en: "AttnRes (every 12 layers)" },
+  attnresArc: { zh: "AttnRes（每 12 层）", en: "AttnRes (every 12 layers)" },
   outLabel: { zh: "LM head", en: "LM head" },
 } satisfies Record<string, Localized>;
 
@@ -392,7 +362,7 @@ export const ARCH_DETAILS: ArchDetail[] = [
     id: "scale",
     label: { zh: "2.8T / 104B", en: "2.8T / 104B" },
     detail: {
-      zh: "总参数 2.8T，每 token 激活 104B(≈3.7%)；原生 1M token 上下文。",
+      zh: "总参数 2.8T，每 token 激活 104B（≈3.7%）；原生 1M token 上下文。",
       en: "2.8T total parameters, 104B active per token (≈3.7%); native 1M-token context.",
     },
   },
@@ -414,7 +384,7 @@ export const ARCH_DETAILS: ArchDetail[] = [
   },
   {
     id: "embed",
-    label: { zh: "Embedding(NoPE)", en: "Embedding (NoPE)" },
+    label: { zh: "Embedding（NoPE）", en: "Embedding (NoPE)" },
     detail: {
       zh: "全模型不加 RoPE。位置信息由 KDA 层的递归隐式提供，MLA 层做无位置编码的全局 attention。",
       en: "No RoPE anywhere. Position comes implicitly from the KDA recurrence; MLA layers run global attention without position encoding.",
@@ -432,7 +402,7 @@ export const ARCH_DETAILS: ArchDetail[] = [
     id: "mla",
     label: { zh: "MLA 层 ×24", en: "MLA layers ×24" },
     detail: {
-      zh: "全局 softmax attention(带输出门)，KV cache 随上下文增长；每 3 层 KDA 配 1 层，负责跨全文的信息交互。",
+      zh: "全局 softmax attention（带输出门），KV cache 随上下文增长；每 3 层 KDA 配 1 层，负责跨全文的信息交互。",
       en: "Global softmax attention (with an output gate); its KV cache grows with context. One per 3 KDA layers, providing full-context interaction.",
     },
   },
@@ -472,11 +442,11 @@ export const MHA = {
     zh: "cache 一格 = 一个 token 的 KV",
     en: "one cache cell = one token's KV",
   },
-  legendLine: { zh: "连线 = 一次点积(线宽 = softmax 权重)", en: "line = one dot product (width = softmax weight)" },
+  legendLine: { zh: "连线 = 一次点积（线宽 = softmax 权重）", en: "line = one dot product (width = softmax weight)" },
   legendCurrent: { zh: "描边 = 当前 token", en: "outline = current token" },
   verdict: {
     zh: "第 N 步和之前 N−1 个 token 各点乘一次，整句累计 ≈ N²/2 次：计算 O(N²)，cache O(N)。换来的是逐位置打分：「它」那一步，权重可以跨过 5 个 token 聚在「猫」上，不会因递归距离自动衰减。",
-    en: "Step N dots against all N−1 earlier tokens, ≈N²/2 dot products over the sentence: O(N²) compute, O(N) cache. In exchange, every position is scored independently: on \"it\", the weight can cross six tokens and land on \"cat\" without recurrent distance decay.",
+    en: "Step N dots against all N−1 earlier tokens, ≈N²/2 dot products over the sentence: O(N²) compute, O(N) cache. In exchange, every position is scored independently: on \"it\", the weight can reach five positions back to \"cat\" without recurrent distance decay.",
   },
 } satisfies Record<string, Localized>;
 
@@ -543,9 +513,9 @@ export const LINFLOW = {
   statCum: { zh: "累计", en: "cumulative" },
   statMha: { zh: "MHA 对照：cache", en: "MHA for comparison: cache" },
   statMhaCum: { zh: "格，累计点积", en: "cells, cumulative dot products" },
-  sLabel: { zh: "S(固定大小)", en: "S (fixed size)" },
+  sLabel: { zh: "S（固定大小）", en: "S (fixed size)" },
   legendToken: {
-    zh: "token(颜色仅用于看它们在 S 里混合)",
+    zh: "token（颜色仅用于看它们在 S 里混合）",
     en: "token (colors only to watch them blend inside S)",
   },
   legendStripe: { zh: "S 的条纹 = 已叠加的历史", en: "stripes in S = superimposed history" },
@@ -559,6 +529,6 @@ export const LINFLOW = {
 
 export function linflowBoxTooltip(locale: Locale, count: number): string {
   return locale === "zh"
-    ? `状态 S：${count} 个 token 的 k·vᵀ 叠加，大小固定(真实约 128×128/head)`
-    : `State S: the superposition of ${count} tokens' k·vᵀ, fixed size (really ≈128×128 per head)`;
+    ? `状态 S：${count} 个 token 的 k·vᵀ 叠加，大小固定(K3 为 128×128/head)`
+    : `State S: the superposition of ${count} tokens' k·vᵀ, fixed size (128×128 per K3 head)`;
 }

@@ -13,7 +13,7 @@ const PRESETS = [90, 60, 30, 0] as const;
 
 const COPY = {
   title: { zh: "串扰从哪里来：不正交的 key 方向会互相投影", en: "Where crosstalk comes from: non-orthogonal key directions project onto each other" },
-  subtitle: { zh: "固定 k_A，拖动 k_B；示例取 q_A=k_A、v_A=v_B=1", en: "Keep k_A fixed and drag k_B; the example uses q_A=k_A and v_A=v_B=1" },
+  subtitle: { zh: "固定 kₐ，拖动 kᵦ；示例取 qₐ=kₐ、vₐ=vᵦ=1", en: "Keep kₐ fixed and drag kᵦ; the example uses qₐ=kₐ and vₐ=vᵦ=1" },
   drag: { zh: "拖动 B", en: "drag B" },
   target: { zh: "A 的目标信号", en: "A target signal" },
   leak: { zh: "B 漏进 A 的串扰", en: "B leakage into A" },
@@ -85,9 +85,9 @@ export default function KeyOverlapViz({ lang = "zh" }: { lang?: Locale }) {
           <text x={CX + 40 * Math.cos(rad / 2)} y={CY - 40 * Math.sin(rad / 2) - 4} fontSize="9" fill="var(--muted)">θ={angle}°</text>
 
           <line x1={CX} y1={CY} x2={CX + R} y2={CY} stroke="var(--series-1)" strokeWidth="3" markerEnd="url(#overlap-blue-arrow)" />
-          <text x={CX + R + 8} y={CY + 4} fontSize="10" fill="var(--series-1)" fontWeight="700">k_A = q_A</text>
+          <text x={CX + R + 8} y={CY + 4} fontSize="10" fill="var(--series-1)" fontWeight="700">kₐ = qₐ</text>
           <line x1={CX} y1={CY} x2={bx} y2={by} stroke="var(--series-2)" strokeWidth="3" markerEnd="url(#overlap-orange-arrow)" />
-          <text x={bx + 8} y={by - 5} fontSize="10" fill="var(--series-2)" fontWeight="700">k_B</text>
+          <text x={bx + 8} y={by - 5} fontSize="10" fill="var(--series-2)" fontWeight="700">kᵦ</text>
           <circle cx={bx} cy={by} r="10" fill="color-mix(in srgb, var(--series-2) 25%, transparent)" stroke="var(--series-2)" strokeWidth="2" className="key-overlap-handle" />
           <text x={bx} y={by + 24} textAnchor="middle" fontSize="8.5" fill="var(--muted)">{text(lang, COPY.drag)}</text>
 
@@ -96,12 +96,12 @@ export default function KeyOverlapViz({ lang = "zh" }: { lang?: Locale }) {
           <text x={CX + (R * cos) / 2} y={CY + 29} textAnchor="middle" fontSize="8.5" fill="var(--series-2)">cos θ = {cos.toFixed(2)}</text>
 
           <line x1={CX} y1={CY} x2={sx} y2={sy} stroke="var(--good)" strokeWidth="2" strokeDasharray="5 3" markerEnd="url(#overlap-green-arrow)" />
-          <text x={sx + 7} y={sy + 3} fontSize="9" fill="var(--good)" fontWeight="700">S = k_A + k_B</text>
+          <text x={sx + 7} y={sy + 3} fontSize="9" fill="var(--good)" fontWeight="700">S = kₐ + kᵦ</text>
 
           <g transform="translate(350 56)">
-            <text x="0" y="0" fontSize="11" fill="var(--ink)" fontWeight="700">k_Aᵀk_B = cos θ = {cos.toFixed(2)}</text>
-            <text x="0" y="28" fontSize="10" fill="var(--ink-2)">S = k_A·v_A + k_B·v_B</text>
-            <text x="0" y="50" fontSize="10" fill="var(--ink-2)">o_A = q_AᵀS = 1 + cos θ</text>
+            <text x="0" y="0" fontSize="11" fill="var(--ink)" fontWeight="700">kₐᵀkᵦ = cos θ = {cos.toFixed(2)}</text>
+            <text x="0" y="28" fontSize="10" fill="var(--ink-2)">S = kₐ·vₐ + kᵦ·vᵦ</text>
+            <text x="0" y="50" fontSize="10" fill="var(--ink-2)">oₐ = qₐᵀS = 1 + cos θ</text>
             <rect x="0" y="72" width="210" height="26" rx="5" fill="none" stroke="var(--grid)" />
             <rect x="2" y="74" width="102" height="22" rx="3" fill="var(--series-1)" opacity="0.85" />
             <rect x="106" y="74" width={102 * cos} height="22" rx="3" fill="var(--series-2)" opacity="0.85" />
@@ -119,7 +119,7 @@ export default function KeyOverlapViz({ lang = "zh" }: { lang?: Locale }) {
           { label: lang === "zh" ? "橙色 = B 及其在 A 上的投影" : "orange = B and its projection onto A", swatch: { background: "var(--series-2)" } },
           { label: lang === "zh" ? "绿色虚线 = 合成状态 S" : "green dashed = combined state S", swatch: { background: "var(--good)" } },
         ]} />
-        <div className="viz-verdict">{lang === "zh" ? <>当 q_A 读取 S 时，B 的贡献不会自动消失；它按 <b>k_Aᵀk_B = cos θ</b> 漏进输出。这就是图中“串扰”的精确定义。</> : <>When q_A reads S, B does not disappear; it leaks into the output by <b>k_Aᵀk_B = cos θ</b>. That is the precise meaning of crosstalk in this diagram.</>}</div>
+        <div className="viz-verdict">{lang === "zh" ? <>当 qₐ 读取 S 时，B 的贡献不会自动消失；它按 <b>kₐᵀkᵦ = cos θ</b> 漏进输出。这就是图中“串扰”的精确定义。</> : <>When qₐ reads S, B does not disappear; it leaks into the output by <b>kₐᵀkᵦ = cos θ</b>. That is the precise meaning of crosstalk in this diagram.</>}</div>
       </div>
     </figure>
   );

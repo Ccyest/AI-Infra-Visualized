@@ -11,27 +11,30 @@ concepts:
   - chunked PP / DCP
 tryOnSglang: "https://github.com/sgl-project/sglang"
 references:
-  - label: "Kimi K3 Technical Report(arXiv 2607.24653，架构部分的第一手来源)"
+  - label: "Kimi K3 Technical Report（arXiv 2607.24653，架构部分的第一手来源）"
     url: "https://arxiv.org/abs/2607.24653"
-  - label: "LMSYS Blog：Kimi K3 Day-0 Support(serving 部分的第一手来源，含全部实测数字)"
+  - label: "LMSYS Blog：Kimi K3 Day-0 Support（serving 部分的第一手来源，含全部实测数字）"
     url: "https://www.lmsys.org/blog/2026-07-27-kimi-k3-day0-support/"
-  - label: "Kimi Linear: An Expressive, Efficient Attention Architecture(KDA 的出处，含 3:1 混排的消融)"
+  - label: "Kimi Linear: An Expressive, Efficient Attention Architecture（KDA 的出处，含 3:1 混排的消融）"
     url: "https://arxiv.org/abs/2510.26692"
-  - label: "Gated Delta Networks: Improving Mamba2 with Delta Rule(delta rule 加门控的先例)"
+  - label: "Kimi K3 官方 config（hidden size、head 数与 KDA head dimension）"
+    url: "https://huggingface.co/moonshotai/Kimi-K3/blob/main/config.json"
+  - label: "Gated Delta Networks: Improving Mamba2 with Delta Rule（delta rule 加门控的先例）"
     url: "https://arxiv.org/abs/2412.06464"
-  - label: "Sebastian Raschka：Kimi K3 Architecture Notes(NoPE 与 AttnRes 的成本数字)"
+  - label: "Sebastian Raschka：Kimi K3 Architecture Notes（NoPE 与 AttnRes 的成本数字）"
     url: "https://sebastianraschka.com/blog/2026/kimi-k3-architecture-notes.html"
-  - label: "LMSYS Blog：DSpark in SGLang(投机解码)"
+  - label: "LMSYS Blog：DSpark in SGLang（投机解码）"
     url: "https://www.lmsys.org/blog/2026-07-06-dspark-sglang"
-  - label: "SGLang Cookbook：Memory Management(双状态显存在引擎里的落地)"
+  - label: "SGLang Cookbook：Memory Management（双状态显存在引擎里的落地）"
     url: "https://sgl-project-sglang-93.mintlify.app/developer/memory-management"
-  - label: "Awesome-ML-SYS-Tutorial(本站配套的中文文字讲解库)"
+  - label: "Awesome-ML-SYS-Tutorial（本站配套的中文文字讲解库）"
     url: "https://github.com/zhaochenyang20/Awesome-ML-SYS-Tutorial"
 ---
 
 import ArchViz from "../../../viz/kimi-k3-day0/ArchViz";
 import CacheViz from "../../../viz/kimi-k3-day0/CacheViz";
 import MhaViz from "../../../viz/kimi-k3-day0/MhaViz";
+import StateChannelViz from "../../../viz/kimi-k3-day0/StateChannelViz";
 import LinearFlowViz from "../../../viz/kimi-k3-day0/LinearFlowViz";
 import DeltaRuleViz from "../../../viz/kimi-k3-day0/DeltaRuleViz";
 import KeyOverlapViz from "../../../viz/kimi-k3-day0/KeyOverlapViz";
@@ -53,13 +56,13 @@ K3 是 2.8T 参数的 MoE 模型，每 token 激活 104B；93 层里 69 层是 K
 
 ### 1M 上下文的 KV cache
 
-先算显存。按 MLA 压缩后 27 KB/token(24 层合计)线性外推，93 层全部用
+先算显存。按 MLA 压缩后 27 KB/token（24 层合计）线性外推，93 层全部用
 MLA 时，1M token 的一个请求要占约 110 GB；未压缩的 MHA 还要再大一个
 数量级。这个数字决定了大部分层不能保留 softmax attention。
 
-K3 按 3 KDA + 1 MLA 交错。KDA 层的状态固定大小(整机约 0.4 GB/请求)，
+K3 按 3 KDA + 1 MLA 交错。KDA 层的状态固定大小（整机约 0.4 GB/请求），
 每步原地覆写，不随上下文增长；MLA 层保留全局 attention，且全模型不加
-RoPE(NoPE)，位置信息由 KDA 的递归隐式提供：
+RoPE（NoPE），位置信息由 KDA 的递归隐式提供：
 
 <CacheViz client:visible />
 
@@ -84,10 +87,22 @@ softmax attention 每生成一个 token 要扫一遍全部历史(`O(N)`)，KDA �
 ### Linear attention：固定大小的状态
 
 线性注意力去掉 softmax，把所有历史写入先累加成固定大小的矩阵
-`S = Σᵢkᵢvᵢᵀ`(每 head 约 `128×128`)，再通过
-`o = Sᵀq = Σᵢ(qᵀkᵢ)vᵢ` 读取。S 本质是一张键值表：每个 token 的 k 决定
-写进哪个方向，v 是写进去的内容。cache 没有了，每步只碰 S。同一句话再走
-一遍：
+`S = Σᵢkᵢvᵢᵀ`（K3 每 head 为 `128×128`），再通过
+`o = Sᵀq = Σᵢ(qᵀkᵢ)vᵢ` 读取。S 本质是一个关联记忆矩阵：每个 token 的 k 决定
+写进哪个方向，v 是写进去的内容。cache 没有了，每步只碰 S。
+
+这里的 `128` 不是整个 token embedding 宽度。K3 的 hidden size 是 `7168`，
+学习到的 Q/K/V 投影从它生成 `96` 个 KDA heads，每个 head 的
+dimension 是 `128`。这不是把 7168 个坐标原样切成 96 份，而是学习到的新
+特征空间。对一个 head，k 的 128 个坐标就是 128 条 key channels；S 的每一行
+对应其中一条：
+
+<StateChannelViz client:visible />
+
+`128` 是容量和开销之间的设计选择，不是 linear attention 的硬性规定。增大 `dₖ`
+会增加 key 特征轴，增大 `dᵥ` 会增加每条轴能存的 value 宽度；代价是每 head 的
+状态和更新开销按 `dₖ×dᵥ` 增长。K3 取两者都为 128，即每 head `16,384` 个
+状态数。理解这个状态后，同一句话再走一遍：
 
 <LinearFlowViz client:visible />
 
@@ -174,18 +189,19 @@ embedding 和之前各组的输出算注意力权重 α，按权重取回。取�
 ### LatentMoE
 
 FFN 全部是 MoE：896 个 routed expert 每 token 选 16 个，另有 2 个每个
-token 都经过的 shared expert。激活率 16/896 ≈ 1.8%，整模型每 token 激活
-104B/2.8T ≈ 3.7% 的参数；对比 K2 的 384 选 8，稀疏度进一步提高。
+token 都经过的 shared expert。只看 routed pool，选中比例是
+`16/896 ≈ 1.8%`；另一个整模型口径下，每 token 激活的参数比例是
+`104B/2.8T ≈ 3.7%`。两者分母不同；对比 K2 的 384 选 8，稀疏度进一步提高。
 
 路由和分发不在 7168 维 hidden 上做：先降到 3584 维隐空间，router 在半宽
 向量上打分，expert 也在半宽上计算，最后升回 7168 维。16 份 dispatch 的
 all-to-all 流量和 expert 权重体积都省一半：
 
-<MoeViz client:visible />
+<MoeViz />
 
-1.8% 的激活率下训练容易不稳定，报告用了三个手段：RMSNorm、有界的
-SiTU-GLU 激活，以及 Quantile Balancing(expert 配额直接从 router 分数的
-分位数导出，不需要再调 aux-loss 系数)。
+只选 routed pool 的 1.8% 时，训练容易不稳定。报告用了三个手段：RMSNorm、
+有界的 SiTU-GLU 激活，以及 Quantile Balancing（expert 配额直接从 router
+分数的分位数导出，不需要再调 aux-loss 系数）。
 
 ### 训练侧
 
@@ -201,10 +217,10 @@ SiTU-GLU 激活，以及 Quantile Balancing(expert 配额直接从 router 分数
 
 上面的架构落到推理引擎里，首先要处理的是两种性质不同的推理状态：
 
-| | MLA(24 层) | KDA(69 层) |
+| | MLA（24 层） | KDA（69 层） |
 | --- | --- | --- |
 | 状态形式 | KV cache，逐 token 追加 | 递归状态，固定大小 |
-| 增长方式 | 每 token 约 27 KB，只增不减 | 每请求约 54 MB(TP=8)，每步原地覆写 |
+| 增长方式 | 每 token 约 27 KB，只增不减 | 每请求约 54 MB（`TP=8`），每步原地覆写 |
 
 KV 逐 token 追加、按页共享这些默认假设对 KDA 都不成立，SGLang 的适配从
 这里开始。
@@ -221,23 +237,23 @@ KV 逐 token 追加、按页共享这些默认假设对 KDA 都不成立，SGLan
 注意 t=14：静态双池的 MLA 区耗尽，R2 生成到一半被驱逐，而 KDA 区还空着 6 页。
 统一池在同一时刻没有任何失败。
 
-前缀缓存(radix tree)这边，KDA 状态会被原地覆写，不能像 KV 那样直接共享。
-SGLang 用三个操作管理它：copy-on-write(使用共享 checkpoint 前先拷到私有槽)、
-snapshot(乒乓缓冲抓快照)、donate(按槽位索引捐给 radix tree)。整套设计
+前缀缓存（radix tree）这边，KDA 状态会被原地覆写，不能像 KV 那样直接共享。
+SGLang 用三个操作管理它：copy-on-write（使用共享 checkpoint 前先拷到私有槽）、
+snapshot（乒乓缓冲抓快照）、donate（按槽位索引捐给 radix tree）。整套设计
 按构造无竞态，细节见文末博客。
 
 ### Chunked pipeline prefill
 
 TP8 让 8 张卡合算同一个 chunk，但每层都要 AllReduce，通信在关键路径上。
 chunked PP8 把模型按层切成 8 段，prompt 切成 chunk 依次流过各段，P2P 交接
-藏在下一个 chunk 的计算后面(实测 91% 被隐藏)：
+藏在下一个 chunk 的计算后面（实测 91% 被隐藏）：
 
 <PipelineViz client:visible />
 
 预热气泡只付一次，稳态每 2 列出一个 chunk。实测 PP8 prefill 吞吐是 TEP8
-节点的 1.45–1.72×(TEP = tensor + expert 并行，图中简化为纯 TP 作对照)。
+节点的 1.45–1.72×（TEP = tensor + expert 并行，图中简化为纯 TP 作对照）。
 
-### Decode context parallelism(DCP)
+### Decode context parallelism（DCP）
 
 decode 阶段的瓶颈是显存：TP 下每张卡都存一份完整 KV。DCP 按 token 位置取模
 分片，rank r 只存 `position mod N = r` 的 KV；每步 decode 先本地算局部
@@ -252,19 +268,19 @@ KDA 层仍按 TP 切分，所以混合架构的并行策略也是按层混合的
 
 ### 单卡数字
 
-投机解码介入之前，BS=1 解码靠四类手段从 63.8 tok/s 提到约 113 tok/s
-(括号内为博客给出的单项增益)：
+投机解码介入之前，`BS=1` 解码靠四类手段从 63.8 tok/s 提到约 113 tok/s
+（括号内为博客给出的单项增益）：
 
 | 类别 | 代表手段 |
 | --- | --- |
-| 启动开销消除(+19.9 tok/s) | MoE 前段合成单个 GEMM、KDA 投影合并、寄存器内路由 |
-| 专用 kernel(+10.3) | 融合 KDA decode、W4A8 MoE、TMA 聚合 attention residual |
-| 通信融合(+27.6) | 融合 all-reduce：multicast + NVLS 在交换机内归约，顺路做 residual/RMSNorm |
-| 重叠与前奏(+10.4) | GEMV-GEMM 重叠、residual 写回融合、PDL 预热 attention |
+| 启动开销消除（+19.9 tok/s） | MoE 前段合成单个 GEMM、KDA 投影合并、寄存器内路由 |
+| 专用 kernel（+10.3） | 融合 KDA decode、W4A8 MoE、TMA 聚合 attention residual |
+| 通信融合（+27.6） | 融合 all-reduce：multicast + NVLS 在交换机内归约，顺路做 residual/RMSNorm |
+| 重叠与前奏（+10.4） | GEMV-GEMM 重叠、residual 写回融合、PDL 预热 attention |
 
-在此之上，DSpark 投机解码把 BS=1 提到约 423 tok/s(约 3.7×)。
+在此之上，DSpark 投机解码把 `BS=1` 提到约 423 tok/s（约 3.7×）。
 
-组合的 serving 边界：PP8 prefill + TP8 decode 达到 2,808 tok/s/GPU(fp4)；
+组合的 serving 边界：PP8 prefill + TP8 decode 达到 2,808 tok/s/GPU（FP4）；
 交互式配置可以换到 116+ tok/s/用户。博客里值得记住的一句：
 
 > AllReduce 是同步点，在那里省 1 微秒，步时就省 1 微秒；

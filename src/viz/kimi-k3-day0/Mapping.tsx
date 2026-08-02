@@ -21,8 +21,8 @@ const ITEMS: MappingItem[] = [
     id: "sbox",
     label: { zh: "S 状态箱的条纹", en: "The S box stripes" },
     real: {
-      zh: "状态是每 head 约 128×128 的稠密矩阵；条纹只表示「历史都叠在一起」，不是真实内部布局，写入/读出每步各一次",
-      en: "The state is a dense ≈128×128 matrix per head; stripes only mean “history is superimposed”, not the real layout. One write and one read per step",
+      zh: "K3 的状态是每 head 128×128 的稠密矩阵；条纹只表示「历史都叠在一起」，不是真实内部布局，写入/读出每步各一次",
+      en: "K3 uses a dense 128×128 state per head; stripes only mean “history is superimposed”, not the real layout. One write and one read per step",
     },
     visual: (
       <MiniRow>
@@ -34,7 +34,7 @@ const ITEMS: MappingItem[] = [
   },
   {
     id: "fade",
-    label: { zh: "透明度(强度)", en: "Opacity (strength)" },
+    label: { zh: "透明度（强度）", en: "Opacity (strength)" },
     real: {
       zh: "条纹宽度 = 逐通道门控系数每步连乘后的容量份额；“话题切换”是把数据依赖的门控画成一次离散事件；真实键不正交，串扰用固定系数 ε 近似",
       en: "Stripe width = capacity share after the per-channel gate's running product; the “topic shift” draws data-dependent gating as one discrete event; real keys aren't orthogonal and crosstalk is approximated with a fixed ε",
@@ -50,16 +50,16 @@ const ITEMS: MappingItem[] = [
     id: "erase",
     label: { zh: "一步擦干净的写入", en: "One-step clean erase" },
     real: {
-      zh: "delta rule 的写入强度 β_t ∈ (0,1) 由输入算出；图里取 β=1，一步擦净好读图",
+      zh: "delta rule 的写入强度 βₜ ∈ (0,1) 由输入算出；图里取 β=1，一步擦净好读图",
       en: "The delta-rule write strength β_t ∈ (0,1) is input-dependent; the diagram uses β=1 so one write fully erases",
     },
     visual: <MiniCell color="var(--series-4)" />,
   },
   {
     id: "cachecell",
-    label: { zh: "cache 格(2 GB)", en: "One cache cell (2 GB)" },
+    label: { zh: "cache 格（2 GB）", en: "One cache cell (2 GB)" },
     real: {
-      zh: "按 Day-0 博客 27 KB/token(24 层 MLA 合计)推算；93 层假想值是把同款 MLA 铺满全深度的线性外推",
+      zh: "按 Day-0 博客 27 KB/token（24 层 MLA 合计）推算；93 层假想值是把同款 MLA 铺满全深度的线性外推",
       en: "Scaled from the Day-0 blog's 27 KB/token (24 MLA layers); the 93-layer bar linearly extrapolates the same MLA to full depth",
     },
     visual: <MiniCell kind="faded" />,
@@ -91,16 +91,16 @@ const ITEMS: MappingItem[] = [
   },
   {
     id: "expert",
-    label: { zh: "expert 小格", en: "One expert cell" },
+    label: { zh: "LatentMoE 饼图", en: "LatentMoE pie chart" },
     real: {
-      zh: "一个 routed expert 的 FFN(在 3584 维隐空间里计算)；图中的选择模式是手工构造的散布，真实由 router 决定",
-      en: "One routed expert's FFN (computed in the 3584-d latent space); the drawn selection pattern is a hand-crafted spread, the real one comes from the router",
+      zh: "饼图分母只含 896 个 routed experts：每 token 选 16 个；2 个 shared experts 在池外且始终激活。104B/2.8T 是另一个整模型参数比例",
+      en: "The pie's denominator is only the 896 routed experts: 16 are chosen per token. Two always-on shared experts sit outside the pool, while 104B/2.8T is a separate whole-model parameter ratio",
     },
     visual: (
       <MiniRow>
         <MiniCell color="var(--series-2)" />
-        <MiniCell kind="outline" />
-        <MiniCell kind="outline" />
+        <MiniCell kind="faded" />
+        <MiniCell kind="faded" />
       </MiniRow>
     ),
   },
@@ -117,7 +117,7 @@ const ITEMS: MappingItem[] = [
     id: "kda",
     label: { zh: "KDA 块", en: "KDA block" },
     real: {
-      zh: "固定大小递归状态，每步原地覆写(图中未画覆写动作)",
+      zh: "固定大小递归状态，每步原地覆写（图中未画覆写动作）",
       en: "Fixed-size recurrent state, overwritten every step (the overwrite isn't animated)",
     },
     visual: (
@@ -130,7 +130,7 @@ const ITEMS: MappingItem[] = [
   },
   {
     id: "mla",
-    label: { zh: "MLA 页(半透明)", en: "MLA page (translucent)" },
+    label: { zh: "MLA 页（半透明）", en: "MLA page (translucent)" },
     real: {
       zh: "逐 token 追加的 KV cache，随生成一页页变长",
       en: "Per-token KV cache, growing page by page as generation proceeds",
@@ -156,7 +156,7 @@ const ITEMS: MappingItem[] = [
     id: "tp8",
     label: { zh: "上排 “TP8” 网格", en: "The upper “TP8” grid" },
     real: {
-      zh: "教学上简化为纯 tensor 并行；博客的实测基线是 TEP8(tensor + expert 并行)",
+      zh: "教学上简化为纯 tensor 并行；博客的实测基线是 TEP8（tensor + expert 并行）",
       en: "Simplified to plain tensor parallelism; the blog's measured baseline is TEP8 (tensor + expert parallelism)",
     },
     visual: (

@@ -17,6 +17,8 @@ references:
     url: "https://www.lmsys.org/blog/2026-07-27-kimi-k3-day0-support/"
   - label: "Kimi Linear: An Expressive, Efficient Attention Architecture (where KDA comes from, incl. the 3:1 ablation)"
     url: "https://arxiv.org/abs/2510.26692"
+  - label: "Official Kimi K3 config (hidden size, head count, and KDA head dimension)"
+    url: "https://huggingface.co/moonshotai/Kimi-K3/blob/main/config.json"
   - label: "Gated Delta Networks: Improving Mamba2 with Delta Rule (the delta rule + gating precedent)"
     url: "https://arxiv.org/abs/2412.06464"
   - label: "Sebastian Raschka: Kimi K3 Architecture Notes (NoPE and the AttnRes cost numbers)"
@@ -32,6 +34,7 @@ references:
 import ArchViz from "../../../viz/kimi-k3-day0/ArchViz";
 import CacheViz from "../../../viz/kimi-k3-day0/CacheViz";
 import MhaViz from "../../../viz/kimi-k3-day0/MhaViz";
+import StateChannelViz from "../../../viz/kimi-k3-day0/StateChannelViz";
 import LinearFlowViz from "../../../viz/kimi-k3-day0/LinearFlowViz";
 import DeltaRuleViz from "../../../viz/kimi-k3-day0/DeltaRuleViz";
 import KeyOverlapViz from "../../../viz/kimi-k3-day0/KeyOverlapViz";
@@ -92,11 +95,24 @@ section's 1M-token bill showed.
 ### Linear attention: a fixed-size state
 
 Linear attention drops the softmax and first accumulates all historical writes
-into the fixed-size matrix `S = Σᵢkᵢvᵢᵀ` (about `128×128` per head), then reads it with
-`o = Sᵀq = Σᵢ(qᵀkᵢ)vᵢ`. S is essentially a key-value table: each token's k
+into the fixed-size matrix `S = Σᵢkᵢvᵢᵀ` (`128×128` per K3 head), then reads it with
+`o = Sᵀq = Σᵢ(qᵀkᵢ)vᵢ`. S is an associative-memory matrix: each token's k
 picks the direction to write into, while v is the content. The cache is gone;
-each step touches only S. Run
-the same sentence again:
+each step touches only S.
+
+The `128` here is not the full token-embedding width. K3 has hidden size `7168`;
+learned Q/K/V projections produce `96` KDA heads, each with head dimension `128`.
+This is a learned feature space, not a literal partition of the 7168 input
+coordinates into 96 pieces. Within one head, the 128 coordinates of k are 128
+key channels, and each row of S corresponds to one of them:
+
+<StateChannelViz client:visible lang="en" />
+
+`128` is a capacity/cost design choice, not a requirement of linear attention.
+Increasing `dₖ` adds key feature axes; increasing `dᵥ` gives each axis a wider
+value representation. The state and update cost per head grow as `dₖ×dᵥ`.
+K3 sets both to 128, giving `16,384` state scalars per head. With that state in
+view, run the same sentence again:
 
 <LinearFlowViz client:visible lang="en" />
 
@@ -108,8 +124,8 @@ read is a blend of the whole history.
 
 The first problem with linear attention is not that it cannot remember, but
 that it cannot delete. With the plain accumulation `S = Σ k·vᵀ`, writing the
-same key direction twice leaves the old and new values together in S. If the
-Here A is neither a token nor a query; it is a toy name for one direction in
+same key direction twice leaves the old and new values together in S. Here A
+is neither a token nor a query; it is a toy name for one direction in
 the state space. From the first write token, the model computes a key vector
 `k₁` and value vector `v₁`. The diagram abbreviates “`k₁` points along A and
 `v₁` represents 1” as `A=1`. The later `A=4` is a different write token whose
@@ -198,21 +214,23 @@ accumulated stream:
 ### LatentMoE
 
 Every FFN is MoE: 16 of 896 routed experts per token, plus 2 shared experts
-that every token passes through. The activation ratio is 16/896 ≈ 1.8%, and
-the model activates 104B/2.8T ≈ 3.7% of its parameters per token; against
-K2's 8 of 384, sparsity moves up another step.
+that every token passes through. Within the routed pool, `16/896 ≈ 1.8%` are
+selected. Separately, at the whole-model level, each token activates
+`104B/2.8T ≈ 3.7%` of all parameters. Those percentages use different
+denominators; against K2's 8 of 384 routed experts, sparsity moves up another
+step.
 
 Routing and dispatch do not run at the 7168-d hidden width: tokens first
 project down to a 3584-d latent space, the router scores the half-width
 vector, experts compute at half width, and the result projects back up. The
 16-way all-to-all dispatch traffic and the expert weights both halve:
 
-<MoeViz client:visible lang="en" />
+<MoeViz lang="en" />
 
-Training at 1.8% activation tends to be unstable; the report uses three
-tools: RMSNorm, bounded SiTU-GLU activations, and Quantile Balancing (expert
-quotas derive directly from router-score quantiles, with no aux-loss
-coefficient left to tune).
+Training with only 1.8% of the routed pool selected tends to be unstable; the
+report uses three tools: RMSNorm, bounded SiTU-GLU activations, and Quantile
+Balancing (expert quotas derive directly from router-score quantiles, with no
+aux-loss coefficient left to tune).
 
 ### The training side
 

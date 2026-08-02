@@ -97,36 +97,175 @@
   color: var(--muted);
 }
 
-/* LatentMoE 路由通路示意 */
-.k3a-route {
-  display: flex;
-  flex-wrap: wrap;
+/* LatentMoE：静态饼图，避免把不同分母的比例画在一起 */
+.moe-pie-layout {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.8fr) minmax(280px, 1.2fr);
   align-items: center;
-  gap: 0.45rem;
-  margin: 0.2rem 0 0.6rem;
+  gap: clamp(1.25rem, 4vw, 3.5rem);
+  max-width: 860px;
+  margin: 1.3rem auto;
+}
+
+.moe-pie-column {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--ink);
+  text-align: center;
+}
+
+.moe-pie {
+  display: grid;
+  width: clamp(176px, 23vw, 230px);
+  aspect-ratio: 1;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: conic-gradient(
+    var(--series-2) 0 1.785714%,
+    color-mix(in srgb, var(--axis) 18%, var(--surface)) 1.785714% 100%
+  );
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ink) 8%, transparent);
+}
+
+.moe-pie-center {
+  display: flex;
+  width: 58%;
+  aspect-ratio: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--muted);
+  line-height: 1.15;
+}
+
+.moe-pie-center b {
+  color: var(--series-2);
+  font-size: clamp(1.7rem, 4vw, 2.5rem);
+}
+
+.moe-pie-center span {
   font-size: 0.82rem;
-  color: var(--ink-2);
-}
-
-.k3a-route-bar {
-  display: inline-block;
-  border-radius: 4px;
-  background: color-mix(in srgb, var(--series-2) 55%, transparent);
-  flex: none;
-  transition: width 0.25s ease;
-}
-
-.k3a-route-bar-latent {
-  background: color-mix(in srgb, var(--accent) 45%, transparent);
-}
-
-.k3a-route-label {
   font-variant-numeric: tabular-nums;
 }
 
-.k3a-route-arrow {
-  color: var(--accent);
-  font-weight: 600;
+.moe-pie-caption {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.moe-pie-legend {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.moe-legend-row {
+  display: grid;
+  grid-template-columns: 0.9rem minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.6rem;
+  color: var(--ink-2);
+  font-size: 0.83rem;
+}
+
+.moe-legend-row b {
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.moe-legend-swatch {
+  width: 0.9rem;
+  height: 0.9rem;
+  border-radius: 3px;
+}
+
+.moe-legend-swatch.active {
+  background: var(--series-2);
+}
+
+.moe-legend-swatch.idle {
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--axis) 18%, var(--surface));
+}
+
+.moe-shared-card {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.75rem;
+  margin-top: 0.35rem;
+  padding: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--accent) 4%, var(--surface));
+}
+
+.moe-shared-card b {
+  color: var(--ink);
+  font-size: 0.84rem;
+}
+
+.moe-shared-card p {
+  margin: 0.2rem 0 0;
+  color: var(--muted);
+  font-size: 0.76rem;
+  line-height: 1.55;
+}
+
+.moe-shared-dots {
+  display: flex;
+  gap: 0.25rem;
+  padding-top: 0.15rem;
+}
+
+.moe-shared-dots span {
+  width: 0.9rem;
+  height: 0.9rem;
+  border: 2px solid var(--accent);
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--accent) 16%, var(--surface));
+}
+
+.moe-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.55rem;
+  margin-bottom: 0.65rem;
+}
+
+.moe-stat-grid > div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+.moe-stat-grid span {
+  color: var(--muted);
+  font-size: 0.7rem;
+}
+
+.moe-stat-grid b {
+  color: var(--ink);
+  font-size: 0.82rem;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 700px) {
+  .moe-pie-layout,
+  .moe-stat-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .kda-parameter-controls {
@@ -210,5 +349,205 @@
   .mha-formula-arrow {
     transform: rotate(90deg);
     justify-self: start;
+  }
+}
+
+.state-channel-flow {
+  display: grid;
+  grid-template-columns: minmax(120px, 0.75fr) auto minmax(190px, 1fr) auto minmax(250px, 1.35fr);
+  align-items: center;
+  gap: 0.7rem;
+  margin: 1rem 0 0.65rem;
+}
+
+.state-channel-step {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.45rem;
+  color: var(--ink-2);
+  text-align: center;
+}
+
+.state-channel-step > b {
+  color: var(--ink);
+  font-size: 0.86rem;
+}
+
+.state-channel-step small {
+  color: var(--muted);
+  font-size: 0.72rem;
+  line-height: 1.45;
+}
+
+.state-channel-hidden {
+  display: flex;
+  width: min(100%, 150px);
+  height: 48px;
+  align-items: stretch;
+  gap: 2px;
+  padding: 4px;
+  border: 1.3px solid color-mix(in srgb, var(--ink) 40%, transparent);
+  border-radius: 8px;
+}
+
+.state-channel-hidden span {
+  flex: 1;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--series-1) 72%, var(--surface));
+}
+
+.state-channel-hidden span:nth-child(2n) {
+  background: color-mix(in srgb, var(--series-2) 62%, var(--surface));
+}
+
+.state-channel-hidden span:nth-child(3n) {
+  background: color-mix(in srgb, var(--series-3) 58%, var(--surface));
+}
+
+.state-channel-arrow {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  color: var(--muted);
+  font-size: 0.7rem;
+  text-align: center;
+}
+
+.state-channel-arrow b {
+  color: var(--accent);
+  font-size: 1.35rem;
+}
+
+.state-channel-arrow code {
+  margin-top: 0.2rem;
+  white-space: nowrap;
+}
+
+.state-channel-vector {
+  display: grid;
+  width: 100%;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.28rem;
+}
+
+.state-channel-vector button {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.1rem;
+  padding: 0.35rem 0.2rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--ink-2);
+  cursor: pointer;
+}
+
+.state-channel-vector button.selected {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+  color: var(--accent);
+}
+
+.state-channel-vector button span {
+  font-size: 0.7rem;
+}
+
+.state-channel-vector button b {
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.state-channel-matrix {
+  display: grid;
+  width: 100%;
+  grid-template-columns: 2.8rem repeat(4, minmax(2.2rem, 1fr));
+  gap: 3px;
+  font-size: 0.67rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.state-channel-matrix > b,
+.state-channel-matrix-row > b {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 1.45rem;
+  color: var(--muted);
+}
+
+.state-channel-matrix-row {
+  display: contents;
+}
+
+.state-channel-matrix-row > span {
+  display: flex;
+  min-height: 1.45rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 3px;
+  color: var(--ink-2);
+}
+
+.state-channel-matrix-row > span.positive {
+  background: color-mix(in srgb, var(--series-1) 18%, var(--surface));
+}
+
+.state-channel-matrix-row > span.negative {
+  background: color-mix(in srgb, var(--series-2) 18%, var(--surface));
+}
+
+.state-channel-matrix-row.selected > b {
+  color: var(--accent);
+}
+
+.state-channel-matrix-row.selected > span {
+  box-shadow: inset 0 0 0 1.5px var(--accent);
+  color: var(--ink);
+  font-weight: 650;
+}
+
+.state-channel-equation {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 0.45rem 0 0.7rem;
+  padding: 0.5rem 0.65rem;
+  border-left: 3px solid var(--accent);
+  background: color-mix(in srgb, var(--accent) 5%, transparent);
+  color: var(--ink-2);
+  font-size: 0.78rem;
+}
+
+.state-channel-equation code {
+  flex: none;
+  white-space: nowrap;
+}
+
+@media (max-width: 900px) {
+  .state-channel-flow {
+    grid-template-columns: 1fr;
+  }
+
+  .state-channel-arrow b {
+    transform: rotate(90deg);
+  }
+
+  .state-channel-step {
+    width: min(100%, 520px);
+    justify-self: center;
+  }
+
+  .state-channel-equation {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .state-channel-equation code {
+    max-width: 100%;
+    overflow-x: auto;
   }
 }
