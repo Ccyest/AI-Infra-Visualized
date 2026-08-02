@@ -428,8 +428,16 @@
 .state-channel-vector {
   display: grid;
   width: 100%;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr)) auto minmax(0, 1fr);
   gap: 0.28rem;
+}
+
+.state-channel-vector-gap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  font-weight: 700;
 }
 
 .state-channel-vector button {
@@ -461,10 +469,18 @@
   font-variant-numeric: tabular-nums;
 }
 
+.state-channel-index-note {
+  max-width: 25rem;
+  padding: 0.28rem 0.45rem;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+  color: var(--ink-2) !important;
+}
+
 .state-channel-matrix {
   display: grid;
   width: 100%;
-  grid-template-columns: 2.8rem repeat(4, minmax(2.2rem, 1fr));
+  grid-template-columns: 2.8rem repeat(3, minmax(2.2rem, 1fr)) 1.1rem minmax(2.2rem, 1fr);
   gap: 3px;
   font-size: 0.67rem;
   font-variant-numeric: tabular-nums;
@@ -504,10 +520,22 @@
   color: var(--accent);
 }
 
-.state-channel-matrix-row.selected > span {
+.state-channel-matrix-row.selected > span:not(.state-channel-gap-cell) {
   box-shadow: inset 0 0 0 1.5px var(--accent);
   color: var(--ink);
   font-weight: 650;
+}
+
+.state-channel-gap-cell,
+.state-channel-matrix-ellipsis > span {
+  background: none;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.state-channel-matrix-ellipsis > b,
+.state-channel-matrix-ellipsis > span {
+  min-height: 1rem;
 }
 
 .state-channel-equation {

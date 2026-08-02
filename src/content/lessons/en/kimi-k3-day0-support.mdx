@@ -95,16 +95,20 @@ section's 1M-token bill showed.
 ### Linear attention: a fixed-size state
 
 Linear attention drops the softmax and first accumulates all historical writes
-into the fixed-size matrix `S = Σᵢkᵢvᵢᵀ` (`128×128` per K3 head), then reads it with
-`o = Sᵀq = Σᵢ(qᵀkᵢ)vᵢ`. S is an associative-memory matrix: each token's k
-picks the direction to write into, while v is the content. The cache is gone;
-each step touches only S.
+into the fixed-size matrix `S = Σᵢkᵢvᵢᵀ`. After fixing one head `h`, K3 has
+`kₜʰ ∈ ℝ¹²⁸` and `vₜʰ ∈ ℝ¹²⁸`, so one outer product `kₜʰ(vₜʰ)ᵀ` has shape
+`128×128`, as does the accumulated state `Sʰ`. A query
+`qₜʰ ∈ ℝ¹²⁸` reads it as `oₜʰ = (Sʰ)ᵀqₜʰ`. S is an associative-memory matrix:
+each token's k picks the direction to write into, while v is the content. The
+cache is gone; each step touches only S.
 
 The `128` here is not the full token-embedding width. K3 has hidden size `7168`;
 learned Q/K/V projections produce `96` KDA heads, each with head dimension `128`.
 This is a learned feature space, not a literal partition of the 7168 input
-coordinates into 96 pieces. Within one head, the 128 coordinates of k are 128
-key channels, and each row of S corresponds to one of them:
+coordinates into 96 pieces. Here `h` is the head index. Once a particular head
+`h` is fixed, `chⱼ = kₜʰ[j]` means coordinate `j` inside that head—not head
+`j`. Those 128 coordinates are the 128 key channels, and each row of `Sʰ`
+corresponds to one of them:
 
 <StateChannelViz client:visible lang="en" />
 

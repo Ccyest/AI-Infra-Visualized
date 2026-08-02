@@ -87,15 +87,18 @@ softmax attention 每生成一个 token 要扫一遍全部历史(`O(N)`)，KDA �
 ### Linear attention：固定大小的状态
 
 线性注意力去掉 softmax，把所有历史写入先累加成固定大小的矩阵
-`S = Σᵢkᵢvᵢᵀ`（K3 每 head 为 `128×128`），再通过
-`o = Sᵀq = Σᵢ(qᵀkᵢ)vᵢ` 读取。S 本质是一个关联记忆矩阵：每个 token 的 k 决定
-写进哪个方向，v 是写进去的内容。cache 没有了，每步只碰 S。
+`S = Σᵢkᵢvᵢᵀ`。固定一个 head `h` 后，K3 的
+`kₜʰ ∈ ℝ¹²⁸`、`vₜʰ ∈ ℝ¹²⁸`，所以一次外积
+`kₜʰ(vₜʰ)ᵀ` 的形状是 `128×128`，累加得到的 `Sʰ` 也是 `128×128`；读取则用
+`qₜʰ ∈ ℝ¹²⁸` 计算 `oₜʰ = (Sʰ)ᵀqₜʰ`。S 本质是一个关联记忆矩阵：每个
+token 的 k 决定写进哪个方向，v 是写进去的内容。cache 没有了，每步只碰 S。
 
 这里的 `128` 不是整个 token embedding 宽度。K3 的 hidden size 是 `7168`，
 学习到的 Q/K/V 投影从它生成 `96` 个 KDA heads，每个 head 的
 dimension 是 `128`。这不是把 7168 个坐标原样切成 96 份，而是学习到的新
-特征空间。对一个 head，k 的 128 个坐标就是 128 条 key channels；S 的每一行
-对应其中一条：
+特征空间。这里 `h` 是 head 的编号；先固定某个 head `h`，其中
+`chⱼ = kₜʰ[j]` 才表示这个 head 内 k 的第 `j` 个坐标，而不是“第 `j` 个
+head”。这 128 个坐标就是 128 条 key channels，`Sʰ` 的每一行对应其中一条：
 
 <StateChannelViz client:visible />
 
