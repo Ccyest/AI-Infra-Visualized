@@ -16,8 +16,11 @@
     "@astrojs/mdx": "^4.2.0",
     "@astrojs/react": "^4.2.0",
     "astro": "^5.7.0",
+    "katex": "^0.18.1",
     "react": "^19.1.0",
-    "react-dom": "^19.1.0"
+    "react-dom": "^19.1.0",
+    "rehype-katex": "^7.0.1",
+    "remark-math": "^6.0.0"
   },
   "devDependencies": {
     "@astrojs/check": "^0.9.4",

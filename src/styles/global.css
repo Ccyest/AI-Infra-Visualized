@@ -508,6 +508,23 @@ main {
   padding-top: 0;
 }
 
+.prose .katex {
+  color: var(--ink);
+  font-size: 1.02em;
+}
+
+.prose .katex-display {
+  max-width: 100%;
+  margin: 1rem 0;
+  padding: 0.2rem 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.lesson-details .katex-display {
+  margin: 0.25rem 0;
+}
+
 .prose table {
   border-collapse: collapse;
   font-size: 0.92rem;
