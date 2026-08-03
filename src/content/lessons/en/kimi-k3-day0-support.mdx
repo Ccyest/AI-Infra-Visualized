@@ -21,6 +21,8 @@ references:
     url: "https://huggingface.co/moonshotai/Kimi-K3/blob/main/config.json"
   - label: "Gated Delta Networks: Improving Mamba2 with Delta Rule (the delta rule + gating precedent)"
     url: "https://arxiv.org/abs/2412.06464"
+  - label: "Attention Residuals Technical Report (depth-wise softmax and Block AttnRes overhead)"
+    url: "https://arxiv.org/abs/2603.15031"
   - label: "Sebastian Raschka: Kimi K3 Architecture Notes (NoPE and the AttnRes cost numbers)"
     url: "https://sebastianraschka.com/blog/2026/kimi-k3-architecture-notes.html"
   - label: "LMSYS Blog: DSpark in SGLang (speculative decoding)"
@@ -243,18 +245,30 @@ block and retains the embedding and earlier block outputs separately. A
 learned pseudo-query for a later block assigns weights
 <code>α<sub>ℓi</sub></code> and forms
 <code>r<sub>ℓ</sub> = Σ<sub>i&lt;ℓ</sub> α<sub>ℓi</sub>v<sub>i</sub></code>.
-The deep block can therefore reread a useful shallow representation directly
-and give irrelevant blocks low weight, instead of relying only on a heavily
-accumulated stream:
+“Retrieval” here is not a hard choice of one layer. It is a softmax-weighted
+mixture of the embedding and several saved block summaries: useful summaries
+receive high weight and irrelevant ones receive low weight. The deep block no
+longer has to rely only on a heavily accumulated stream:
 
 <AttnResViz client:visible lang="en" />
 
 This adds two capabilities over the standard path: a shorter route between
 deep and shallow blocks, and content-dependent selection so different deep
 blocks can retrieve different prior representations. It reduces compression
-and interference across depth; it does not replace ordinary residuals. Doing
-the cross-block retrieval once per 12 layers keeps the added training and
-inference cost modest.
+and interference across depth; it does not replace ordinary residuals.
+
+**The tradeoff is retrieval granularity versus systems cost.** Full AttnRes
+saves every layer output and offers the finest selection, but each token must
+retain and reread more depth states, increasing memory, bandwidth, and pipeline
+communication. Block AttnRes stores only one accumulated summary per group,
+reducing state from <code>O(Ld)</code> to <code>O(Nd)</code>. Smaller blocks give
+finer retrieval at higher cost; larger blocks are cheaper, but individual
+layers inside a block have already been summed and cannot be recovered. K3
+compresses every 12 layers into one summary and selects among roughly eight
+block histories, choosing a middle point. In the paper's optimized
+implementation, typical inference latency overhead is below 2% and training
+wall-clock overhead under pipeline parallelism is below 4%, at the cost of
+additional caching, communication, and a two-phase computation path.
 
 ### LatentMoE
 

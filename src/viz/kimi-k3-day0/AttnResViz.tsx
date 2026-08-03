@@ -9,16 +9,18 @@ const COPY = {
     traditionalNote: "第 ℓ 层只直接收到上层传来的累计结果 hℓ₋₁",
     traditionalProblem: "浅层信息必须穿过沿途每次相加；深层不能单独取回某一层的原始输出。",
     stream: "同一个 residual stream：Emb + F₁ + F₂ + …",
-    attnTitle: "Attention Residual：把旧层输出保留成可寻址的库",
+    attnTitle: "Attention Residual：保存 block 摘要，再按权重混合",
     attnFormula: "rℓ = Σᵢ<ℓ αℓᵢ vᵢ",
     attnNote: "pseudo-query 学习该从 Emb / B₁ / B₂ / … 各取多少",
-    attnBenefit: "深层可直接选择早期表示，信息和梯度都有短路径；无关层可给低权重。",
-    bank: "旧 block 输出分别保留",
+    attnBenefit: "深层对多个旧摘要做 softmax 加权混合，不是精确选择某一层；信息和梯度因此获得更短路径。",
+    bank: "旧 block 摘要分别保留",
     mix: "按 α 混合",
     target: "送入 B₈",
     blockNote: "图中 B₁…B₈ 各代表一组 12 层；组内仍有普通 residual，AttnRes 增加的是组与组之间的直接取回路径。",
     whyTitle: "为什么更好",
     why: "传统 residual 只能把所有历史压在一个累计向量里；AttnRes 让深层按内容选择先前表示，减少深度方向上的稀释与干扰。K3 每 12 层做一次，控制额外成本。",
+    tradeoffTitle: "代价与折中",
+    tradeoff: "保存的 block 摘要越多，跨深度选择越精细，但每个 token 的状态、显存带宽与 pipeline 通信也越大；摘要越少则更便宜，但组内单层已经相加，无法单独取回。",
   },
   en: {
     traditionalTitle: "Standard residual: one continuously accumulated stream",
@@ -26,16 +28,18 @@ const COPY = {
     traditionalNote: "Layer ℓ directly receives only the aggregate hℓ₋₁ from the previous layer",
     traditionalProblem: "Shallow information must survive every intervening addition; a deep layer cannot retrieve one earlier output on its own.",
     stream: "One residual stream: Emb + F₁ + F₂ + …",
-    attnTitle: "Attention Residual: keep old outputs in an addressable bank",
+    attnTitle: "Attention Residual: save block summaries, then mix by weight",
     attnFormula: "rℓ = Σᵢ<ℓ αℓᵢ vᵢ",
     attnNote: "A learned pseudo-query decides how much to retrieve from Emb / B₁ / B₂ / …",
-    attnBenefit: "Deep blocks get direct paths to selected early representations and gradients; irrelevant blocks can receive low weight.",
-    bank: "Prior block outputs remain separate",
+    attnBenefit: "A deep block forms a softmax-weighted mixture of saved summaries rather than selecting one exact layer, creating shorter paths for information and gradients.",
+    bank: "Prior block summaries remain separate",
     mix: "mix by α",
     target: "input to B₈",
     blockNote: "B₁…B₈ each represent a 12-layer group. Ordinary residuals still exist inside a group; AttnRes adds direct retrieval across groups.",
     whyTitle: "Why it helps",
     why: "A standard residual stream compresses all history into one accumulated vector. AttnRes lets deep blocks select earlier representations by content, reducing dilution and interference across depth. K3 applies it every 12 layers to bound overhead.",
+    tradeoffTitle: "Cost and tradeoff",
+    tradeoff: "More saved block summaries give finer depth-wise selection but increase per-token state, memory bandwidth, and pipeline communication. Fewer summaries cost less, but individual layers inside each block have already been summed and cannot be retrieved separately.",
   },
 } as const;
 
@@ -139,6 +143,7 @@ export default function AttnResViz({ lang = "zh" }: { lang?: Locale }) {
       <div className="viz-footer attnres-footer">
         <div>{copy.blockNote}</div>
         <div><b>{copy.whyTitle}：</b>{copy.why}</div>
+        <div><b>{copy.tradeoffTitle}：</b>{copy.tradeoff}</div>
       </div>
     </figure>
   );

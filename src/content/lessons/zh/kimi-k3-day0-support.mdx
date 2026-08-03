@@ -21,6 +21,8 @@ references:
     url: "https://huggingface.co/moonshotai/Kimi-K3/blob/main/config.json"
   - label: "Gated Delta Networks: Improving Mamba2 with Delta Rule（delta rule 加门控的先例）"
     url: "https://arxiv.org/abs/2412.06464"
+  - label: "Attention Residuals Technical Report（跨深度 softmax 与 Block AttnRes 的开销）"
+    url: "https://arxiv.org/abs/2603.15031"
   - label: "Sebastian Raschka：Kimi K3 Architecture Notes（NoPE 与 AttnRes 的成本数字）"
     url: "https://sebastianraschka.com/blog/2026/kimi-k3-architecture-notes.html"
   - label: "LMSYS Blog：DSpark in SGLang（投机解码）"
@@ -212,15 +214,24 @@ Attention Residual 不删除组内的普通 residual，而是额外建立一条*
 保留；到后面的 block 时，用该 block 学到的 pseudo-query 给这些旧表示计算权重
 <code>α<sub>ℓi</sub></code>，再形成
 <code>r<sub>ℓ</sub> = Σ<sub>i&lt;ℓ</sub> α<sub>ℓi</sub>v<sub>i</sub></code>。
-于是深层可以直接重读某个有用的浅层表示，无关层则给低权重，不必只依赖一条
+这里的“取回”不是硬选择某一层，而是对 embedding 和多个旧 block 摘要做
+softmax 加权混合：有用摘要权重大，无关摘要权重小。深层因此不必只依赖一条
 已经累加很多次的混合流：
 
 <AttnResViz client:visible />
 
 因此它比传统方案多了两点能力：信息路径更短，深层到浅层不必经过每个中间层；
 选择是内容相关的，不同深层 block 可以取回不同历史表示。它缓解的是“深度方向
-的压缩与干扰”，不是把普通 residual 整体替换掉。每 12 层才做一次跨层检索，则
-把额外训练与推理成本控制在较小范围。
+的压缩与干扰”，不是把普通 residual 整体替换掉。
+
+**Tradeoff 是保存粒度与系统成本。** 保存每一层输出的 Full AttnRes 选择最细，
+但每个 token 要保留并读取更多深度状态，还会增加显存、带宽和 pipeline 通信；
+Block AttnRes 只保存每组的累计摘要，把状态从随层数增长的
+<code>O(Ld)</code> 降到 <code>O(Nd)</code>。block 越小，取回越精细但越贵；
+block 越大，越便宜但组内各层已经相加，无法再单独取回。K3 每 12 层压成一份
+摘要，约在 8 份 block 历史之间做选择，就是在效果和成本之间取中间点。原论文
+的优化实现中，典型推理延迟开销低于 2%，使用 pipeline parallelism 时训练墙钟
+开销低于 4%，代价是需要额外缓存、通信与两阶段计算逻辑。
 
 ### LatentMoE
 
