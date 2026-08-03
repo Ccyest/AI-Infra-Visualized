@@ -59,19 +59,19 @@ K3 采用 3 KDA + 1 MLA 的交错结构。KDA 的递归状态大小固定，整�
 <CacheViz client:visible />
 
 24 层 MLA 在 1M token 时约需 28GB，是全 MLA 假想值的 1/3.9。计算量也同样：
-softmax attention 解码每个 token 都要扫遍历史（$O(N)$），KDA 只更新固定大小的
-状态（$O(1)$）。
+softmax attention 解码每个 token 都要扫遍历史（`O(N)`），KDA 只更新固定大小的
+状态（`O(1)`）。
 
 ### MHA：每步扫全部历史
 
-先看 KDA 替代了什么。在普通 MHA 中，第 $N$ 个 token 会读取 cache 里前
-$N-1$ 个 token，分三步计算：
+先看 KDA 替代了什么。在普通 MHA 中，第 `N` 个 token 会读取 cache 里前
+`N−1` 个 token，分三步计算：
 
-1. **打分**：对每个历史 token $i$ 计算 $z_i = q_N^\top k_i / \sqrt{d}$。
-2. **归一化**：先求 $Z = \sum_{j=1}^{N-1}\exp(z_j)$，再得到注意力权重 $a_i = \exp(z_i) / Z$。
-3. **汇总**：用这些权重对 value 加权求和，$o_N = \sum_{i=1}^{N-1} a_i v_i$。
+1. **打分**：对每个历史 token `i` 计算 `z[N,i] = dot(q[N], k[i]) / sqrt(d_k)`。
+2. **归一化**：先求 `Z = Σⱼ₌₁…N−1 exp(z[N,j])`，再得到注意力权重 `a[N,i] = exp(z[N,i]) / Z`。
+3. **汇总**：用这些权重对 value 加权求和，`o[N] = Σᵢ₌₁…N−1 a[N,i]v[i]`。
 
-长度为 $N$ 的序列累计约有 $N^2/2$ 次点积，计算为 $O(N^2)$，cache 为 $O(N)$。
+长度为 `N` 的序列累计约有 `N²/2` 次点积，计算为 `O(N²)`，cache 为 `O(N)`。
 下图中，「它」可以直接把权重放到 5 个 token 之前的「猫」上：
 
 <MhaViz client:visible />
@@ -81,13 +81,13 @@ softmax attention 换来了逐位置读取能力，代价是每个新 token 都�
 ### Linear attention：固定大小的状态
 
 线性注意力不再保存每个 token 的 KV，而是把历史写入累加到固定大小的矩阵
-$S = \sum_i k_i v_i^\top$ 里。可以把 $S$ 看成关联记忆：$k$ 决定写入方向，$v$ 是写入的
-内容，$q$ 再用 $o = S^\top q$ 读取。无论上下文多长，每步都只读写这个 $S$。
+`S = Σᵢ k[i]v[i]^T` 里。可以把 S 看成关联记忆：k 决定写入方向，v 是写入的
+内容，q 再用 `o = S^Tq` 读取。无论上下文多长，每步都只读写这个 S。
 
 <details className="lesson-details">
   <summary>数学细节：128×128 状态中的 head 和 channel</summary>
-  <p>K3 的 hidden size 是 7168。学习到的 Q/K/V 投影会生成 96 个 KDA heads，每个 head 都有 $k_t^h, v_t^h \in \mathbb{R}^{128}$，因此状态矩阵 $S^h \in \mathbb{R}^{128\times128}$。这些 head 是学习到的特征空间，不是把 7168 个输入坐标原样切开。</p>
-  <p>固定 head $h$ 后，$\mathrm{ch}_j = k_t^h[j]$ 表示这个 head 内的第 $j$ 个 key 特征维度。增大 $d_k$ 会增加 key 特征轴，增大 $d_v$ 会增加每条轴可保存的 value 宽度；每个 head 的状态和更新开销按 $d_k\times d_v$ 增长。K3 取两者都为 128，即每个 head 有 16,384 个状态数。</p>
+  <p>K3 的 hidden size 是 <code>7168</code>。Q/K/V 投影会生成 <code>96</code> 个 KDA heads。固定其中一个 head 并省略 head 编号后，<code>k[t], v[t] ∈ R^128</code>，状态矩阵 <code>S[t] ∈ R^(128×128)</code>。这些 head 是学习到的特征空间，不是把 7168 个输入坐标原样切开。</p>
+  <p>在这个 head 内，<code>ch[j] = k[t][j]</code> 表示第 <code>j</code> 个 key 特征维度。增大 <code>d_k</code> 会增加 key 特征轴，增大 <code>d_v</code> 会增加每条轴可保存的 value 宽度；每个 head 的状态和更新开销按 <code>d_k×d_v</code> 增长。K3 取两者都为 128，即每个 head 有 16,384 个状态数。</p>
 </details>
 
 <StateChannelViz client:visible />
@@ -97,25 +97,20 @@ $S = \sum_i k_i v_i^\top$ 里。可以把 $S$ 看成关联记忆：$k$ 决定写
 <LinearFlowViz client:visible />
 
 MHA 中，token「它」可以直接指向 token「猫」，因为每个历史 token 都有独立的 KV 位置；
-而线性注意力的 $S$ 没有 token 位置轴，读出的是所有历史写入在固定状态中的混合。上图的
+而线性注意力的 S 没有 token 位置轴，读出的是所有历史写入在固定状态中的混合。上图的
 naive linear attention 展示的就是最简单的累加关系。
 
 ### DeltaNet：给固定状态加删除动作
 
 Naive linear attention 的问题是，状态只会不断累加，不会覆盖旧值。同一个 key 方向先写入
-1、再写入 4，两个值都会留在 $S$ 里；在这个简化例子中，下次读取会得到 $1+4$。
+1、再写入 4，两个值都会留在 S 里；在这个简化例子中，下次读取会得到 `1+4`。
 
-DeltaNet 在写入前先读出旧值 $r$，然后只写入新旧差值：
+DeltaNet 在写入前先读出旧值 `r_old = S[t−1]^T k[t]`，然后只写入新旧差值：
+`S[t] = S[t−1] + β[t]k[t](v[t] − r_old)^T`。对已归一化的 key，更新后的读出为
+`r_new = (1−β[t])r_old + β[t]v[t]`。
 
-$$
-\begin{aligned}
-S_t &= S_{t-1} + \beta k\left(v-S_{t-1}^\top k\right)^\top, \\
-r' &= (1-\beta)r+\beta v.
-\end{aligned}
-$$
-
-$\beta$ 控制改写强度：$\beta=1$ 代表完全替换旧关联，$\beta$ 越小，旧值保留得越多；
-$\beta=0$ 则完全不改写。
+`β[t]` 控制改写强度：`β[t]=1` 代表完全替换旧关联，`β[t]` 越小，旧值保留得越多；
+`β[t]=0` 则完全不改写。
 
 <DeltaRuleViz client:visible />
 
@@ -125,8 +120,8 @@ $\beta=0$ 则完全不改写。
 
 <details className="lesson-details">
   <summary>数学细节：图中的 A/B 和串扰项</summary>
-  <p>A 和 B 是 key 空间中的完整方向，不是 token 槽位或单个 channel。图中的 $A=1$ 只是“$k$ 指向 A，$v$ 表示 1”的简写。彩色用来追踪不同写入的贡献，真实 $S$ 只保存它们的和。</p>
-  <p>若 $q_A=k_A$，且 $S$ 中同时有 $k_Av_A^\top$ 与 $k_Bv_B^\top$，则 $o_A=S^\top q_A=v_A+(k_A^\top k_B)v_B$。第二项就是 B 漏进 A 的串扰，大小取决于两个 key 的内积 $k_A^\top k_B$。</p>
+  <p>A 和 B 是 key 空间中的完整方向，不是 token 槽位或单个 channel。图中的 <code>A=1</code> 只是“k 指向 A，v 表示 1”的简写。彩色用来追踪不同写入的贡献，真实 S 只保存它们的和。</p>
+  <p>若 <code>q[A]=k[A]</code>，且 S 中同时有 <code>k[A]v[A]^T</code> 与 <code>k[B]v[B]^T</code>，则 <code>o[A] = S^Tq[A] = v[A] + dot(k[A],k[B])v[B]</code>。第二项就是 B 漏进 A 的串扰，大小取决于两个 key 的内积。</p>
 </details>
 
 <KeyOverlapViz client:visible />
@@ -134,15 +129,15 @@ $\beta=0$ 则完全不改写。
 ### KDA：delta rule 加逐通道门控
 
 固定状态的大小不会随上下文增长，这正是它省显存的原因；代价是越来越多的历史必须共享
-同一个 $S$。Delta rule 能改写相同或相近的 key 方向，却不会主动清理所有无关旧信息。
+同一个 S。Delta rule 能改写相同或相近的 key 方向，却不会主动清理所有无关旧信息。
 KDA 因此再加入逐 channel 门控：对每个 token、每个 head，模型根据当前 hidden state
-动态算出向量 $\alpha_t$，先用 $\operatorname{Diag}(\alpha_t)$ 缩放旧状态的各条 channel，
+动态算出向量 `α[t]`，先用 `Diag(α[t])` 缩放旧状态的各条 channel，
 再执行 DeltaNet 改写。
 
 <details className="lesson-details">
   <summary>数学细节：KDA 如何门控和改写同一个 S</summary>
-  <p>完整更新为 $S_t=(I-\beta_tk_tk_t^\top)\operatorname{Diag}(\alpha_t)S_{t-1}+\beta_tk_tv_t^\top$，其中 $\alpha_t\in(0,1)^{d_k}$，每一项缩放 $S$ 的一条 key channel。它不会直接选择 A 或 B，也不会把 key 旋转成正交；同一行里所有历史贡献都会被一起缩放。</p>
-  <p>下图把真实状态压成二维：$k_A=\frac{1}{\sqrt{2}}[1,1]^\top$、$k_B=\frac{1}{\sqrt{2}}[1,-1]^\top$。A/B 都横跨 $\mathrm{ch}_1/\mathrm{ch}_2$。门控先缩放两行，delta rule 再沿完整 $k_A$ 写入到目标值 4 所需的残差。</p>
+  <p>完整更新为 <code>S[t] = (I−β[t]k[t]k[t]^T) Diag(α[t]) S[t−1] + β[t]k[t]v[t]^T</code>，其中 <code>α[t] ∈ (0,1)^(d_k)</code>，每一项缩放 S 的一条 key channel。它不会直接选择 A 或 B，也不会把 key 旋转成正交；同一行里所有历史贡献都会被一起缩放。</p>
+  <p>下图把真实状态压成二维：<code>k[A]=(1/√2)[1,1]^T</code>、<code>k[B]=(1/√2)[1,−1]^T</code>。A/B 都横跨 <code>ch[1]</code> 和 <code>ch[2]</code>。门控先缩放两行，delta rule 再沿完整 <code>k[A]</code> 写入到目标值 4 所需的残差。</p>
 </details>
 
 <KdaGateViz client:visible />
@@ -167,15 +162,15 @@ Attention Residual 相当于额外保存几份「历史版本」。K3 保留组�
 
 <details className="lesson-details">
   <summary>数学与成本：为什么 K3 每 12 层保存一份摘要</summary>
-  <p>对后续 block $\ell$，pseudo-query 计算权重 $\alpha_{\ell i}$，再取回 $r_\ell=\sum_{i<\ell}\alpha_{\ell i}v_i$。这是对 embedding 和历史 block 摘要的 softmax 加权混合，不是硬选某一层。</p>
-  <p>Full AttnRes 保存每层输出，取回粒度最细，但显存、带宽和 pipeline 通信都更贵。Block AttnRes 只保存每组摘要，把状态从 $O(Ld)$ 降到 $O(Nd)$。K3 每 12 层取一份摘要；优化实现的典型推理延迟开销低于 2%，pipeline parallelism 下的训练墙钟开销低于 4%。</p>
+  <p>对后续 block ℓ，pseudo-query 计算权重 <code>α[ℓ,i]</code>，再取回 <code>r[ℓ] = Σ[i&lt;ℓ] α[ℓ,i]v[i]</code>。这是对 embedding 和历史 block 摘要的 softmax 加权混合，不是硬选某一层。</p>
+  <p>Full AttnRes 保存每层输出，取回粒度最细，但显存、带宽和 pipeline 通信都更贵。Block AttnRes 只保存每组摘要，把状态从 <code>O(Ld)</code> 降到 <code>O(Nd)</code>。K3 每 12 层取一份摘要；优化实现的典型推理延迟开销低于 2%，pipeline parallelism 下的训练墙钟开销低于 4%。</p>
 </details>
 
 ### LatentMoE
 
 K3 的 FFN 全部使用 MoE：896 个 routed experts 中每个 token 选 16 个，另有 2 个
-shared experts 始终激活。因此 routed pool 的选中比例是 $16/896\approx1.8\%$；
-整模型每 token 激活参数的另一个口径是 $104\mathrm{B}/2.8\mathrm{T}\approx3.7\%$。
+shared experts 始终激活。因此 routed pool 的选中比例是 `16/896 ≈ 1.8%`；
+整模型每 token 激活参数的另一个口径是 `104B/2.8T ≈ 3.7%`。
 
 路由和 expert 计算会先从 7168 维 hidden 降到 3584 维隐空间，最后再升回原宽度。
 这使 16 份 dispatch 的 all-to-all 流量和 expert 权重体积都减半：
@@ -240,7 +235,7 @@ TP8 仍然更合适。PD disaggregation 下的典型分工是
 MLA 虽然有多个 attention heads，但所有 heads 共享同一份压缩 KV latent，
 cache 没有可供 TP 按 head 分片的轴。因此 TP8 的每张卡都复制完整 MLA KV
 latent，增加 GPU 也不会增加逻辑上下文容量。DCP 改为按 token 位置分片：
-每张卡先在本地 $1/N$ KV 上计算 partial attention，再通过一次 packed all-to-all 精确合并：
+每张卡先在本地 `1/N` KV 上计算 partial attention，再通过一次 packed all-to-all 精确合并：
 
 <DcpViz client:visible />
 

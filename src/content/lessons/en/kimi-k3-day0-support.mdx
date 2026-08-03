@@ -64,20 +64,20 @@ the KDA recurrence:
 
 At 1M tokens, the 24 MLA layers need about 28GB, or 1/3.9 of the all-MLA
 hypothetical. Compute follows the same pattern: softmax attention scans the
-history for every decoded token ($O(N)$), while KDA updates a fixed-size state
-($O(1)$).
+history for every decoded token (`O(N)`), while KDA updates a fixed-size state
+(`O(1)`).
 
 ### MHA: scan the whole history each step
 
-First look at what KDA replaces. In ordinary MHA, token $N$ reads the preceding
-$N-1$ cached tokens in three steps:
+First look at what KDA replaces. In ordinary MHA, token `N` reads the preceding
+`N−1` cached tokens in three steps:
 
-1. **Score:** compare against each earlier token $i$ with $z_i = q_N^\top k_i / \sqrt{d}$.
-2. **Normalize:** compute $Z = \sum_{j=1}^{N-1}\exp(z_j)$, then assign attention weight $a_i = \exp(z_i) / Z$.
-3. **Aggregate:** take the weighted sum of values, $o_N = \sum_{i=1}^{N-1} a_i v_i$.
+1. **Score:** compare against each earlier token `i` with `z[N,i] = dot(q[N], k[i]) / sqrt(d_k)`.
+2. **Normalize:** compute `Z = Σⱼ₌₁…N−1 exp(z[N,j])`, then assign attention weight `a[N,i] = exp(z[N,i]) / Z`.
+3. **Aggregate:** take the weighted sum of values, `o[N] = Σᵢ₌₁…N−1 a[N,i]v[i]`.
 
-A length-$N$ sequence therefore performs about $N^2/2$ dot products: $O(N^2)$
-compute and $O(N)$ cache. In the diagram, "it" can place its weight directly on
+A length-`N` sequence therefore performs about `N²/2` dot products: `O(N²)`
+compute and `O(N)` cache. In the diagram, "it" can place its weight directly on
 "cat" five tokens earlier:
 
 <MhaViz client:visible lang="en" />
@@ -88,15 +88,15 @@ entire history for every new token.
 ### Linear attention: a fixed-size state
 
 Linear attention no longer keeps one KV entry per token. It accumulates history
-into a fixed-size matrix, $S=\sum_i k_i v_i^\top$. Think of $S$ as associative
-memory: $k$ selects a write direction, $v$ is the content, and $q$ reads with
-$o=S^\top q$. No matter how long the context becomes, each step reads and writes
-only $S$.
+into a fixed-size matrix, `S = Σᵢ k[i]v[i]^T`. Think of S as associative
+memory: k selects a write direction, v is the content, and q reads with
+`o = S^Tq`. No matter how long the context becomes, each step reads and writes
+only S.
 
 <details className="lesson-details">
   <summary>Math details: heads and channels inside the 128×128 state</summary>
-  <p>K3 has hidden size 7168. Learned Q/K/V projections produce 96 KDA heads, with $k_t^h, v_t^h \in \mathbb{R}^{128}$ in each head. Each head therefore owns a state matrix $S^h \in \mathbb{R}^{128\times128}$. These heads are learned feature spaces, not literal slices of the 7168 input coordinates.</p>
-  <p>After fixing head $h$, $\mathrm{ch}_j=k_t^h[j]$ is key-feature dimension $j$ inside that head. Increasing $d_k$ adds key-feature axes; increasing $d_v$ widens the value stored along each axis. State and update cost per head grow as $d_k\times d_v$. K3 sets both to 128, giving 16,384 state scalars per head.</p>
+  <p>K3 has hidden size <code>7168</code>. Its Q/K/V projections produce <code>96</code> KDA heads. Fix one head and omit its index: <code>k[t], v[t] ∈ R^128</code>, with state matrix <code>S[t] ∈ R^(128×128)</code>. These heads are learned feature spaces, not literal slices of the 7168 input coordinates.</p>
+  <p>Within this head, <code>ch[j] = k[t][j]</code> is key-feature dimension <code>j</code>. Increasing <code>d_k</code> adds key-feature axes; increasing <code>d_v</code> widens the value stored along each axis. State and update cost per head grow as <code>d_k×d_v</code>. K3 sets both to 128, giving 16,384 state scalars per head.</p>
 </details>
 
 <StateChannelViz client:visible lang="en" />
@@ -106,27 +106,22 @@ Now decode the same sentence used in the MHA diagram:
 <LinearFlowViz client:visible lang="en" />
 
 In MHA, "it" can point directly to "cat" because every historical token has its
-own KV position. The linear-attention state $S$ has no token-position axis, so its
+own KV position. The linear-attention state S has no token-position axis, so its
 readout mixes all historical writes in one fixed state. The diagram above shows
 the simplest form of naive linear attention: plain accumulation.
 
 ### DeltaNet: adding a delete operation to the fixed state
 
 Naive linear attention keeps adding to its state but cannot overwrite an old
-value. If the same key direction first receives 1 and then 4, both remain in $S$;
-in this simplified example, the next read returns $1+4$.
+value. If the same key direction first receives 1 and then 4, both remain in S;
+in this simplified example, the next read returns `1+4`.
 
-DeltaNet first reads the old value $r$, then writes only the difference:
+DeltaNet first reads the old value, `r_old = S[t−1]^T k[t]`, then writes only
+the difference: `S[t] = S[t−1] + β[t]k[t](v[t] − r_old)^T`. For a normalized
+key, the new readout is `r_new = (1−β[t])r_old + β[t]v[t]`.
 
-$$
-\begin{aligned}
-S_t &= S_{t-1} + \beta k\left(v-S_{t-1}^\top k\right)^\top, \\
-r' &= (1-\beta)r+\beta v.
-\end{aligned}
-$$
-
-The coefficient $\beta$ controls rewrite strength: $\beta=1$ fully replaces the
-old association, smaller $\beta$ retains more of the old value, and $\beta=0$
+The coefficient `β[t]` controls rewrite strength: `β[t]=1` fully replaces the
+old association, smaller `β[t]` retains more of the old value, and `β[t]=0`
 does not rewrite it at all.
 
 <DeltaRuleViz client:visible lang="en" />
@@ -138,8 +133,8 @@ create crosstalk.
 
 <details className="lesson-details">
   <summary>Math details: A/B in the diagram and the crosstalk term</summary>
-  <p>A and B are full directions in key space, not token slots or individual channels. $A=1$ is shorthand for “$k$ points along A and $v$ represents 1.” Colors trace the contribution from each write; the real $S$ stores only their sum.</p>
-  <p>If $q_A=k_A$ and $S$ contains both $k_Av_A^\top$ and $k_Bv_B^\top$, then $o_A=S^\top q_A=v_A+(k_A^\top k_B)v_B$. The second term is B leaking into A, scaled by the key inner product $k_A^\top k_B$.</p>
+  <p>A and B are full directions in key space, not token slots or individual channels. <code>A=1</code> is shorthand for “k points along A and v represents 1.” Colors trace the contribution from each write; the real S stores only their sum.</p>
+  <p>If <code>q[A]=k[A]</code> and S contains both <code>k[A]v[A]^T</code> and <code>k[B]v[B]^T</code>, then <code>o[A] = S^Tq[A] = v[A] + dot(k[A],k[B])v[B]</code>. The second term is B leaking into A, scaled by the inner product of the two keys.</p>
 </details>
 
 <KeyOverlapViz client:visible lang="en" />
@@ -147,19 +142,19 @@ create crosstalk.
 ### KDA: delta rule with per-channel gating
 
 The fixed state does not grow with context—that is why it saves memory—but more
-and more history must share the same $S$. The delta rule can rewrite the same or a
+and more history must share the same S. The delta rule can rewrite the same or a
 nearby key direction, but it does not proactively clear every irrelevant old
 signal. KDA therefore adds channel-wise gating. For every token and head, the
-model dynamically produces a vector $\alpha_t$ from the current hidden state,
-applies $\operatorname{Diag}(\alpha_t)$ to scale the old state's channels, and
-then performs the DeltaNet rewrite. $\alpha_t$ is not a fixed learned matrix:
+model dynamically produces a vector `α[t]` from the current hidden state,
+applies `Diag(α[t])` to scale the old state's channels, and
+then performs the DeltaNet rewrite. `α[t]` is not a fixed learned matrix:
 the projection that produces it is learned, while the actual retention values
 depend on the current input.
 
 <details className="lesson-details">
   <summary>Math details: how KDA gates and rewrites the same S</summary>
-  <p>The full update is $S_t=(I-\beta_tk_tk_t^\top)\operatorname{Diag}(\alpha_t)S_{t-1}+\beta_tk_tv_t^\top$, where $\alpha_t\in(0,1)^{d_k}$ and each entry scales one key channel of $S$. It does not select A or B directly or rotate keys into orthogonal directions; every historical contribution in a row is scaled together.</p>
-  <p>The diagram reduces the real state to 2D, with $k_A=\frac{1}{\sqrt{2}}[1,1]^\top$ and $k_B=\frac{1}{\sqrt{2}}[1,-1]^\top$. Both A and B span $\mathrm{ch}_1/\mathrm{ch}_2$. The gate scales both rows, then the delta rule writes the residual needed to reach target value 4 along the full $k_A$.</p>
+  <p>The full update is <code>S[t] = (I−β[t]k[t]k[t]^T) Diag(α[t]) S[t−1] + β[t]k[t]v[t]^T</code>, where <code>α[t] ∈ (0,1)^(d_k)</code> and each entry scales one key channel of S. It does not select A or B directly or rotate keys into orthogonal directions; every historical contribution in a row is scaled together.</p>
+  <p>The diagram reduces the real state to 2D, with <code>k[A]=(1/√2)[1,1]^T</code> and <code>k[B]=(1/√2)[1,−1]^T</code>. Both A and B span <code>ch[1]</code> and <code>ch[2]</code>. The gate scales both rows, then the delta rule writes the residual needed to reach target value 4 along the full <code>k[A]</code>.</p>
 </details>
 
 <KdaGateViz client:visible lang="en" />
@@ -189,16 +184,16 @@ and different deep blocks can retrieve different historical representations.
 
 <details className="lesson-details">
   <summary>Math and cost: why K3 saves one summary every 12 layers</summary>
-  <p>For a later block $\ell$, the pseudo-query produces weights $\alpha_{\ell i}$ and retrieves $r_\ell=\sum_{i<\ell}\alpha_{\ell i}v_i$. This is a softmax-weighted mixture of the embedding and earlier block summaries, not a hard choice of one layer.</p>
-  <p>Full AttnRes saves every layer output and gives the finest retrieval, but costs more memory, bandwidth, and pipeline communication. Block AttnRes saves one summary per group, reducing state from $O(Ld)$ to $O(Nd)$. K3 uses one summary every 12 layers. In the optimized implementation, typical inference-latency overhead is below 2%, while training wall-clock overhead under pipeline parallelism is below 4%.</p>
+  <p>For a later block ℓ, the pseudo-query produces weights <code>α[ℓ,i]</code> and retrieves <code>r[ℓ] = Σ[i&lt;ℓ] α[ℓ,i]v[i]</code>. This is a softmax-weighted mixture of the embedding and earlier block summaries, not a hard choice of one layer.</p>
+  <p>Full AttnRes saves every layer output and gives the finest retrieval, but costs more memory, bandwidth, and pipeline communication. Block AttnRes saves one summary per group, reducing state from <code>O(Ld)</code> to <code>O(Nd)</code>. K3 uses one summary every 12 layers. In the optimized implementation, typical inference-latency overhead is below 2%, while training wall-clock overhead under pipeline parallelism is below 4%.</p>
 </details>
 
 ### LatentMoE
 
 Every K3 FFN uses MoE: each token selects 16 of 896 routed experts, while 2
 shared experts are always active. The routed-pool selection rate is therefore
-$16/896\approx1.8\%$; the separate whole-model ratio is
-$104\mathrm{B}/2.8\mathrm{T}\approx3.7\%$ active
+`16/896 ≈ 1.8%`; the separate whole-model ratio is
+`104B/2.8T ≈ 3.7%` active
 parameters per token.
 
 Routing and expert compute project the 7168-d hidden state down to a 3584-d
@@ -274,7 +269,7 @@ pays fill and drain bubbles, so it does not win with too few requests or chunks.
 MLA has multiple attention heads, but they all share the same compressed KV latent,
 leaving no cache head axis for TP to shard. Every TP8 rank therefore replicates the
 complete MLA KV latent, and adding GPUs does not increase logical context capacity.
-DCP shards by token position instead: each GPU computes partial attention over its local $1/N$ KV,
+DCP shards by token position instead: each GPU computes partial attention over its local `1/N` KV,
 then one packed all-to-all merges the result exactly:
 
 <DcpViz client:visible lang="en" />
