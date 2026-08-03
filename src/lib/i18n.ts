@@ -19,7 +19,6 @@ export const CHROME = {
     en: "Interactive visualizations that make AI infra mechanisms click",
   },
   buildWithSglang: { zh: "Build with SGLang.", en: "Build with SGLang." },
-  navReferences: { zh: "参考文献库", en: "References" },
   themeToggle: { zh: "切换亮暗主题", en: "Toggle color theme" },
   /** 可见文案显示「切换到」的语言(用目标语言书写,配合 span[lang] 标注);
       aria-label 则用页面自身的语言,读屏器才能正确发音 */
