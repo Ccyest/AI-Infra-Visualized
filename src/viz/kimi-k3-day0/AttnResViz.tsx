@@ -1,214 +1,144 @@
-import { useState } from "react";
 import type { Locale } from "../../lib/i18n";
-import { ATTN, attnBlockTooltip } from "./strings";
+import { ATTN } from "./strings";
 import "./styles.css";
 
-type AttnMode = "chain" | "res";
+const COPY = {
+  zh: {
+    traditionalTitle: "传统 residual：一条不断累加的流",
+    traditionalFormula: "hℓ = hℓ₋₁ + Fℓ(hℓ₋₁)",
+    traditionalNote: "第 ℓ 层只直接收到上层传来的累计结果 hℓ₋₁",
+    traditionalProblem: "浅层信息必须穿过沿途每次相加；深层不能单独取回某一层的原始输出。",
+    stream: "同一个 residual stream：Emb + F₁ + F₂ + …",
+    attnTitle: "Attention Residual：把旧层输出保留成可寻址的库",
+    attnFormula: "rℓ = Σᵢ<ℓ αℓᵢ vᵢ",
+    attnNote: "pseudo-query 学习该从 Emb / B₁ / B₂ / … 各取多少",
+    attnBenefit: "深层可直接选择早期表示，信息和梯度都有短路径；无关层可给低权重。",
+    bank: "旧 block 输出分别保留",
+    mix: "按 α 混合",
+    target: "送入 B₈",
+    blockNote: "图中 B₁…B₈ 各代表一组 12 层；组内仍有普通 residual，AttnRes 增加的是组与组之间的直接取回路径。",
+    whyTitle: "为什么更好",
+    why: "传统 residual 只能把所有历史压在一个累计向量里；AttnRes 让深层按内容选择先前表示，减少深度方向上的稀释与干扰。K3 每 12 层做一次，控制额外成本。",
+  },
+  en: {
+    traditionalTitle: "Standard residual: one continuously accumulated stream",
+    traditionalFormula: "hℓ = hℓ₋₁ + Fℓ(hℓ₋₁)",
+    traditionalNote: "Layer ℓ directly receives only the aggregate hℓ₋₁ from the previous layer",
+    traditionalProblem: "Shallow information must survive every intervening addition; a deep layer cannot retrieve one earlier output on its own.",
+    stream: "One residual stream: Emb + F₁ + F₂ + …",
+    attnTitle: "Attention Residual: keep old outputs in an addressable bank",
+    attnFormula: "rℓ = Σᵢ<ℓ αℓᵢ vᵢ",
+    attnNote: "A learned pseudo-query decides how much to retrieve from Emb / B₁ / B₂ / …",
+    attnBenefit: "Deep blocks get direct paths to selected early representations and gradients; irrelevant blocks can receive low weight.",
+    bank: "Prior block outputs remain separate",
+    mix: "mix by α",
+    target: "input to B₈",
+    blockNote: "B₁…B₈ each represent a 12-layer group. Ordinary residuals still exist inside a group; AttnRes adds direct retrieval across groups.",
+    whyTitle: "Why it helps",
+    why: "A standard residual stream compresses all history into one accumulated vector. AttnRes lets deep blocks select earlier representations by content, reducing dilution and interference across depth. K3 applies it every 12 layers to bound overhead.",
+  },
+} as const;
 
-const BLOCKS = 8;
-
-/**
- * 手工示意的 α 权重：ALPHAS[k] = 第 k+2 块对 [Emb, B1..B(k+1)] 的取回权重，
- * 每行和为 1。真实权重由每组的 pseudo-query 学出。
- */
-const ALPHAS: number[][] = [
-  [0.35, 0.65],
-  [0.25, 0.3, 0.45],
-  [0.22, 0.1, 0.28, 0.4],
-  [0.25, 0.06, 0.12, 0.22, 0.35],
-  [0.2, 0.05, 0.08, 0.14, 0.21, 0.32],
-  [0.24, 0.04, 0.06, 0.1, 0.13, 0.18, 0.25],
-  [0.22, 0.03, 0.05, 0.07, 0.1, 0.14, 0.17, 0.22],
-];
-
-const NODE_W = 54;
-const NODE_H = 26;
-const STEP_X = 84;
-const PAD_X = 8;
-const NODE_Y = 84;
-const WIDTH = PAD_X * 2 + NODE_W + BLOCKS * STEP_X;
-const HEIGHT = 138;
-
-function nodeX(i: number): number {
-  // i = 0 为 Emb,1..8 为块
-  return PAD_X + i * STEP_X;
+function StandardResidualDiagram({ lang }: { lang: Locale }) {
+  const labels = ["Emb", "L1", "L2", "L3", "…", "L93"];
+  return (
+    <svg className="attnres-diagram" viewBox="0 0 760 230" role="img" aria-label={COPY[lang].traditionalTitle}>
+      <defs>
+        <marker id="attnres-chain-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
+          <path d="M0 0L8 4L0 8Z" fill="var(--accent)" />
+        </marker>
+      </defs>
+      <text x="380" y="34" textAnchor="middle" className="attnres-svg-note">{COPY[lang].stream}</text>
+      {labels.map((label, index) => {
+        const x = 28 + index * 126;
+        return (
+          <g key={label + index}>
+            {index < labels.length - 1 && (
+              <line x1={x + 82} y1="105" x2={x + 120} y2="105" stroke="var(--accent)" strokeWidth="8" strokeLinecap="round" markerEnd="url(#attnres-chain-arrow)" opacity="0.62" />
+            )}
+            <rect x={x} y="76" width="82" height="58" rx="12" fill="var(--surface)" stroke="var(--border)" strokeWidth="2" />
+            <text x={x + 41} y="111" textAnchor="middle" className="attnres-svg-node">{label}</text>
+            {index > 0 && index < 4 && <text x={x + 41} y="156" textAnchor="middle" className="attnres-svg-tiny">h{index}=h{index - 1}+F{index}</text>}
+          </g>
+        );
+      })}
+      <path d="M72 184H688" stroke="var(--axis)" strokeWidth="2" strokeDasharray="5 5" />
+      <text x="380" y="210" textAnchor="middle" className="attnres-svg-warning">{COPY[lang].traditionalNote}</text>
+    </svg>
+  );
 }
 
-/** 单一残差流 vs AttnRes 的跨层取回；无时间轴，点选块查看 α */
-export default function AttnResViz({ lang = "zh" }: { lang?: Locale }) {
-  const [mode, setMode] = useState<AttnMode>("res");
-  const [selected, setSelected] = useState(BLOCKS);
-
-  const alphas = ALPHAS[selected - 2];
-
+function AttentionResidualDiagram({ lang }: { lang: Locale }) {
+  const sources = [
+    { label: "Emb", x: 24, alpha: "0.22", width: 4.8 },
+    { label: "B₁", x: 130, alpha: "0.03", width: 1.4 },
+    { label: "B₂", x: 236, alpha: "0.05", width: 1.8 },
+    { label: "B₃", x: 342, alpha: "0.10", width: 2.6 },
+    { label: "…", x: 448, alpha: "", width: 1.2 },
+    { label: "B₇", x: 554, alpha: "0.22", width: 4.8 },
+  ];
   return (
-    <figure className="viz-stage" style={{ margin: "1.6rem 0" }}>
+    <svg className="attnres-diagram" viewBox="0 0 760 230" role="img" aria-label={COPY[lang].attnTitle}>
+      <defs>
+        <marker id="attnres-bank-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
+          <path d="M0 0L8 4L0 8Z" fill="var(--accent)" />
+        </marker>
+      </defs>
+      <text x="315" y="26" textAnchor="middle" className="attnres-svg-note">{COPY[lang].bank}</text>
+      {sources.map((source, index) => {
+        const centerX = source.x + 38;
+        const controlY = 35 + Math.abs(670 - centerX) * 0.035;
+        return (
+          <g key={source.label + index}>
+            <path d={`M${centerX} 153 Q${(centerX + 670) / 2} ${controlY} 664 79`} fill="none" stroke="var(--accent)" strokeWidth={source.width} strokeLinecap="round" opacity={0.55} markerEnd="url(#attnres-bank-arrow)" />
+            {source.alpha && <text x={centerX} y="102" textAnchor="middle" className="attnres-svg-alpha">α={source.alpha}</text>}
+            <rect x={source.x} y="138" width="76" height="50" rx="11" fill="color-mix(in srgb, var(--accent) 10%, var(--surface))" stroke="var(--border)" />
+            <text x={centerX} y="169" textAnchor="middle" className="attnres-svg-node">{source.label}</text>
+          </g>
+        );
+      })}
+      <circle cx="684" cy="68" r="30" fill="var(--accent)" />
+      <text x="684" y="76" textAnchor="middle" className="attnres-svg-mix">Σα</text>
+      <line x1="684" y1="99" x2="684" y2="131" stroke="var(--accent)" strokeWidth="5" markerEnd="url(#attnres-bank-arrow)" />
+      <rect x="646" y="138" width="76" height="50" rx="11" fill="var(--accent)" stroke="var(--accent)" />
+      <text x="684" y="169" textAnchor="middle" className="attnres-svg-target">B₈</text>
+      <text x="684" y="211" textAnchor="middle" className="attnres-svg-note">{COPY[lang].target}</text>
+    </svg>
+  );
+}
+
+export default function AttnResViz({ lang = "zh" }: { lang?: Locale }) {
+  const copy = COPY[lang];
+  return (
+    <figure className="viz-stage attnres-explainer" style={{ margin: "1.6rem 0" }}>
       <div className="viz-head">
         <span className="viz-title">{ATTN.title[lang]}</span>
         <span className="viz-subtitle">{ATTN.subtitle[lang]}</span>
-        <span className="viz-head-extra">
-          <span className="viz-presets" role="group">
-            <button
-              type="button"
-              className={`viz-btn${mode === "chain" ? " primary" : ""}`}
-              onClick={() => setMode("chain")}
-            >
-              {ATTN.modeChain[lang]}
-            </button>
-            <button
-              type="button"
-              className={`viz-btn${mode === "res" ? " primary" : ""}`}
-              onClick={() => setMode("res")}
-            >
-              {ATTN.modeRes[lang]}
-            </button>
-          </span>
-        </span>
       </div>
 
-      <div className="viz-grid-wrap">
-        <svg
-          className="viz-grid"
-          style={{ minWidth: 640 }}
-          viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
-          role="img"
-          aria-label={ATTN[mode === "chain" ? "modeChain" : "modeRes"][lang]}
-        >
-          <defs>
-            <marker
-              id="ar-arrow"
-              viewBox="0 0 8 8"
-              refX="6.5"
-              refY="4"
-              markerWidth="7"
-              markerHeight="7"
-              markerUnits="userSpaceOnUse"
-              orient="auto"
-            >
-              <path d="M 0 0 L 8 4 L 0 8 z" fill="var(--accent)" />
-            </marker>
-          </defs>
-          {/* 取回弧线(res)或链式等宽箭头(chain) */}
-          {mode === "chain"
-            ? Array.from({ length: BLOCKS }, (_, i) => {
-                const x1 = nodeX(i) + NODE_W;
-                const x2 = nodeX(i + 1);
-                const y = NODE_Y + NODE_H / 2;
-                return (
-                  <line
-                    key={i}
-                    x1={x1}
-                    y1={y}
-                    x2={x2 - 4}
-                    y2={y}
-                    stroke="var(--accent)"
-                    strokeWidth={6}
-                    strokeLinecap="round"
-                    opacity={0.55}
-                    markerEnd="url(#ar-arrow)"
-                  />
-                );
-              })
-            : alphas.map((a, i) => {
-                const sx = nodeX(i) + NODE_W / 2;
-                const dx = nodeX(selected) + NODE_W / 2;
-                // 端点沿选中块顶边散开,避免箭头互相叠住
-                const endX =
-                  dx + (alphas.length > 1 ? (i / (alphas.length - 1)) * 28 - 14 : -8);
-                const lift = Math.min(64, 18 + (dx - sx) * 0.09);
-                return (
-                  <g key={i}>
-                    <path
-                      d={`M ${sx} ${NODE_Y - 2} Q ${(sx + endX) / 2} ${NODE_Y - lift} ${endX} ${
-                        NODE_Y - 4
-                      }`}
-                      fill="none"
-                      stroke="var(--accent)"
-                      strokeWidth={Math.max(1.2, a * 16)}
-                      strokeLinecap="round"
-                      opacity={0.5}
-                      markerEnd="url(#ar-arrow)"
-                    />
-                    <text
-                      x={sx}
-                      y={NODE_Y - 8}
-                      textAnchor="middle"
-                      fontSize="8.5"
-                      fill="var(--ink-2)"
-                    >
-                      {a.toFixed(2)}
-                    </text>
-                  </g>
-                );
-              })}
+      <div className="attnres-compare">
+        <section className="attnres-side standard">
+          <div className="attnres-side-head">
+            <b>{copy.traditionalTitle}</b>
+            <code>{copy.traditionalFormula}</code>
+          </div>
+          <StandardResidualDiagram lang={lang} />
+          <p>{copy.traditionalProblem}</p>
+        </section>
 
-          {/* 节点：Emb + 8 个块 */}
-          {Array.from({ length: BLOCKS + 1 }, (_, i) => {
-            const x = nodeX(i);
-            const isEmb = i === 0;
-            const isSelected = mode === "res" && i === selected;
-            const isSource = mode === "res" && i < selected;
-            const clickable = mode === "res" && i >= 2;
-            return (
-              <g
-                key={i}
-                onClick={clickable ? () => setSelected(i) : undefined}
-                style={clickable ? { cursor: "pointer" } : undefined}
-              >
-                <title>{isEmb ? "Embedding" : attnBlockTooltip(lang, i)}</title>
-                <rect
-                  x={x}
-                  y={NODE_Y}
-                  width={NODE_W}
-                  height={NODE_H}
-                  rx={7}
-                  fill={
-                    isSelected
-                      ? "var(--accent)"
-                      : isSource
-                        ? "color-mix(in srgb, var(--accent) 14%, var(--surface))"
-                        : "var(--surface)"
-                  }
-                  stroke={isSelected ? "var(--accent)" : "var(--border)"}
-                  strokeWidth={isSelected ? 2 : 1}
-                />
-                <text
-                  x={x + NODE_W / 2}
-                  y={NODE_Y + NODE_H / 2 + 4}
-                  textAnchor="middle"
-                  fontSize="11"
-                  fontWeight={650}
-                  fill={isSelected ? "var(--accent-ink)" : "var(--ink)"}
-                >
-                  {isEmb ? ATTN.emb[lang] : `B${i}`}
-                </text>
-                {!isEmb && (
-                  <text
-                    x={x + NODE_W / 2}
-                    y={NODE_Y + NODE_H + 12}
-                    textAnchor="middle"
-                    fontSize="8"
-                    fill="var(--muted)"
-                  >
-                    L{(i - 1) * 12 + 1}–{Math.min(i * 12, 93)}
-                  </text>
-                )}
-              </g>
-            );
-          })}
-        </svg>
+        <section className="attnres-side attention">
+          <div className="attnres-side-head">
+            <b>{copy.attnTitle}</b>
+            <code>{copy.attnFormula}</code>
+          </div>
+          <AttentionResidualDiagram lang={lang} />
+          <p>{copy.attnBenefit}</p>
+        </section>
       </div>
 
-      <div className="viz-footer">
-        <div className="viz-verdict">
-          {ATTN[mode === "chain" ? "chainCaption" : "resCaption"][lang]}
-          {mode === "res" && (
-            <>
-              {" "}
-              {ATTN.alphaNote[lang]}。{ATTN.costNote[lang]}
-            </>
-          )}
-        </div>
+      <div className="viz-footer attnres-footer">
+        <div>{copy.blockNote}</div>
+        <div><b>{copy.whyTitle}：</b>{copy.why}</div>
       </div>
     </figure>
   );

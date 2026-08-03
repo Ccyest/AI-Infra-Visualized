@@ -21,62 +21,16 @@ export default function MoeViz({ lang = "zh" }: { lang?: Locale }) {
     <figure className="viz-stage moe-static" style={{ margin: "1.6rem 0" }}>
       <div className="viz-head">
         <span className="viz-title">{MOE.title[lang]}</span>
-        <span className="viz-subtitle">{MOE.subtitle[lang]}</span>
       </div>
 
-      <div className="moe-pie-layout">
-        <div className="moe-pie-column">
-          <div className="moe-pie" role="img" aria-label={pieLabel}>
-            <div className="moe-pie-center">
-              <b>16</b>
-              <span>/ 896</span>
-            </div>
-          </div>
-          <strong>{MOE.routedActive[lang]}</strong>
-          <span className="moe-pie-caption">{MOE.routedPercent[lang]}</span>
-        </div>
-
-        <div className="moe-pie-legend" aria-label={lang === "zh" ? "饼图图例" : "pie-chart legend"}>
-          <div className="moe-legend-row">
-            <span className="moe-legend-swatch active" />
-            <span>{MOE.activeSlice[lang]}</span>
+      <div className="moe-pie-only">
+        <div className="moe-pie" role="img" aria-label={pieLabel}>
+          <div className="moe-pie-center">
             <b>16</b>
-          </div>
-          <div className="moe-legend-row">
-            <span className="moe-legend-swatch idle" />
-            <span>{MOE.idleSlice[lang]}</span>
-            <b>880</b>
-          </div>
-
-          <div className="moe-shared-card">
-            <div className="moe-shared-dots" aria-hidden="true">
-              <span />
-              <span />
-            </div>
-            <div>
-              <b>{MOE.sharedTitle[lang]}</b>
-              <p>{MOE.sharedNote[lang]}</p>
-            </div>
+            <span>/ 896</span>
+            <small>{ROUTED_PERCENT.toFixed(1)}%</small>
           </div>
         </div>
-      </div>
-
-      <div className="viz-footer">
-        <div className="moe-stat-grid">
-          <div>
-            <span>{MOE.statRouted[lang]}</span>
-            <b>16 / 896 ≈ 1.8%</b>
-          </div>
-          <div>
-            <span>{MOE.statParams[lang]}</span>
-            <b>104B / 2.8T ≈ 3.7%</b>
-          </div>
-          <div>
-            <span>{MOE.statLatent[lang]}</span>
-            <b>7168 → 3584</b>
-          </div>
-        </div>
-        <div className="viz-verdict">{MOE.verdict[lang]}</div>
       </div>
     </figure>
   );

@@ -210,18 +210,38 @@ general implementation, which is what lets KDA cover 69 layers.
 
 ### Attention Residual
 
-Every layer's output passes down the same residual stream, one vector shared
-by all 93 layers. For a deep layer to use a specific shallow representation,
-that representation has to stay distinguishable after dozens of additions,
-which gets harder with depth.
+First, what does it mean for a Transformer residual to pass information to the
+next layer? An ordinary layer does not output only its new computation
+<code>F<sub>ℓ</sub>(h<sub>ℓ−1</sub>)</code>; it adds the layer input back:
 
-AttnRes adds a cross-layer path: every 12 layers form a group, and at the
-group boundary a learned pseudo-query scores the embedding and all preceding
-groups' outputs with attention weights α, retrieving them by weight. Which
-groups to read, and how much, is decided by the weights rather than by one
+<code>h<sub>ℓ</sub> = h<sub>ℓ−1</sub> + F<sub>ℓ</sub>(h<sub>ℓ−1</sub>)</code>.
+
+That sum becomes the next layer's input. Unrolled through depth, a deep layer
+receives one vector containing the embedding plus all intermediate updates. It
+does not receive separately addressable copies of “layer 2,” “layer 17,” and
+“layer 53.” The identity path helps information and gradients flow, but all
+depth history is still compressed into one residual stream. A shallow feature
+needed at layer 93 must remain distinguishable after dozens of intervening
+updates and additions.
+
+Attention Residual keeps the ordinary residuals inside each group and adds a
+separate **retrieval path across depth**. K3 groups every 12 layers into a
+block and retains the embedding and earlier block outputs separately. A
+learned pseudo-query for a later block assigns weights
+<code>α<sub>ℓi</sub></code> and forms
+<code>r<sub>ℓ</sub> = Σ<sub>i&lt;ℓ</sub> α<sub>ℓi</sub>v<sub>i</sub></code>.
+The deep block can therefore reread a useful shallow representation directly
+and give irrelevant blocks low weight, instead of relying only on a heavily
 accumulated stream:
 
 <AttnResViz client:visible lang="en" />
+
+This adds two capabilities over the standard path: a shorter route between
+deep and shallow blocks, and content-dependent selection so different deep
+blocks can retrieve different prior representations. It reduces compression
+and interference across depth; it does not replace ordinary residuals. Doing
+the cross-block retrieval once per 12 layers keeps the added training and
+inference cost modest.
 
 ### LatentMoE
 

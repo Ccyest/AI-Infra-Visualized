@@ -97,23 +97,11 @@
   color: var(--muted);
 }
 
-/* LatentMoE：静态饼图，避免把不同分母的比例画在一起 */
-.moe-pie-layout {
+/* LatentMoE：只保留 routed pool 的一张饼图 */
+.moe-pie-only {
   display: grid;
-  grid-template-columns: minmax(220px, 0.8fr) minmax(280px, 1.2fr);
-  align-items: center;
-  gap: clamp(1.25rem, 4vw, 3.5rem);
-  max-width: 860px;
-  margin: 1.3rem auto;
-}
-
-.moe-pie-column {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.35rem;
-  color: var(--ink);
-  text-align: center;
+  place-items: center;
+  min-height: clamp(250px, 34vw, 360px);
 }
 
 .moe-pie {
@@ -154,116 +142,122 @@
   font-variant-numeric: tabular-nums;
 }
 
-.moe-pie-caption {
-  color: var(--muted);
-  font-size: 0.8rem;
-}
-
-.moe-pie-legend {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  gap: 0.65rem;
-}
-
-.moe-legend-row {
-  display: grid;
-  grid-template-columns: 0.9rem minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 0.6rem;
-  color: var(--ink-2);
-  font-size: 0.83rem;
-}
-
-.moe-legend-row b {
+.moe-pie-center small {
+  margin-top: 0.18rem;
   color: var(--ink);
+  font-size: 0.78rem;
   font-variant-numeric: tabular-nums;
 }
 
-.moe-legend-swatch {
-  width: 0.9rem;
-  height: 0.9rem;
-  border-radius: 3px;
-}
-
-.moe-legend-swatch.active {
-  background: var(--series-2);
-}
-
-.moe-legend-swatch.idle {
-  border: 1px solid var(--border);
-  background: color-mix(in srgb, var(--axis) 18%, var(--surface));
-}
-
-.moe-shared-card {
+/* Attention Residual：传统单流与跨块检索始终并排出现 */
+.attnres-compare {
   display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 0.75rem;
-  margin-top: 0.35rem;
-  padding: 0.75rem;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: color-mix(in srgb, var(--accent) 4%, var(--surface));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.8rem;
+  padding: 0.8rem;
 }
 
-.moe-shared-card b {
-  color: var(--ink);
-  font-size: 0.84rem;
-}
-
-.moe-shared-card p {
-  margin: 0.2rem 0 0;
-  color: var(--muted);
-  font-size: 0.76rem;
-  line-height: 1.55;
-}
-
-.moe-shared-dots {
-  display: flex;
-  gap: 0.25rem;
-  padding-top: 0.15rem;
-}
-
-.moe-shared-dots span {
-  width: 0.9rem;
-  height: 0.9rem;
-  border: 2px solid var(--accent);
-  border-radius: 50%;
-  background: color-mix(in srgb, var(--accent) 16%, var(--surface));
-}
-
-.moe-stat-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0.55rem;
-  margin-bottom: 0.65rem;
-}
-
-.moe-stat-grid > div {
-  display: flex;
+.attnres-side {
   min-width: 0;
-  flex-direction: column;
-  gap: 0.2rem;
-  padding: 0.55rem 0.65rem;
+  padding: 0.8rem;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--surface);
 }
 
-.moe-stat-grid span {
-  color: var(--muted);
-  font-size: 0.7rem;
+.attnres-side.standard {
+  border-top: 4px solid var(--axis);
 }
 
-.moe-stat-grid b {
+.attnres-side.attention {
+  border-top: 4px solid var(--accent);
+}
+
+.attnres-side-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.45rem 0.8rem;
   color: var(--ink);
-  font-size: 0.82rem;
-  font-variant-numeric: tabular-nums;
 }
 
-@media (max-width: 700px) {
-  .moe-pie-layout,
-  .moe-stat-grid {
+.attnres-side-head b {
+  font-size: 0.95rem;
+}
+
+.attnres-side-head code {
+  padding: 0.22rem 0.4rem;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--axis) 12%, var(--surface));
+  color: var(--ink-2);
+  font-size: 0.76rem;
+}
+
+.attnres-side p {
+  margin: 0.35rem 0 0;
+  color: var(--ink-2);
+  font-size: 0.79rem;
+  line-height: 1.55;
+}
+
+.attnres-diagram {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin-top: 0.35rem;
+}
+
+.attnres-svg-note,
+.attnres-svg-tiny,
+.attnres-svg-alpha,
+.attnres-svg-warning {
+  fill: var(--muted);
+  font-family: inherit;
+}
+
+.attnres-svg-note {
+  font-size: 14px;
+}
+
+.attnres-svg-node {
+  fill: var(--ink);
+  font-family: inherit;
+  font-size: 16px;
+  font-weight: 650;
+}
+
+.attnres-svg-tiny,
+.attnres-svg-alpha {
+  font-size: 10px;
+}
+
+.attnres-svg-warning {
+  font-size: 13px;
+}
+
+.attnres-svg-mix,
+.attnres-svg-target {
+  fill: var(--accent-ink);
+  font-family: inherit;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.attnres-footer {
+  display: grid;
+  gap: 0.45rem;
+  color: var(--ink-2);
+  font-size: 0.82rem;
+  line-height: 1.55;
+}
+
+.attnres-footer b {
+  color: var(--ink);
+}
+
+@media (max-width: 860px) {
+  .attnres-compare {
     grid-template-columns: 1fr;
   }
 }

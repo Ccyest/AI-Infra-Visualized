@@ -274,12 +274,12 @@ export function cacheVerdict(
 
 export const ATTN = {
   title: {
-    zh: "深度方向的信息流：单一残差流 vs AttnRes",
-    en: "Information flow across depth: one residual stream vs AttnRes",
+    zh: "Attention Residual：让深层直接取回指定的浅层表示",
+    en: "Attention Residual: let deep blocks retrieve selected shallow representations",
   },
   subtitle: {
-    zh: "93 层按 12 层一组画成 8 块；点选一块，看它从哪里取回信息",
-    en: "93 layers drawn as 8 blocks of 12; select a block to see where it retrieves from",
+    zh: "传统 residual 只有一条累计流；AttnRes 把旧 block 输出分别保留，再按 α 选择",
+    en: "A standard residual has one accumulated stream; AttnRes keeps prior block outputs separate and selects them with α",
   },
   modeChain: { zh: "单一残差流", en: "One residual stream" },
   modeRes: { zh: "AttnRes", en: "AttnRes" },
