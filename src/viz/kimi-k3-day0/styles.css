@@ -368,13 +368,31 @@
 }
 
 .parallel-pp-schedule .parallel-schedule-row {
-  grid-template-columns: 2rem minmax(620px, 1fr);
+  min-width: 790px;
+  grid-template-columns: 5.4rem minmax(690px, 1fr);
+}
+
+.parallel-pp-schedule .parallel-schedule-row > b {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.15;
+}
+
+.parallel-pp-schedule .parallel-schedule-row > b strong {
+  color: var(--ink-2);
+  font-size: 0.72rem;
+}
+
+.parallel-pp-schedule .parallel-schedule-row > b small {
+  color: var(--muted);
+  font-size: 0.55rem;
+  font-weight: 500;
 }
 
 .parallel-pp-track {
   display: grid;
-  grid-template-columns: repeat(15, minmax(1.9rem, 1fr));
-  gap: 0.18rem;
+  grid-template-columns: repeat(12, minmax(3.2rem, 1fr));
+  gap: 0.24rem;
 }
 
 .parallel-pp-track > i {
@@ -392,6 +410,39 @@
   border: 1px dashed var(--grid);
   background: repeating-linear-gradient(45deg, transparent 0 3px, var(--axis) 3px 4px);
   opacity: 0.55;
+}
+
+.parallel-pp-track > i.idle {
+  visibility: hidden;
+}
+
+.parallel-pp-stage {
+  display: grid;
+  gap: 0.04rem;
+}
+
+.parallel-p2p-row {
+  display: grid;
+  min-width: 790px;
+  height: 0.7rem;
+  grid-template-columns: 5.4rem minmax(690px, 1fr);
+  align-items: center;
+}
+
+.parallel-p2p-track {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(3.2rem, 1fr));
+  gap: 0.24rem;
+}
+
+.parallel-p2p-track > i {
+  align-self: center;
+  color: var(--good);
+  font-size: 0.55rem;
+  font-style: normal;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
 }
 
 .parallel-pp-schedule > small {
@@ -418,6 +469,86 @@
 
 .parallel-card.solution .parallel-facts > span::first-letter {
   color: var(--good);
+}
+
+.parallel-gain-chart {
+  display: grid;
+  gap: 0.45rem;
+  margin-top: 0.65rem;
+  padding: 0.65rem;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--accent) 5%, var(--surface));
+}
+
+.parallel-gain-chart > b {
+  color: var(--ink);
+  font-size: 0.72rem;
+}
+
+.parallel-gain-columns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.parallel-gain-columns section {
+  display: grid;
+  min-width: 0;
+  gap: 0.3rem;
+}
+
+.parallel-gain-columns section > span {
+  color: var(--ink-2);
+  font-size: 0.64rem;
+  font-weight: 650;
+}
+
+.parallel-gain-columns section > div {
+  display: grid;
+  grid-template-columns: minmax(5.6rem, 0.65fr) minmax(5rem, 1fr) minmax(4rem, auto);
+  gap: 0.4rem;
+  align-items: center;
+}
+
+.parallel-gain-columns em,
+.parallel-gain-columns output {
+  color: var(--muted);
+  font-size: 0.58rem;
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
+}
+
+.parallel-gain-columns output {
+  color: var(--ink-2);
+  text-align: right;
+}
+
+.parallel-gain-columns div > i {
+  height: 0.72rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--axis) 10%, var(--surface));
+}
+
+.parallel-gain-columns div > i > u {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--axis);
+  text-decoration: none;
+}
+
+.parallel-gain-columns div > i > u.gain {
+  background: var(--accent);
+}
+
+.parallel-gain-columns div > i > u.cost {
+  background: var(--series-2);
+}
+
+.parallel-gain-columns div > i > u.cost.low {
+  min-width: 4px;
+  background: var(--good);
 }
 
 .parallel-footer {
@@ -557,15 +688,15 @@
   background: var(--series-1);
 }
 
-/* Serving numbers: separate latency, aggregate throughput, and per-user speed. */
-.serving-perf-grid {
+/* Serving numbers: source-shaped decode ladder and serving frontier. */
+.serving-source-grid {
   display: grid;
   grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
   gap: 0.8rem;
   padding: 0.8rem;
 }
 
-.serving-perf-card {
+.serving-source-card {
   min-width: 0;
   padding: 0.75rem;
   border: 1px solid var(--border);
@@ -573,136 +704,166 @@
   background: var(--surface);
 }
 
-.serving-perf-card h3 {
-  margin: 0 0 0.65rem;
+.serving-source-card h3 {
+  margin: 0;
   color: var(--ink);
-  font-size: 0.88rem;
+  font-size: 0.82rem;
 }
 
-.serving-perf-card > p {
-  margin: 0.7rem 0 0;
+.serving-source-card > small {
   color: var(--muted);
-  font-size: 0.7rem;
-  line-height: 1.5;
+  font-size: 0.6rem;
 }
 
-.serving-decode-row {
-  display: grid;
-  grid-template-columns: minmax(8.5rem, 0.9fr) minmax(8rem, 1.25fr) 3rem;
-  gap: 0.45rem;
-  align-items: center;
-  margin-top: 0.55rem;
-}
-
-.serving-decode-row > div {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-}
-
-.serving-decode-row b {
-  color: var(--ink);
-  font-size: 0.68rem;
-}
-
-.serving-decode-row small {
-  color: var(--muted);
-  font-size: 0.58rem;
-}
-
-.serving-decode-track {
-  height: 1.2rem;
-  overflow: hidden;
-  border-radius: 4px;
-  background: color-mix(in srgb, var(--axis) 12%, var(--surface));
-}
-
-.serving-decode-track i {
+.serving-kernel-chart,
+.serving-frontier-plot svg {
   display: block;
-  height: 100%;
-  min-width: 2px;
-  border-radius: inherit;
+  width: 100%;
+  height: auto;
 }
 
-.serving-decode-track i.base {
-  background: var(--axis);
+.serving-chart-grid,
+.serving-frontier-axis {
+  stroke: var(--grid);
+  stroke-width: 1;
 }
 
-.serving-decode-track i.optimized {
-  background: var(--series-1);
+.serving-kernel-line {
+  fill: none;
+  stroke: var(--series-2);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 3;
 }
 
-.serving-decode-track i.dspark {
-  background: var(--series-4);
+.serving-kernel-point {
+  fill: var(--surface);
+  stroke: var(--series-2);
+  stroke-width: 2;
 }
 
-.serving-decode-row output {
-  color: var(--ink);
-  font-size: 0.72rem;
-  font-variant-numeric: tabular-nums;
-  text-align: right;
+.serving-kernel-endpoint {
+  fill: var(--series-2);
+  stroke: var(--surface);
+  stroke-width: 2;
 }
 
-.serving-frontier {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto minmax(0, 1fr);
-  gap: 0.35rem;
-  align-items: stretch;
+.serving-chart-muted,
+.serving-chart-label,
+.serving-chart-value {
+  fill: var(--muted);
+  font-family: inherit;
+  font-size: 9px;
 }
 
-.serving-frontier > i {
-  align-self: center;
-  color: var(--accent);
-  font-size: 1.1rem;
-  font-style: normal;
-}
-
-.serving-frontier-point {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  padding: 0.55rem;
-  border: 1px solid var(--border);
-  border-top: 3px solid var(--series-1);
-  border-radius: 7px;
-  background: color-mix(in srgb, var(--series-1) 5%, var(--surface));
-}
-
-.serving-frontier-point.dcp {
-  border-top-color: var(--series-3);
-  background: color-mix(in srgb, var(--series-3) 5%, var(--surface));
-}
-
-.serving-frontier-point.interactive {
-  border-top-color: var(--series-4);
-  background: color-mix(in srgb, var(--series-4) 5%, var(--surface));
-}
-
-.serving-frontier-point > span {
-  color: var(--ink);
-  font-size: 0.67rem;
+.serving-chart-label {
+  fill: var(--ink);
+  font-size: 10px;
   font-weight: 700;
 }
 
-.serving-frontier-point > small {
-  min-height: 2.35rem;
-  margin-top: 0.25rem;
+.serving-chart-value {
+  fill: var(--accent);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.serving-dspark-jump {
+  display: grid;
+  grid-template-columns: minmax(8rem, 1fr) auto auto auto;
+  gap: 0.4rem;
+  align-items: center;
+  margin-top: 0.35rem;
+  padding: 0.55rem;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--series-4) 7%, var(--surface));
+}
+
+.serving-dspark-jump > span {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.serving-dspark-jump b,
+.serving-dspark-jump strong {
+  color: var(--ink);
+  font-size: 0.63rem;
+}
+
+.serving-dspark-jump small,
+.serving-dspark-jump em {
   color: var(--muted);
-  font-size: 0.56rem;
-  line-height: 1.35;
-}
-
-.serving-frontier-point > b {
-  margin-top: 0.4rem;
-  color: var(--accent);
-  font-size: 1.35rem;
-  font-variant-numeric: tabular-nums;
-}
-
-.serving-frontier-point > em {
-  color: var(--ink-2);
-  font-size: 0.58rem;
+  font-size: 0.52rem;
   font-style: normal;
+}
+
+.serving-dspark-jump i {
+  color: var(--accent);
+  font-style: normal;
+}
+
+.serving-dspark-jump em {
+  grid-column: 2 / -1;
+  color: var(--ink-2);
+  text-align: right;
+}
+
+.serving-frontier-plot {
+  position: relative;
+  padding: 0.35rem 0.2rem 1rem 1.2rem;
+}
+
+.serving-frontier-y,
+.serving-frontier-x {
+  position: absolute;
+  color: var(--muted);
+  font-size: 0.54rem;
+}
+
+.serving-frontier-y {
+  top: 0.5rem;
+  left: 0;
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+}
+
+.serving-frontier-x {
+  right: 0.35rem;
+  bottom: 0;
+}
+
+.serving-frontier-curve {
+  fill: none;
+  stroke: var(--ink);
+  stroke-linecap: round;
+  stroke-width: 4;
+}
+
+.serving-frontier-throughput,
+.serving-frontier-dcp,
+.serving-frontier-interactive {
+  stroke: var(--surface);
+  stroke-width: 2;
+}
+
+.serving-frontier-throughput {
+  fill: var(--series-1);
+}
+
+.serving-frontier-dcp {
+  fill: var(--series-3);
+}
+
+.serving-frontier-interactive {
+  fill: var(--series-4);
+}
+
+.serving-frontier-card > p {
+  margin: 0.4rem 0 0;
+  color: var(--muted);
+  font-size: 0.61rem;
+  line-height: 1.5;
 }
 
 .serving-critical-path {
@@ -723,22 +884,16 @@
 
 .serving-critical-path > span {
   display: grid;
-  grid-template-columns: minmax(7rem, 0.8fr) minmax(2rem, 1fr);
+  grid-template-columns: minmax(2rem, 0.55fr) minmax(9rem, 1.6fr);
   gap: 0.25rem 0.45rem;
   align-items: center;
 }
 
-.serving-critical-path em,
-.serving-critical-path strong {
+.serving-critical-path em {
   color: var(--ink-2);
   font-size: 0.62rem;
   font-style: normal;
   font-weight: 500;
-}
-
-.serving-critical-path strong {
-  grid-column: 1 / -1;
-  color: var(--muted);
 }
 
 .serving-critical-path i {
@@ -758,18 +913,17 @@
     grid-template-columns: 1fr;
   }
 
-  .serving-perf-grid,
+  .serving-source-grid,
+  .parallel-gain-columns,
   .serving-critical-path {
     grid-template-columns: 1fr;
   }
 
-  .dcp-flow-steps,
-  .serving-frontier {
+  .dcp-flow-steps {
     grid-template-columns: 1fr;
   }
 
-  .dcp-flow-steps > i,
-  .serving-frontier > i {
+  .dcp-flow-steps > i {
     justify-self: center;
     transform: rotate(90deg);
   }

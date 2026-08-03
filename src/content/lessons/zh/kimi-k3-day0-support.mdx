@@ -280,17 +280,29 @@ snapshot（乒乓缓冲抓快照）、donate（按槽位索引捐给 radix tree�
 
 ### Chunked pipeline prefill
 
-**问题不只是通信多，而是 8 张卡每层都锁步。** TP8 把同一层的计算切到 8 卡，
-每层结束都要等 AllReduce；同时每张卡拿到的 GEMM 变窄，硬件效率也下降。
-chunked PP8 先把 93 层按深度切成 8 个 stage，再把长 prompt 切成 chunks。
-流水线灌满后，各 stage 同时处理不同 chunk，P2P 交接还能与下一块计算重叠：
+这里不是笼统地说“PP 比 TP 好”，而是 **prefill 的任务形态更适合 PP**。
+Prefill 一次处理整段长 prompt，天然有大量 token 可以切成 chunks；计算以大矩阵
+乘为主，也有足够工作把深流水线灌满。TP8 却让 8 张卡在每一层锁步：同一层的
+计算切成 8 份，每层结束都等 AllReduce，GEMM 也被切窄。chunked PP8 改为把
+93 层按深度分给 G1–G8，再把 prompt 切成 chunks。每张 GPU 跑一段完整层，
+不同 GPU 同时推进不同 chunk。
+
+图中的 P2P 是 **point-to-point activation hand-off**：G1 算完 C1 后，把 C1 的
+中间 activation 直接发给 G2；G1 随即开始算 C2。它不是 8 张卡共同参与的
+AllReduce，因此这次传输可以藏在下一 chunk 的计算后面：
 
 <PipelineViz client:visible />
 
-所以提升来自三件事：移除每层 AllReduce、恢复完整而更宽的 GEMM、隐藏 91% 的
-stage 间 P2P。代价是流水线灌入和排空气泡；单请求或 chunk 太少时 PP8 会输，
-但长 prompt / 高并发 prefill 能摊薄气泡。实测 PP8 节点容量是 TEP8 的
-1.45–1.72×。
+所以提升来自三件事：移除每层 AllReduce、恢复完整且宽 8 倍的整层 GEMM、隐藏
+91% 的 stage 间 P2P。原文在 8K prefill、2×4 GB300、仅改变拓扑的对比中，
+PP8×TP1 的代表点达到 5,958 input tok/s/GPU，是 TEP8 的 1.64×；跨配置统计，
+每个 PP8 节点的 prefill capacity 是 TEP8 的 1.45–1.72×。
+
+**TP 仍然用于 decode。** Decode 每步通常只有一个新 token，无法像长 prefill
+那样切出足够 chunks 灌满 PP；它又更在意单步延迟，因此让多卡共同完成当前一步的
+TP8 更合适。长上下文、高并发 decode 则进一步使用 DCP8 分摊 KV。于是 PD
+disaggregation 下的典型分工是：`PP8 prefill → TP8 / DCP8 decode`。PP 的代价
+是灌入和排空气泡，单请求或 chunk 太少时反而可能更慢。
 
 ### Decode context parallelism（DCP）
 
@@ -309,7 +321,9 @@ DCP 的提升主要来自**容量和并发**，不是让单条短请求更快：
 ### 性能数字：单请求 decode 与 serving frontier
 
 `BS=1` decode、整机 aggregate throughput 和每用户速度不是同一个口径。下图
-把它们分开：左边看 kernel 优化与 DSpark 如何缩短单请求 decode；右边看
-PD disaggregation 怎样在总吞吐和交互速度之间换配置。
+按 LMSYS 原文的两张实测图重画：左边是 15 轮 kernel / 通信优化把非投机
+BS=1 从 44.3 提到 112.5 tok/s（+154%），再单独标出 DSpark 约 423 tok/s；
+右边保留原文的 serving frontier 语义，展示 PD disaggregation 如何在总吞吐和
+每用户速度之间换配置。
 
 <ServingPerfViz client:visible />

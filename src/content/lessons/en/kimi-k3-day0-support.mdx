@@ -329,20 +329,35 @@ blog below.
 
 ### Chunked pipeline prefill
 
-**The problem is not merely more communication; all eight GPUs advance in
-lockstep.** TP8 splits every layer across eight ranks and waits for an
-AllReduce after each one, while the eight-way split also makes GEMMs narrower.
-Chunked PP8 instead cuts the 93 layers into eight stages and the long prompt
-into chunks. Once full, stages process different chunks concurrently and P2P
-hand-offs overlap the next chunk's compute:
+This is not a blanket claim that “PP is better than TP.” **The shape of prefill
+is particularly well suited to PP.** Prefill processes a whole long prompt, so
+there are many tokens to cut into chunks; it is dominated by large matrix
+multiplications and has enough work to fill a deep pipeline. TP8 instead keeps
+all eight GPUs in lockstep at every layer: it slices that layer eight ways,
+waits for an AllReduce, and makes each GEMM narrower. Chunked PP8 assigns runs
+of the 93 layers to G1–G8 and cuts the prompt into chunks, so each GPU runs
+complete layers while different GPUs advance different chunks.
+
+P2P in the figure means a **point-to-point activation hand-off**. After G1
+finishes C1, it sends C1's intermediate activation directly to G2, then starts
+C2. This is not an AllReduce involving all eight GPUs, so the transfer can hide
+behind computation of the next chunk:
 
 <PipelineViz client:visible lang="en" />
 
-The gain therefore has three sources: remove per-layer AllReduce, recover wide
-whole-layer GEMMs, and hide 91% of inter-stage P2P. The tradeoff is pipeline
-fill and drain bubbles; PP8 loses with one request or too few chunks, while
-long prompts and concurrent prefill amortize them. Measured PP8 node capacity
-is 1.45–1.72× TEP8.
+The gain has three sources: remove per-layer AllReduce, recover complete GEMMs
+that are eight times wider, and hide 91% of inter-stage P2P. In the source's 8K
+prefill run on 2×4 GB300 with topology as the only variable, a representative
+PP8×TP1 point reaches 5,958 input tok/s/GPU, 1.64× TEP8. Across configurations,
+one PP8 node has 1.45–1.72× the prefill capacity of a TEP8 node.
+
+**TP still serves decode.** Decode usually has only one new token per step, so
+it cannot create enough chunks to fill PP the way long prefill can; it is also
+more latency-sensitive, making TP8 collaboration on the current step a better
+fit. Long-context, high-concurrency decode can further use DCP8 to shard KV.
+The common PD-disaggregated split is therefore
+`PP8 prefill → TP8 / DCP8 decode`. PP still pays fill and drain bubbles and can
+lose with one request or too few chunks.
 
 ### Decode context parallelism (DCP)
 
@@ -364,8 +379,10 @@ TP/head-sharded.
 ### Performance numbers: single-request decode and the serving frontier
 
 BS=1 decode, aggregate system throughput, and per-user speed use different
-denominators. The figure separates them: the left shows how kernel work and
-DSpark shorten single-request decode; the right shows how PD disaggregation
-trades aggregate throughput for interactive speed.
+denominators. The figure redraws the two measurements in the LMSYS source: the
+left follows 15 kernel/communication rounds from 44.3 to 112.5 non-speculative
+BS=1 tok/s (+154%), then marks DSpark's separate ~423 tok/s result. The right
+keeps the source serving-frontier view of how PD disaggregation trades
+aggregate throughput for per-user speed.
 
 <ServingPerfViz client:visible lang="en" />

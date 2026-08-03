@@ -4,12 +4,14 @@ import "./styles.css";
 
 const RANKS = 8;
 const TP_ROUNDS = 3;
-const PP_COLUMNS = 15;
+const PP_CHUNKS = 5;
+const PP_COLUMNS = RANKS - 1 + PP_CHUNKS;
+const LAYER_RANGES = ["L1–12", "L13–24", "L25–36", "L37–48", "L49–60", "L61–72", "L73–84", "L85–93"];
 
 const COPY = {
   zh: {
     title: "Chunked pipeline prefill：先消掉每层同步，再把长 prompt 灌进流水线",
-    subtitle: "同样 8 张 GPU；上面是 naive TP8，下面是 SGLang 的 chunked PP8",
+    subtitle: "同样 8 张 GPU；prefill 从逐层同步的 TP8，切换为按层流水的 PP8",
     problem: "问题",
     solution: "解决",
     tpTitle: "Naive TP8：8 卡锁步计算同一层",
@@ -20,13 +22,24 @@ const COPY = {
     tpFact2: "通信处在关键路径",
     tpFact3: "GEMM 被切窄，效率下降",
     ppTitle: "Chunked PP8：模型按层切 8 段，prompt 再切成 chunks",
-    ppIntro: "每张卡执行完整的约 12 层；不同 stage 同时处理不同 chunk，stage 间只做 P2P 交接。",
-    stage: "S",
+    ppIntro: "G1–G8 各自执行一段完整层；长 prompt 切成 C1–C5，前一张 GPU 算完一个 chunk 后，把 activation 直接交给下一张。",
+    gpu: "G",
     chunk: "C",
-    ppCaption: "斜线 = 一个 chunk 逐段前进；同一列 = 8 个 stage 同时计算不同 chunks",
+    p2p: "P2P activation",
+    ppCaption: "斜线 = 同一 chunk 依次流过 G1→G8；P2P（point-to-point）= 相邻两张 GPU 直接传 activation，不需要 8 卡共同汇总。层号按 93 层近似均分示意。",
     ppFact1: "整层 GEMM，更宽更高效",
-    ppFact2: "P2P 的 91% 藏在下一 chunk 计算后面",
-    ppFact3: "每个 stage 只保留约 12 层的 KV/activation",
+    ppFact2: "P2P 的 91% 被下一 chunk 的计算隐藏",
+    ppFact3: "每张 GPU 只保留约 12 层的 KV/activation",
+    measuredTitle: "8K prefill 实测（2×4 GB300，仅改变并行拓扑）",
+    capacity: "每节点 prefill capacity",
+    tep8: "TEP8",
+    pp8: "PP8×TP1",
+    capacityBase: "1.00×",
+    capacityGain: "1.45–1.72×（代表点 1.64×）",
+    communication: "暴露在关键路径上的通信 / 1K tokens",
+    tp8Comm: "TP8 · 9.38 ms",
+    pp8Comm: "PP8 · 0.88 ms",
+    hidden: "约减少 91%",
     whyTitle: "为什么吞吐提高",
     why: "TP8 每层都停下来同步；PP8 只在 stage 边界传一次激活，而且传输可与下一块计算重叠。流水线灌满后，8 张卡不再合算同一个 chunk，而是同时推进 8 个不同 chunks。真机 prefill capacity 是 TEP8 的 1.45–1.72×。",
     tradeoffTitle: "Tradeoff",
@@ -34,7 +47,7 @@ const COPY = {
   },
   en: {
     title: "Chunked pipeline prefill: remove per-layer sync, then stream a long prompt",
-    subtitle: "The same 8 GPUs; naive TP8 above, SGLang chunked PP8 below",
+    subtitle: "The same 8 GPUs; prefill switches from layer-synchronous TP8 to layer-pipelined PP8",
     problem: "Problem",
     solution: "Solution",
     tpTitle: "Naive TP8: all 8 GPUs advance through the same layer in lockstep",
@@ -45,13 +58,24 @@ const COPY = {
     tpFact2: "Communication stays on the critical path",
     tpFact3: "Eight-way slicing makes GEMMs narrower",
     ppTitle: "Chunked PP8: split layers into 8 stages and the prompt into chunks",
-    ppIntro: "Each GPU executes about 12 complete layers. Different stages process different chunks concurrently, with only P2P hand-offs between stages.",
-    stage: "S",
+    ppIntro: "G1–G8 each execute a run of complete layers. The long prompt becomes C1–C5; after one chunk, a GPU sends its activation directly to the next GPU.",
+    gpu: "G",
     chunk: "C",
-    ppCaption: "Diagonal = one chunk moving through stages; one column = 8 stages computing different chunks together",
+    p2p: "P2P activation",
+    ppCaption: "Diagonal = one chunk streaming through G1→G8. P2P (point-to-point) means adjacent GPUs directly hand off activations; all eight do not collectively reduce them. Layer ranges illustrate an approximately even split of 93 layers.",
     ppFact1: "Whole-layer GEMMs are wider and more efficient",
     ppFact2: "91% of P2P transfer hides behind next-chunk compute",
     ppFact3: "Each stage holds KV/activations for only ~12 layers",
+    measuredTitle: "Measured 8K prefill (2×4 GB300; topology is the only variable)",
+    capacity: "Prefill capacity per node",
+    tep8: "TEP8",
+    pp8: "PP8×TP1",
+    capacityBase: "1.00×",
+    capacityGain: "1.45–1.72× (representative point: 1.64×)",
+    communication: "Exposed critical-path communication / 1K tokens",
+    tp8Comm: "TP8 · 9.38 ms",
+    pp8Comm: "PP8 · 0.88 ms",
+    hidden: "about 91% lower",
     whyTitle: "Why throughput improves",
     why: "TP8 stops for a collective after every layer. PP8 transfers activations only at stage boundaries, and that transfer overlaps the next chunk's compute. Once full, the eight GPUs advance eight different chunks instead of co-computing one. Measured prefill capacity is 1.45–1.72× TEP8.",
     tradeoffTitle: "Tradeoff",
@@ -83,27 +107,59 @@ function PpSchedule({ lang }: { lang: Locale }) {
   return (
     <div className="parallel-pp-schedule" aria-label={copy.ppTitle}>
       {Array.from({ length: RANKS }, (_, stage) => (
-        <div className="parallel-schedule-row" key={stage}>
-          <b>{copy.stage}{stage + 1}</b>
-          <span className="parallel-pp-track">
-            {Array.from({ length: PP_COLUMNS }, (_, column) => {
-              const chunk = column - stage;
-              const active = chunk >= 0;
-              return (
-                <i
-                  className={active ? "active" : "bubble"}
-                  key={column}
-                  style={active ? { background: seriesColor((chunk % 7) + 1) } : undefined}
-                  title={active ? `${copy.chunk}${chunk + 1}` : "bubble"}
-                >
-                  {active && `${copy.chunk}${chunk + 1}`}
-                </i>
-              );
-            })}
-          </span>
+        <div className="parallel-pp-stage" key={stage}>
+          <div className="parallel-schedule-row">
+            <b><strong>{copy.gpu}{stage + 1}</strong><small>{LAYER_RANGES[stage]}</small></b>
+            <span className="parallel-pp-track">
+              {Array.from({ length: PP_COLUMNS }, (_, column) => {
+                const chunk = column - stage;
+                const active = chunk >= 0 && chunk < PP_CHUNKS;
+                const before = column < stage;
+                return (
+                  <i
+                    className={active ? "active" : before ? "bubble" : "idle"}
+                    key={column}
+                    style={active ? { background: seriesColor((chunk % 5) + 1) } : undefined}
+                    title={active ? `${copy.chunk}${chunk + 1}` : before ? "pipeline bubble" : undefined}
+                  >
+                    {active && `${copy.chunk}${chunk + 1}`}
+                  </i>
+                );
+              })}
+            </span>
+          </div>
+          {stage < RANKS - 1 && (
+            <div className="parallel-p2p-row" aria-hidden="true">
+              <span />
+              <span className="parallel-p2p-track">
+                <i style={{ gridColumn: `${stage + 1} / span 2` }}>↘ {stage === 0 ? copy.p2p : "P2P"}</i>
+              </span>
+            </div>
+          )}
         </div>
       ))}
       <small>{copy.ppCaption}</small>
+    </div>
+  );
+}
+
+function GainChart({ lang }: { lang: Locale }) {
+  const copy = COPY[lang];
+  return (
+    <div className="parallel-gain-chart">
+      <b>{copy.measuredTitle}</b>
+      <div className="parallel-gain-columns">
+        <section>
+          <span>{copy.capacity}</span>
+          <div><em>{copy.tep8}</em><i><u style={{ width: "58%" }} /></i><output>{copy.capacityBase}</output></div>
+          <div><em>{copy.pp8}</em><i><u className="gain" style={{ width: "95%" }} /></i><output>{copy.capacityGain}</output></div>
+        </section>
+        <section>
+          <span>{copy.communication}</span>
+          <div><em>{copy.tp8Comm}</em><i><u className="cost" style={{ width: "100%" }} /></i></div>
+          <div><em>{copy.pp8Comm}</em><i><u className="cost low" style={{ width: "9.4%" }} /></i><output>{copy.hidden}</output></div>
+        </section>
+      </div>
     </div>
   );
 }
@@ -136,6 +192,7 @@ export default function PipelineViz({ lang = "zh" }: { lang?: Locale }) {
           <p>{copy.ppIntro}</p>
           <PpSchedule lang={lang} />
           <Facts items={[copy.ppFact1, copy.ppFact2, copy.ppFact3]} />
+          <GainChart lang={lang} />
         </section>
       </div>
 
