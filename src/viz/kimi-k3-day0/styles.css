@@ -494,20 +494,19 @@
 .parallel-gain-columns section {
   display: grid;
   min-width: 0;
+  grid-template-columns: max-content minmax(4rem, 1fr) max-content;
   gap: 0.3rem;
 }
 
 .parallel-gain-columns section > span {
+  grid-column: 1 / -1;
   color: var(--ink-2);
   font-size: 0.64rem;
   font-weight: 650;
 }
 
 .parallel-gain-columns section > div {
-  display: grid;
-  grid-template-columns: minmax(5.6rem, 0.65fr) minmax(5rem, 1fr) minmax(4rem, auto);
-  gap: 0.4rem;
-  align-items: center;
+  display: contents;
 }
 
 .parallel-gain-columns em,
@@ -822,10 +821,8 @@
 }
 
 .serving-frontier-y {
-  top: 0.5rem;
-  left: 0;
-  writing-mode: vertical-rl;
-  transform: rotate(180deg);
+  top: 0.25rem;
+  left: 1.4rem;
 }
 
 .serving-frontier-x {
@@ -838,6 +835,13 @@
   stroke: var(--ink);
   stroke-linecap: round;
   stroke-width: 4;
+}
+
+.serving-frontier-direction {
+  fill: var(--ink-2);
+  font-family: inherit;
+  font-size: 9px;
+  font-weight: 650;
 }
 
 .serving-frontier-throughput,
@@ -864,6 +868,56 @@
   color: var(--muted);
   font-size: 0.61rem;
   line-height: 1.5;
+}
+
+.serving-frontier-card > p b {
+  display: block;
+  margin-bottom: 0.15rem;
+  color: var(--ink);
+}
+
+.serving-frontier-values {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.35rem;
+}
+
+.serving-frontier-values > span {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  padding: 0.45rem;
+  border-top: 3px solid var(--series-1);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--series-1) 5%, var(--surface));
+}
+
+.serving-frontier-values > span:nth-child(2) {
+  border-top-color: var(--series-3);
+  background: color-mix(in srgb, var(--series-3) 5%, var(--surface));
+}
+
+.serving-frontier-values > span:nth-child(3) {
+  border-top-color: var(--series-4);
+  background: color-mix(in srgb, var(--series-4) 5%, var(--surface));
+}
+
+.serving-frontier-values b {
+  color: var(--ink);
+  font-size: 0.58rem;
+}
+
+.serving-frontier-values strong {
+  color: var(--accent);
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.serving-frontier-values small {
+  margin-top: 0.2rem;
+  color: var(--muted);
+  font-size: 0.5rem;
+  line-height: 1.35;
 }
 
 .serving-critical-path {
@@ -916,6 +970,10 @@
   .serving-source-grid,
   .parallel-gain-columns,
   .serving-critical-path {
+    grid-template-columns: 1fr;
+  }
+
+  .serving-frontier-values {
     grid-template-columns: 1fr;
   }
 

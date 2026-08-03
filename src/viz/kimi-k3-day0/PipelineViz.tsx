@@ -156,7 +156,7 @@ function GainChart({ lang }: { lang: Locale }) {
         </section>
         <section>
           <span>{copy.communication}</span>
-          <div><em>{copy.tp8Comm}</em><i><u className="cost" style={{ width: "100%" }} /></i></div>
+          <div><em>{copy.tp8Comm}</em><i><u className="cost" style={{ width: "100%" }} /></i><output /></div>
           <div><em>{copy.pp8Comm}</em><i><u className="cost low" style={{ width: "9.4%" }} /></i><output>{copy.hidden}</output></div>
         </section>
       </div>

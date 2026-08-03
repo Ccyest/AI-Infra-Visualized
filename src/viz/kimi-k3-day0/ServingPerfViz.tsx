@@ -19,8 +19,9 @@ const COPY = {
     dsparkNote: "不是让单个 kernel 快 3.7×，而是让 target 一步验证并接收多个 draft tokens。",
     frontierTitle: "PD disaggregation serving frontier",
     frontierContext: "GB300 · 8K input / 1K output · 69 个实测点",
-    yAxis: "整机吞吐更高",
-    xAxis: "每用户 decode 更快",
+    yAxis: "aggregate throughput（tok/s/GPU）↑",
+    xAxis: "每用户 decode 速度（tok/s/user）→",
+    direction: "增加独立 decode instances →",
     throughput: "吞吐端",
     throughputValue: "2,808 tok/s/GPU",
     throughputDetail: "18.7 tok/s/user · PP8 prefill → TP8 decode · FP4",
@@ -30,7 +31,8 @@ const COPY = {
     interactive: "交互端",
     interactiveValue: "116+ tok/s/user",
     interactiveDetail: "增加独立 TP8 decode instances",
-    frontierNote: "曲线只表达原文的 Pareto 方向；标注数字是原文实测锚点。增加 decode instances，会牺牲 aggregate throughput，换取更高的单用户速度。",
+    whyDown: "为什么曲线向下？",
+    frontierNote: "每个点是不同的部署配置，不是同一配置优化前后。向右增加独立 decode instances，会把固定 GPU 资源分给更少的并发用户：单用户速度提高，但整机 aggregate throughput 下降。",
     criticalTitle: "原文的优化判断",
     critical: "关键路径 AllReduce：省 1 μs，step 约省 1 μs",
     overlap: "藏在 overlap slack 的 kernel：省 1 μs，step 约省 0.1 μs",
@@ -50,8 +52,9 @@ const COPY = {
     dsparkNote: "This does not make one kernel 3.7× faster; the target verifies and accepts several draft tokens in one step.",
     frontierTitle: "PD-disaggregated serving frontier",
     frontierContext: "GB300 · 8K input / 1K output · 69 measured points",
-    yAxis: "higher aggregate throughput",
-    xAxis: "faster per-user decode",
+    yAxis: "aggregate throughput (tok/s/GPU) ↑",
+    xAxis: "per-user decode speed (tok/s/user) →",
+    direction: "add independent decode instances →",
     throughput: "Throughput end",
     throughputValue: "2,808 tok/s/GPU",
     throughputDetail: "18.7 tok/s/user · PP8 prefill → TP8 decode · FP4",
@@ -61,7 +64,8 @@ const COPY = {
     interactive: "Interactive end",
     interactiveValue: "116+ tok/s/user",
     interactiveDetail: "add independent TP8 decode instances",
-    frontierNote: "The curve only conveys the Pareto direction in the source figure; labels are measured anchors. More decode instances trade aggregate throughput for per-user speed.",
+    whyDown: "Why does the curve slope down?",
+    frontierNote: "Each point is a different deployment configuration, not a before/after optimization. Moving right gives fixed GPU capacity to fewer concurrent users: per-user speed rises, while aggregate system throughput falls.",
     criticalTitle: "The source's optimization rule",
     critical: "Critical-path AllReduce: save 1 μs, and the step saves ~1 μs",
     overlap: "Kernel inside overlap slack: save 1 μs, and the step saves ~0.1 μs",
@@ -111,7 +115,7 @@ function FrontierChart({ lang }: { lang: Locale }) {
       <h3>{copy.frontierTitle}</h3>
       <small>{copy.frontierContext}</small>
       <div className="serving-frontier-plot" role="img" aria-label={`${copy.throughputValue}; ${copy.interactiveValue}`}>
-        <span className="serving-frontier-y">↑ {copy.yAxis}</span>
+        <span className="serving-frontier-y">{copy.yAxis}</span>
         <svg viewBox="0 0 470 225" aria-hidden="true">
           <line x1="50" y1="18" x2="50" y2="190" className="serving-frontier-axis" />
           <line x1="50" y1="190" x2="448" y2="190" className="serving-frontier-axis" />
@@ -119,25 +123,19 @@ function FrontierChart({ lang }: { lang: Locale }) {
           <circle cx="82" cy="42" r="6" className="serving-frontier-throughput" />
           <circle cx="118" cy="55" r="6" className="serving-frontier-dcp" />
           <circle cx="420" cy="174" r="6" className="serving-frontier-interactive" />
-          <g transform="translate(118 8)">
-            <text className="serving-chart-label">{copy.throughput}</text>
-            <text y="17" className="serving-chart-value">{copy.throughputValue}</text>
-            <text y="33" className="serving-chart-muted">{copy.throughputDetail}</text>
-          </g>
-          <g transform="translate(148 82)">
-            <text className="serving-chart-label">{copy.dcp}</text>
-            <text y="17" className="serving-chart-value">{copy.dcpValue}</text>
-            <text y="33" className="serving-chart-muted">{copy.dcpDetail}</text>
-          </g>
-          <g transform="translate(245 153)">
-            <text className="serving-chart-label">{copy.interactive}</text>
-            <text y="17" className="serving-chart-value">{copy.interactiveValue}</text>
-            <text y="33" className="serving-chart-muted">{copy.interactiveDetail}</text>
-          </g>
+          <text x="70" y="28" className="serving-chart-label">{copy.throughput}</text>
+          <text x="122" y="48" className="serving-chart-label">DCP</text>
+          <text x="368" y="160" className="serving-chart-label">{copy.interactive}</text>
+          <text x="205" y="84" className="serving-frontier-direction">{copy.direction}</text>
         </svg>
-        <span className="serving-frontier-x">{copy.xAxis} →</span>
+        <span className="serving-frontier-x">{copy.xAxis}</span>
       </div>
-      <p>{copy.frontierNote}</p>
+      <div className="serving-frontier-values">
+        <span><b>{copy.throughput}</b><strong>{copy.throughputValue}</strong><small>{copy.throughputDetail}</small></span>
+        <span><b>{copy.dcp}</b><strong>{copy.dcpValue}</strong><small>{copy.dcpDetail}</small></span>
+        <span><b>{copy.interactive}</b><strong>{copy.interactiveValue}</strong><small>{copy.interactiveDetail}</small></span>
+      </div>
+      <p><b>{copy.whyDown}</b>{copy.frontierNote}</p>
     </section>
   );
 }
