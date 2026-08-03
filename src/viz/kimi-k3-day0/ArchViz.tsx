@@ -4,7 +4,7 @@ import type { Locale } from "../../lib/i18n";
 import { ARCH, ARCH_DETAILS } from "./strings";
 import "./styles.css";
 
-/** K3 整体结构图:输入 → (3 KDA + 1 MLA)×23 + MoE FFN → 输出,点击部件看说明 */
+/** K3 整体结构图：3:1 KDA/MLA 混排 + 8 个 AttnRes 深度分组。 */
 
 const TILE_W = 96;
 const GAP_X = 8;
@@ -13,13 +13,12 @@ const ATTN_Y = 66;
 const FFN_Y = 124;
 const TILE_H = 48;
 const WIDTH = 900;
-const HEIGHT = 236;
+const HEIGHT = 320;
 
 const LAYERS = ["kda", "kda", "kda", "mla"] as const;
 
 export default function ArchViz({ lang = "zh" }: { lang?: Locale }) {
   const [active, setActive] = useState("kda");
-  const detail = ARCH_DETAILS.find((d) => d.id === active)!;
 
   const tile = (
     id: string,
@@ -33,21 +32,24 @@ export default function ArchViz({ lang = "zh" }: { lang?: Locale }) {
     textFill = "var(--ink)",
   ) => {
     const selected = active === id;
-    const clickable = ARCH_DETAILS.some((d) => d.id === id);
+    const detail = ARCH_DETAILS.find((d) => d.id === id);
+    const clickable = Boolean(detail);
+    const selectedText = selected ? "var(--page)" : textFill;
     return (
       <g
         key={`${id}-${x}-${y}`}
         onClick={clickable ? () => setActive(id) : undefined}
         style={clickable ? { cursor: "pointer" } : undefined}
       >
+        {detail && <title>{detail.detail[lang]}</title>}
         <rect
           x={x}
           y={y}
           width={w}
           height={h}
           rx={8}
-          fill={fill}
-          stroke={selected ? "var(--accent)" : "var(--border)"}
+          fill={selected ? "var(--ink)" : fill}
+          stroke={selected ? "var(--ink)" : "var(--border)"}
           strokeWidth={selected ? 2.2 : 1}
         />
         <text
@@ -56,7 +58,7 @@ export default function ArchViz({ lang = "zh" }: { lang?: Locale }) {
           textAnchor="middle"
           fontSize="11"
           fontWeight={650}
-          fill={textFill}
+          fill={selectedText}
         >
           {label}
         </text>
@@ -66,8 +68,8 @@ export default function ArchViz({ lang = "zh" }: { lang?: Locale }) {
             y={y + h / 2 + 12}
             textAnchor="middle"
             fontSize="8.5"
-            fill={textFill === "var(--ink)" ? "var(--muted)" : textFill}
-            opacity={textFill === "var(--ink)" ? 1 : 0.85}
+            fill={selected ? "var(--page)" : textFill === "var(--ink)" ? "var(--muted)" : textFill}
+            opacity={selected || textFill === "var(--ink)" ? 1 : 0.85}
           >
             {sub}
           </text>
@@ -90,6 +92,42 @@ export default function ArchViz({ lang = "zh" }: { lang?: Locale }) {
   );
 
   const blockRight = BLOCK_X + 4 * (TILE_W + GAP_X) - GAP_X;
+  const groupStartX = BLOCK_X;
+  const groupStep = 50;
+  const groupWidth = 66;
+  const groupHeight = 44;
+  const groupBaseY = 250;
+
+  const attnBlock = (index: number) => {
+    const isTail = index === 7;
+    const layerCount = isTail ? 9 : 12;
+    const x = groupStartX + index * groupStep;
+    const y = groupBaseY - index * 2;
+    const layers = Array.from({ length: 12 }, (_, layer) => {
+      if (layer >= layerCount) return "empty";
+      if (isTail && layer === 8) return "mla";
+      return layer % 4 === 3 ? "mla" : "kda";
+    });
+    return (
+      <g key={`block-${index}`}>
+        <rect x={x} y={y} width={groupWidth} height={groupHeight} rx="8" fill="var(--surface)" stroke={isTail ? "var(--accent)" : "var(--border)"} strokeWidth={isTail ? 1.8 : 1.2} />
+        <text x={x + groupWidth / 2} y={y + 16} textAnchor="middle" fontSize="10" fontWeight="650" fill="var(--ink)">B{index + 1}</text>
+        {layers.map((kind, layer) => (
+          <rect
+            key={layer}
+            x={x + 6 + layer * 4.5}
+            y={y + 25}
+            width="3.5"
+            height="11"
+            rx="1.5"
+            fill={kind === "kda" ? "var(--series-1)" : kind === "mla" ? "color-mix(in srgb, var(--series-1) 36%, var(--surface))" : "var(--grid)"}
+          />
+        ))}
+        <line x1={x + groupWidth / 2} y1="223" x2={x + groupWidth / 2} y2={y} stroke="var(--axis)" strokeWidth="1" />
+        <circle cx={x + groupWidth / 2} cy="223" r="3.2" fill="var(--surface)" stroke="var(--axis)" strokeWidth="1.4" />
+      </g>
+    );
+  };
 
   return (
     <figure className="viz-stage" style={{ margin: "1.6rem 0" }}>
@@ -164,7 +202,7 @@ export default function ArchViz({ lang = "zh" }: { lang?: Locale }) {
             );
           })}
 
-          {/* 重复标注 */}
+          {/* 一个 4-layer pattern，重复三次构成一个 12-layer block */}
           <path
             d={`M ${BLOCK_X} ${FFN_Y + TILE_H + 12} h ${blockRight - BLOCK_X}`}
             stroke="var(--grid)"
@@ -181,47 +219,39 @@ export default function ArchViz({ lang = "zh" }: { lang?: Locale }) {
             {ARCH.repeat[lang]}
           </text>
 
-          {/* AttnRes:跨块取回弧线 */}
+          {/* 8 个 AttnRes groups：7 个完整 12-layer block + 9-layer tail = 93 层 */}
           <g onClick={() => setActive("attnres")} style={{ cursor: "pointer" }}>
-            <path
-              d={`M 192 ${92} Q ${(192 + blockRight) / 2} 18 ${blockRight - 40} ${ATTN_Y - 2}`}
-              fill="none"
-              stroke={active === "attnres" ? "var(--accent)" : "var(--axis)"}
-              strokeWidth={active === "attnres" ? 2.4 : 1.8}
-              strokeDasharray="5 4"
-              markerEnd="url(#arch-arrow)"
-            />
-            {/* 加宽的隐形点击区 */}
-            <path
-              d={`M 192 ${92} Q ${(192 + blockRight) / 2} 18 ${blockRight - 40} ${ATTN_Y - 2}`}
-              fill="none"
-              stroke="transparent"
-              strokeWidth={16}
-            />
+            <title>{ARCH_DETAILS.find((d) => d.id === "attnres")?.detail[lang]}</title>
             <text
-              x={(192 + blockRight) / 2}
-              y={34}
+              x={(groupStartX + groupStartX + 7 * groupStep + groupWidth) / 2}
+              y={216}
               textAnchor="middle"
               fontSize="10"
               fontWeight={active === "attnres" ? 700 : 400}
-              fill={active === "attnres" ? "var(--accent)" : "var(--muted)"}
+              fill={active === "attnres" ? "var(--ink)" : "var(--muted)"}
             >
               {ARCH.attnresArc[lang]}
             </text>
+            <line
+              x1={groupStartX + groupWidth / 2}
+              y1="223"
+              x2={groupStartX + 7 * groupStep + groupWidth / 2}
+              y2="223"
+              stroke={active === "attnres" ? "var(--ink)" : "var(--axis)"}
+              strokeWidth={active === "attnres" ? 3 : 1.6}
+              strokeLinecap="round"
+            />
+            <line x1={groupStartX} y1="207" x2={groupStartX + 7 * groupStep + groupWidth} y2="207" stroke="transparent" strokeWidth="26" />
           </g>
+          {Array.from({ length: 8 }, (_, index) => attnBlock(index))}
+          <text x={(groupStartX + groupStartX + 7 * groupStep + groupWidth) / 2} y="309" textAnchor="middle" fontSize="9.5" fill="var(--muted)">
+            {ARCH.blockCount[lang]}
+          </text>
 
           {/* 输出侧 */}
           {arrow(blockRight + 4, 115, blockRight + 40, 115)}
           {tile("out", blockRight + 42, 92, 82, 46, ARCH.outLabel[lang], undefined, "var(--surface)", "var(--ink-2)")}
         </svg>
-      </div>
-
-      <div className="map-detail" role="status">
-        <b>{detail.label[lang]}</b>
-        <span className="map-arrow" aria-hidden="true">
-          →
-        </span>
-        <span>{detail.detail[lang]}</span>
       </div>
     </figure>
   );

@@ -222,14 +222,24 @@ export const MOE = {
 export const ARCH = {
   title: { zh: "K3 整体结构", en: "K3 at a glance" },
   subtitle: {
-    zh: "一个重复块 = 3 层 KDA + 1 层 MLA，每层都带 LatentMoE FFN；点击部件看说明",
-    en: "One repeating block = 3 KDA + 1 MLA layers, each with a LatentMoE FFN; click a part for details",
+    zh: "KDA / MLA 按 3:1 交错；每 12 层保留一份 AttnRes 摘要，每层都带 LatentMoE FFN",
+    en: "KDA and MLA interleave 3:1; AttnRes keeps one summary every 12 layers, and every layer has a LatentMoE FFN",
   },
   hint: { zh: "点击图中部件", en: "Click a component" },
   vision: { zh: "视觉", en: "vision" },
   text: { zh: "文本 token", en: "text tokens" },
-  repeat: { zh: "×23 组，末尾再加 1 层 MLA，共 93 层", en: "×23 blocks plus one final MLA layer: 93 total" },
-  attnresArc: { zh: "AttnRes（每 12 层）", en: "AttnRes (every 12 layers)" },
+  repeat: {
+    zh: "一个完整 12-layer block = (3 KDA + 1 MLA) × 3",
+    en: "One full 12-layer block = (3 KDA + 1 MLA) × 3",
+  },
+  attnresArc: {
+    zh: "AttnRes 保留每个 block 的摘要",
+    en: "AttnRes keeps each block summary",
+  },
+  blockCount: {
+    zh: "B1–B7：各 12 层 · B8：末尾 9 层 · 共 93 层",
+    en: "B1–B7: 12 layers each · B8: 9-layer tail · 93 layers total",
+  },
   outLabel: { zh: "LM head", en: "LM head" },
 } satisfies Record<string, Localized>;
 
