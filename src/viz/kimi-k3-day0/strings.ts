@@ -228,9 +228,10 @@ export const ARCH = {
   hint: { zh: "点击图中部件", en: "Click a component" },
   vision: { zh: "视觉", en: "vision" },
   text: { zh: "文本 token", en: "text tokens" },
+  unitLabel: { zh: "4-layer unit（共四层）", en: "4-layer unit (4 layers total)" },
   repeat: {
-    zh: "一个完整 12-layer block = (3 KDA + 1 MLA) × 3",
-    en: "One full 12-layer block = (3 KDA + 1 MLA) × 3",
+    zh: "3 × 4-layer unit = 1 个 12-layer block",
+    en: "3 × 4-layer units = one 12-layer block",
   },
   attnresArc: {
     zh: "AttnRes 保留每个 block 的摘要",

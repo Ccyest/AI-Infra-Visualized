@@ -9,11 +9,11 @@ import "./styles.css";
 const TILE_W = 96;
 const GAP_X = 8;
 const BLOCK_X = 300;
-const ATTN_Y = 66;
-const FFN_Y = 124;
+const ATTN_Y = 72;
+const FFN_Y = 130;
 const TILE_H = 48;
 const WIDTH = 900;
-const HEIGHT = 320;
+const HEIGHT = 372;
 
 const LAYERS = ["kda", "kda", "kda", "mla"] as const;
 
@@ -34,7 +34,6 @@ export default function ArchViz({ lang = "zh" }: { lang?: Locale }) {
     const selected = active === id;
     const detail = ARCH_DETAILS.find((d) => d.id === id);
     const clickable = Boolean(detail);
-    const selectedText = selected ? "var(--page)" : textFill;
     return (
       <g
         key={`${id}-${x}-${y}`}
@@ -48,9 +47,9 @@ export default function ArchViz({ lang = "zh" }: { lang?: Locale }) {
           width={w}
           height={h}
           rx={8}
-          fill={selected ? "var(--ink)" : fill}
+          fill={fill}
           stroke={selected ? "var(--ink)" : "var(--border)"}
-          strokeWidth={selected ? 2.2 : 1}
+          strokeWidth={selected ? 3.2 : 1}
         />
         <text
           x={x + w / 2}
@@ -58,7 +57,7 @@ export default function ArchViz({ lang = "zh" }: { lang?: Locale }) {
           textAnchor="middle"
           fontSize="11"
           fontWeight={650}
-          fill={selectedText}
+          fill={textFill}
         >
           {label}
         </text>
@@ -68,8 +67,8 @@ export default function ArchViz({ lang = "zh" }: { lang?: Locale }) {
             y={y + h / 2 + 12}
             textAnchor="middle"
             fontSize="8.5"
-            fill={selected ? "var(--page)" : textFill === "var(--ink)" ? "var(--muted)" : textFill}
-            opacity={selected || textFill === "var(--ink)" ? 1 : 0.85}
+            fill={textFill === "var(--ink)" ? "var(--muted)" : textFill}
+            opacity={textFill === "var(--ink)" ? 1 : 0.85}
           >
             {sub}
           </text>
@@ -92,17 +91,17 @@ export default function ArchViz({ lang = "zh" }: { lang?: Locale }) {
   );
 
   const blockRight = BLOCK_X + 4 * (TILE_W + GAP_X) - GAP_X;
-  const groupStartX = BLOCK_X;
-  const groupStep = 50;
-  const groupWidth = 66;
-  const groupHeight = 44;
-  const groupBaseY = 250;
+  const groupStartX = 174;
+  const groupStep = 72;
+  const groupWidth = 62;
+  const groupHeight = 52;
+  const groupY = 292;
+  const summaryY = 280;
 
   const attnBlock = (index: number) => {
     const isTail = index === 7;
     const layerCount = isTail ? 9 : 12;
     const x = groupStartX + index * groupStep;
-    const y = groupBaseY - index * 2;
     const layers = Array.from({ length: 12 }, (_, layer) => {
       if (layer >= layerCount) return "empty";
       if (isTail && layer === 8) return "mla";
@@ -110,21 +109,22 @@ export default function ArchViz({ lang = "zh" }: { lang?: Locale }) {
     });
     return (
       <g key={`block-${index}`}>
-        <rect x={x} y={y} width={groupWidth} height={groupHeight} rx="8" fill="var(--surface)" stroke={isTail ? "var(--accent)" : "var(--border)"} strokeWidth={isTail ? 1.8 : 1.2} />
-        <text x={x + groupWidth / 2} y={y + 16} textAnchor="middle" fontSize="10" fontWeight="650" fill="var(--ink)">B{index + 1}</text>
+        <rect x={x} y={groupY} width={groupWidth} height={groupHeight} rx="8" fill="var(--surface)" stroke="var(--border)" strokeWidth="1.2" />
+        <text x={x + groupWidth / 2} y={groupY + 15} textAnchor="middle" fontSize="10" fontWeight="650" fill="var(--ink)">B{index + 1}</text>
+        <text x={x + groupWidth / 2} y={groupY + 27} textAnchor="middle" fontSize="7.5" fill="var(--muted)">{isTail ? "9L" : "12L"}</text>
         {layers.map((kind, layer) => (
           <rect
             key={layer}
-            x={x + 6 + layer * 4.5}
-            y={y + 25}
-            width="3.5"
-            height="11"
+            x={x + 7 + layer * 3.6 + Math.floor(layer / 4) * 2}
+            y={groupY + 34}
+            width="2.8"
+            height="10"
             rx="1.5"
             fill={kind === "kda" ? "var(--series-1)" : kind === "mla" ? "color-mix(in srgb, var(--series-1) 36%, var(--surface))" : "var(--grid)"}
           />
         ))}
-        <line x1={x + groupWidth / 2} y1="223" x2={x + groupWidth / 2} y2={y} stroke="var(--axis)" strokeWidth="1" />
-        <circle cx={x + groupWidth / 2} cy="223" r="3.2" fill="var(--surface)" stroke="var(--axis)" strokeWidth="1.4" />
+        <line x1={x + groupWidth / 2} y1={summaryY} x2={x + groupWidth / 2} y2={groupY} stroke="var(--axis)" strokeWidth="1" />
+        <circle cx={x + groupWidth / 2} cy={summaryY} r="3.2" fill="var(--surface)" stroke="var(--axis)" strokeWidth="1.4" />
       </g>
     );
   };
@@ -170,7 +170,11 @@ export default function ArchViz({ lang = "zh" }: { lang?: Locale }) {
           {tile("embed", 140, 92, 104, 46, "Embedding", "NoPE")}
           {arrow(244, 115, 296, 115)}
 
-          {/* 重复块:3 KDA + 1 MLA,每层带 MoE FFN */}
+          {/* 上图：一个独立的 4-layer unit */}
+          <rect x="286" y="46" width="438" height="142" rx="12" fill="none" stroke="var(--border)" strokeWidth="1.4" />
+          <rect x="300" y="40" width={lang === "zh" ? 136 : 150} height="20" rx="6" fill="var(--surface)" />
+          <text x="308" y="55" fontSize="10" fontWeight="650" fill="var(--ink)">{ARCH.unitLabel[lang]}</text>
+
           {LAYERS.map((kind, i) => {
             const x = BLOCK_X + i * (TILE_W + GAP_X);
             return (
@@ -202,29 +206,14 @@ export default function ArchViz({ lang = "zh" }: { lang?: Locale }) {
             );
           })}
 
-          {/* 一个 4-layer pattern，重复三次构成一个 12-layer block */}
-          <path
-            d={`M ${BLOCK_X} ${FFN_Y + TILE_H + 12} h ${blockRight - BLOCK_X}`}
-            stroke="var(--grid)"
-            strokeWidth="1.4"
-            fill="none"
-          />
-          <text
-            x={(BLOCK_X + blockRight) / 2}
-            y={FFN_Y + TILE_H + 28}
-            textAnchor="middle"
-            fontSize="10"
-            fill="var(--muted)"
-          >
-            {ARCH.repeat[lang]}
-          </text>
-
-          {/* 8 个 AttnRes groups：7 个完整 12-layer block + 9-layer tail = 93 层 */}
+          {/* 下图：3 个 4-layer unit 组成一个 12-layer block，AttnRes 保留各 block 摘要 */}
+          <rect x="140" y="210" width="620" height="156" rx="12" fill="color-mix(in srgb, var(--accent) 2%, var(--surface))" stroke="var(--border)" strokeWidth="1.4" />
+          <text x="160" y="233" fontSize="11" fontWeight="650" fill="var(--ink)">{ARCH.repeat[lang]}</text>
           <g onClick={() => setActive("attnres")} style={{ cursor: "pointer" }}>
             <title>{ARCH_DETAILS.find((d) => d.id === "attnres")?.detail[lang]}</title>
             <text
-              x={(groupStartX + groupStartX + 7 * groupStep + groupWidth) / 2}
-              y={216}
+              x="450"
+              y="271"
               textAnchor="middle"
               fontSize="10"
               fontWeight={active === "attnres" ? 700 : 400}
@@ -234,17 +223,17 @@ export default function ArchViz({ lang = "zh" }: { lang?: Locale }) {
             </text>
             <line
               x1={groupStartX + groupWidth / 2}
-              y1="223"
+              y1={summaryY}
               x2={groupStartX + 7 * groupStep + groupWidth / 2}
-              y2="223"
+              y2={summaryY}
               stroke={active === "attnres" ? "var(--ink)" : "var(--axis)"}
               strokeWidth={active === "attnres" ? 3 : 1.6}
               strokeLinecap="round"
             />
-            <line x1={groupStartX} y1="207" x2={groupStartX + 7 * groupStep + groupWidth} y2="207" stroke="transparent" strokeWidth="26" />
+            <line x1={groupStartX} y1={summaryY} x2={groupStartX + 7 * groupStep + groupWidth} y2={summaryY} stroke="transparent" strokeWidth="28" />
           </g>
           {Array.from({ length: 8 }, (_, index) => attnBlock(index))}
-          <text x={(groupStartX + groupStartX + 7 * groupStep + groupWidth) / 2} y="309" textAnchor="middle" fontSize="9.5" fill="var(--muted)">
+          <text x={(groupStartX + groupStartX + 7 * groupStep + groupWidth) / 2} y="359" textAnchor="middle" fontSize="9.5" fill="var(--muted)">
             {ARCH.blockCount[lang]}
           </text>
 
