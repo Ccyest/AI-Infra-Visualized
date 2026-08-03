@@ -1,6 +1,6 @@
 ---
 title: "Kimi K3：架构与 SGLang Day-0 Support"
-description: "上半篇讲 K3 架构：KDA、AttnRes 与 LatentMoE 怎么把 2.8T 参数和 1M 上下文的账算平；下半篇讲这套架构落到 serving 的适配：统一显存池、chunked PP prefill、DCP decode 与实测数字。"
+description: "Kimi K3 如何用 KDA、AttnRes 和 LatentMoE 支撑 2.8T 参数与 1M 上下文，以及 SGLang 如何用统一显存池、chunked PP 和 DCP 把这套混合架构跑起来。"
 order: 2
 concepts:
   - Kimi Delta Attention
@@ -38,292 +38,219 @@ import ServingPerfViz from "../../../viz/kimi-k3-day0/ServingPerfViz";
 
 ## Kimi K3 的架构
 
-K3 是 2.8T 参数的 MoE 模型，每 token 激活 104B；93 层里 69 层是 KDA 线性
-注意力，24 层是全局 MLA；原生 1M 上下文，权重以 MXFP4 格式发布。整体结构
-如下，点击图中部件可以看对应的说明：
+K3 是一个 2.8T 参数的 MoE 模型，每个 token 激活 104B 参数。它原生
+支持 1M 上下文，MoE expert 权重以 MXFP4 格式发布，推理激活使用 MXFP8。更值得看的是它怎么把这个规模
+的计算和显存账算平：93 层中，69 层是 KDA 线性注意力，24 层是全局
+MLA；每个 attention 层都配有 Stable LatentMoE FFN，Attention Residual 则跨 block
+聚合历史表示。点击下图可以先看完整结构：
 
 <ArchViz client:visible />
 
 ### 1M 上下文的 KV cache
 
-先算显存。按 MLA 压缩后 27 KB/token（24 层合计）线性外推，93 层全部用
-MLA 时，1M token 的一个请求要占约 110 GB；未压缩的 MHA 还要再大一个
-数量级。这个数字决定了大部分层不能保留 softmax attention。
+先算显存。MLA 压缩后，K3 的 24 层每个 token 合计约需 27KB KV cache。
+如果 93 层全部使用 MLA，单个 1M-token 请求要占约 110GB；未压缩的 MHA
+还要再大一个数量级。所以 K3 不能在大部分层保留随上下文增长的 softmax
+attention。
 
-K3 按 3 KDA + 1 MLA 交错。KDA 层的状态固定大小（整机约 0.4 GB/请求），
-每步原地覆写，不随上下文增长；MLA 层保留全局 attention，且全模型不加
-RoPE（NoPE），位置信息由 KDA 的递归隐式提供：
+K3 采用 3 KDA + 1 MLA 的交错结构。KDA 的递归状态大小固定，整机合计每请求
+约 0.4GB，每步原地更新；MLA 保留全局 attention。全模型不使用 RoPE（NoPE），
+位置信息由 KDA 的递归隐式提供：
 
 <CacheViz client:visible />
 
-24 层 MLA 在 1M token 时约 28 GB，是全 MLA 假想值的 1/3.9。计算量同理：
-softmax attention 每生成一个 token 要扫一遍全部历史(`O(N)`)，KDA 每步只
-更新固定大小的状态(`O(1)`)。
+24 层 MLA 在 1M token 时约需 28GB，是全 MLA 假想值的 1/3.9。计算量也同样：
+softmax attention 解码每个 token 都要扫遍历史（`O(N)`），KDA 只更新固定大小的
+状态（`O(1)`）。
 
 ### MHA：每步扫全部历史
 
-先看被换掉的东西。给一句话逐 token 解码：「猫追老鼠，因为它饿了」。第
-`N` 个 token 进来，和 cache 里之前 `N−1` 个 token 各做一次点积(图中的
-连线)：先得到分数 `zᵢ = qᵀkᵢ / √d`，再用 `aᵢ = softmax(z)ᵢ` 归一化，最后
-计算加权和 `o = Σᵢaᵢvᵢ`，然后把自己的 KV 追加进 cache。整句的点积次数
-累计约 `N²/2`：计算 `O(N²)`，cache `O(N)`。重点看 `t=6` 的「它」：
-指代对象是 5 个 token 之前的「猫」，权重就该聚在那里：
+先看 KDA 替代了什么。在普通 MHA 中，第 `N` 个 token 会与 cache 里前
+`N−1` 个 token 分别计算分数 `zᵢ = qᵀkᵢ / √d`，再经过 softmax 得到权重，
+读出 `o = Σᵢaᵢvᵢ`。整句话累计约有 `N²/2` 次点积，计算为 `O(N²)`，
+cache 为 `O(N)`。下图中，「它」可以直接把权重放到 5 个 token 之前的「猫」上：
 
 <MhaViz client:visible />
 
-这就是 softmax attention 的两面：每个历史位置都能独立打分，远距离不会因递归自动衰减；开销随
-上下文一路涨，1M token 的账上一节已经算过。
+softmax attention 换来了逐位置读取能力，代价是每个新 token 都要重新扫描全部历史。
 
 ### Linear attention：固定大小的状态
 
-线性注意力去掉 softmax，把所有历史写入先累加成固定大小的矩阵
-`S = Σᵢkᵢvᵢᵀ`。固定一个 head `h` 后，K3 的
-`kₜʰ ∈ ℝ¹²⁸`、`vₜʰ ∈ ℝ¹²⁸`，所以一次外积
-`kₜʰ(vₜʰ)ᵀ` 的形状是 `128×128`，累加得到的 `Sʰ` 也是 `128×128`；读取则用
-`qₜʰ ∈ ℝ¹²⁸` 计算 `oₜʰ = (Sʰ)ᵀqₜʰ`。S 本质是一个关联记忆矩阵：每个
-token 的 k 决定写进哪个方向，v 是写进去的内容。cache 没有了，每步只碰 S。
+线性注意力不再保存每个 token 的 KV，而是把历史写入累加到固定大小的矩阵
+`S = Σᵢkᵢvᵢᵀ` 里。可以把 S 看成关联记忆：k 决定写入方向，v 是写入的
+内容，q 再用 `o = Sᵀq` 读取。无论上下文多长，每步都只读写这个 S。
 
-这里的 `128` 不是整个 token embedding 宽度。K3 的 hidden size 是 `7168`，
-学习到的 Q/K/V 投影从它生成 `96` 个 KDA heads，每个 head 的
-dimension 是 `128`。这不是把 7168 个坐标原样切成 96 份，而是学习到的新
-特征空间。这里 `h` 是 head 的编号；先固定某个 head `h`，其中
-`chⱼ = kₜʰ[j]` 才表示这个 head 内 k 的第 `j` 个坐标，而不是“第 `j` 个
-head”。这 128 个坐标在 naive linear attention 里本来就存在，更准确地说是
-key feature dimensions；这里称为 channels，是为了和后面 KDA 的逐通道门控
-保持一致。naive 规则只按 `k[j]` 累加更新 `Sʰ` 的第 `j` 行，KDA 才额外用
-`Diag(αₜ)` 对这些行分别衰减：
+<details className="lesson-details">
+  <summary>数学细节：128×128 状态中的 head 和 channel</summary>
+  <p>K3 的 hidden size 是 <code>7168</code>。学习到的 Q/K/V 投影会生成 <code>96</code> 个 KDA heads，每个 head 的 <code>kₜʰ</code> 和 <code>vₜʰ</code> 都是 128 维，因此每个 head 的 <code>Sʰ</code> 是 <code>128×128</code>。这些 head 是学习到的特征空间，不是把 7168 个输入坐标原样切开。</p>
+  <p>固定 head <code>h</code> 后，<code>chⱼ = kₜʰ[j]</code> 表示这个 head 内的第 <code>j</code> 个 key 特征维度。增大 <code>dₖ</code> 会增加 key 特征轴，增大 <code>dᵥ</code> 会增加每条轴可保存的 value 宽度；每个 head 的状态和更新开销按 <code>dₖ×dᵥ</code> 增长。K3 取两者都为 128，即每个 head 有 16,384 个状态数。</p>
+</details>
 
 <StateChannelViz client:visible />
 
-`128` 是容量和开销之间的设计选择，不是 linear attention 的硬性规定。增大 `dₖ`
-会增加 key 特征轴，增大 `dᵥ` 会增加每条轴能存的 value 宽度；代价是每 head 的
-状态和更新开销按 `dₖ×dᵥ` 增长。K3 取两者都为 128，即每 head `16,384` 个
-状态数。理解这个状态后，同一句话再走一遍：
+再用和 MHA 相同的句子解码，可以直接看到两者的差别：
 
 <LinearFlowViz client:visible />
 
-切到“数学解释”时，图把真实的 <code>128×128</code> 状态压成
-<code>dₖ=2、dᵥ=1</code> 的二维切片：A/B 画成完整 key 箭头，ch₁/ch₂ 画成
-S 的两行。行内颜色只追踪不同写入对总值的贡献，真实 S 并不会分别保存这些
-彩色块。
-
-「它」这一步的差别就是全部要点：上一节有一条 0.72 的线直指「猫」，这里
-S 里没有位置轴，那条线画不出来，读出的是整段历史的混合。
+MHA 中，「它」有一条线可以直接指向「猫」；线性注意力的 S 没有 token 位置轴，
+读出的是历史写入在固定状态中的混合。
 
 ### DeltaNet：给固定状态加删除动作
 
-线性注意力的第一个问题不是“记不住”，而是“删不掉”。直接累加
-`S = Σ k·vᵀ` 时，同一个键方向写两次，旧值和新值会一起留在 S 里。比如
-这里的 A 不是 token，也不是 query，而是我们给状态空间中某个 **key 方向**
-起的示意名字。模型处理第一个写入 token 时，会从这个 token 算出 key 向量
-`k₁` 和 value 向量 `v₁`；图里把“`k₁` 指向 A 方向、`v₁` 表示数值 1”简写成
-`A=1`。因此 A 表示完整的 key 方向 `kₐ`，不是前图中的某一条 `chⱼ`。只有在
-one-hot 的最简特例里，`kₐ` 才会刚好与单个 channel 重合；真实的 `kₐ` 通常是
-跨许多 channel 的稠密向量。之后的 `A=4` 是另一个写入 token：它产生近似同方向的 `k₂`，但
-`v₂` 表示 4。`A?` 则是第三个读取 token，它产生的 query `q` 对准 A 方向，
-用 `Sᵀq` 读出这个方向当前绑定的 value。这些记号只是为了把向量运算画清楚，
-并不表示模型真的看到了名为 “A=1” 或 “A?” 的文本 token。
+直接累加的问题是状态只会写入，不会改写。同一个 key 方向先写入 1、再写入
+4，两个值都会留在 S 里，下次读取得到的是混合结果。
 
-若直接累加，`A=1` 和 `A=4` 对同一方向的贡献都会留在 S 中，下一次 `A?`
-读到的是两者的混合，而不是最新值。
-
-DeltaNet 把写入换成 delta rule：写新值之前，先用当前 k 从 S 里读出这个
-方向的旧值，算出“旧值和新值差多少”，再把差值写回去。常见写法是
-`Sₜ = Sₜ₋₁ + β·k·(v − Sₜ₋₁ᵀk)ᵀ`。若旧读出是 r，那么更新后的
-读出是 `r′ = r + β(v−r) = (1−β)r + βv`。因此它等价于擦掉 β 比例的旧
-关联，再写入 β 比例的新关联；只有 β=1 时才是完整替换。
-
-把一次改写拆开看：`A=4` 到来时，DeltaNet 先用 A 的 `k` 从状态里读出旧
-值 1，再计算差值 `4−1=3`。图里可以调 β；β=1 时矩阵更新既可以写成“旧读出
-`1 + (4−1) = 4`”，也可以拆成“减掉旧关联 1，再加入新关联 4”。二维状态
-行同时展示 A 与 B 对同一数值的贡献，避免把它们误画成两个独立槽位：
+DeltaNet 在写入前先读出旧值 r，然后只写入新旧差值：
+`Sₜ = Sₜ₋₁ + β·k·(v − Sₜ₋₁ᵀk)ᵀ`。更新后的读出为
+`r′ = (1−β)r + βv`；β 控制改写强度，β=1 时才完全替换旧关联。
 
 <DeltaRuleViz client:visible />
 
-但 DeltaNet 只解决“同键改写”。它没有回答另一个问题：固定大小的 S 被越来
-越多无关历史塞满以后，哪些内容该衰减、哪些内容该保留？这就是 KDA 要继续
-处理的部分。
+这解决了同方向改写，却还有一个容量问题：无关历史不断进入固定大小的 S 后，
+什么应该衰减？而且真实 key 向量并不完全正交，一个方向的写入会投影到另一个方向，
+产生串扰。
 
-这里还有一个必须先说清楚的现象：真实的 key 向量通常不完全正交。假设
-<code>q<sub>A</sub> = k<sub>A</sub></code>，状态里同时写入
-<code>k<sub>A</sub>v<sub>A</sub>ᵀ</code> 和 <code>k<sub>B</sub>v<sub>B</sub>ᵀ</code>，那么读 A 时：
-<code>o<sub>A</sub> = Sᵀq<sub>A</sub> = v<sub>A</sub> + (k<sub>A</sub>ᵀk<sub>B</sub>)v<sub>B</sub></code>。
-第二项就是 B 漏进 A 的串扰；它的大小由两个 key 的内积决定。下面把问题压成
-二维、取 <code>v<sub>A</sub> = v<sub>B</sub> = 1</code>：固定 A，
-拖动 B 改变夹角，观察 B 在 A 上的投影如何进入 S 的读出。
+<details className="lesson-details">
+  <summary>数学细节：图中的 A/B 和串扰项</summary>
+  <p>A 和 B 是 key 空间中的完整方向，不是 token 槽位或单个 channel。图中的 <code>A=1</code> 只是“k 指向 A，v 表示 1”的简写。彩色用来追踪不同写入的贡献，真实 S 只保存它们的和。</p>
+  <p>若 <code>q<sub>A</sub> = k<sub>A</sub></code>，且 S 中同时有 <code>k<sub>A</sub>v<sub>A</sub>ᵀ</code> 与 <code>k<sub>B</sub>v<sub>B</sub>ᵀ</code>，则 <code>o<sub>A</sub> = Sᵀq<sub>A</sub> = v<sub>A</sub> + (k<sub>A</sub>ᵀk<sub>B</sub>)v<sub>B</sub></code>。第二项就是 B 漏进 A 的串扰，大小取决于两个 key 的内积。</p>
+</details>
 
 <KeyOverlapViz client:visible />
 
 ### KDA：delta rule 加逐通道门控
 
-KDA 可以理解成两层改动叠在一起：底层仍然是 DeltaNet 的“先擦后写”，解决
-同键重绑定；上层再加一个由当前 token 算出的逐通道门 `Diag(αₜ)`。完整顺序
-是先衰减进入本步的旧状态，再做 delta update：
-`Sₜ = (I−βₜkₜkₜᵀ)·Diag(αₜ)·Sₜ₋₁ + βₜkₜvₜᵀ`。
+KDA 把两个动作叠在一起：先用由当前 token 算出的 `Diag(αₜ)` 按 channel 衰减旧
+状态，再执行 DeltaNet 的改写。这让模型自己学会哪些状态应该保留，哪些可以更快
+让出容量。
 
-这里的 α 不是给“A、B 这些变量”各发一个开关。真实状态是矩阵
-<code>S ∈ ℝ<sup>dₖ×dᵥ</sup></code>，门控是向量
-<code>αₜ ∈ (0,1)<sup>dₖ</sup></code>；它的每一项缩放 S 的一条 key channel。
-KDA 也不会把不正交的 key 自动旋转成正交；它做的是在新写入之前，按通道
-缩小旧状态，让某些旧成分对后续读出的影响衰减。下图仍沿用 A/B 的完整 key
-方向，并用与 Naive / DeltaNet 相同的
-`A=1 → B=2 → A=4 → qₐ?` 展开二维最小例子：
-<code>k<sub>A</sub>=(1/√2)[1,1]ᵀ</code>、
-<code>k<sub>B</sub>=(1/√2)[1,−1]ᵀ</code>，所以 A/B 都横跨 ch₁/ch₂，绝不等于
-其中某一条 channel。
-
-在 A=4 到来前，A=1 和 B=2 已经叠加成同一个 S；图中只为了追踪来源才保留
-两种颜色。<code>Diag(α)</code> 先把 ch₁/ch₂ 两行分别乘以 α₁/α₂，因此每行中
-A 与 B 的历史贡献会一起缩小。随后仍然执行正常的 delta rule：沿完整 kₐ
-读出门控后的旧关联，再以 β=1 写入通往目标值 4 的残差。因此最后 qₐ 仍读到
-4，而 qᵦ 的变化展示逐通道衰减如何影响另一个完整 key 方向：
+<details className="lesson-details">
+  <summary>数学细节：KDA 如何门控和改写同一个 S</summary>
+  <p>完整更新为 <code>Sₜ = (I−βₜkₜkₜᵀ)·Diag(αₜ)·Sₜ₋₁ + βₜkₜvₜᵀ</code>。其中 <code>αₜ ∈ (0,1)<sup>dₖ</sup></code>，每一项缩放 S 的一条 key channel。它不会直接选择 A 或 B，也不会把 key 旋转成正交；同一行里所有历史贡献都会被一起缩放。</p>
+  <p>下图把真实状态压成二维：<code>k<sub>A</sub>=(1/√2)[1,1]ᵀ</code>、<code>k<sub>B</sub>=(1/√2)[1,−1]ᵀ</code>。A/B 都横跨 ch₁/ch₂。门控先缩放两行，delta rule 再沿完整 <code>k<sub>A</sub></code> 写入到目标值 4 所需的残差。</p>
+</details>
 
 <KdaGateViz client:visible />
 
-任务还可能用到的通道可以慢慢衰减，明显过期或话题外的通道可以更快让出
-容量。Kimi Linear 论文把这个门控解释为一种可学习的位置编码，取代 RoPE 的
-固定旋转；配套的 chunkwise kernel 在受约束的 DPLR 形式下比通用实现快约
-一倍，KDA 才能铺满 69 层。
+Kimi Linear 论文还把这种门控解释为可学习的位置编码，用它取代 RoPE 的固定旋转。
+配套 chunkwise kernel 在受约束的 DPLR 形式下比通用实现快约一倍，让 KDA 能够铺到 69 层。
 
 ### Attention Residual
 
-先说“Transformer 每层的 residual 向后传”到底是什么意思。普通第 ℓ 层不是
-只输出新计算的 <code>F<sub>ℓ</sub>(h<sub>ℓ−1</sub>)</code>，而是把层输入直接加回来：
+普通 Transformer 会把每层更新累加到同一条 residual stream。模型越深，浅层信息就越需要
+在几十次相加后仍然可辨认。
 
-<code>h<sub>ℓ</sub> = h<sub>ℓ−1</sub> + F<sub>ℓ</sub>(h<sub>ℓ−1</sub>)</code>。
-
-这个相加结果再成为下一层输入。一路展开后，深层拿到的是 embedding 和所有
-中间更新累加而成的**一个向量**，而不是可以分别访问的“第 2 层输出、第 17 层
-输出、第 53 层输出”。普通 residual 的优点是恒等路径让信息和梯度容易通过；
-瓶颈则是所有深度历史都压进同一条 residual stream。浅层特征要传到第 93 层，
-必须在沿途几十次更新和相加后仍然能从这个混合向量里被辨认出来。
-
-Attention Residual 不删除组内的普通 residual，而是额外建立一条**跨深度检索
-路径**。K3 每 12 层组成一个 block，把 embedding 和之前各 block 的输出分别
-保留；到后面的 block 时，用该 block 学到的 pseudo-query 给这些旧表示计算权重
-<code>α<sub>ℓi</sub></code>，再形成
-<code>r<sub>ℓ</sub> = Σ<sub>i&lt;ℓ</sub> α<sub>ℓi</sub>v<sub>i</sub></code>。
-这里的“取回”不是硬选择某一层，而是对 embedding 和多个旧 block 摘要做
-softmax 加权混合：有用摘要权重大，无关摘要权重小。深层因此不必只依赖一条
-已经累加很多次的混合流：
+K3 保留组内的普通 residual，同时每 12 层保存一份 block 输出。后面的 block 使用
+学到的 pseudo-query 给 embedding 和这些历史摘要分配权重，直接取回当前最有用的
+浅层表示：
 
 <AttnResViz client:visible />
 
-因此它比传统方案多了两点能力：信息路径更短，深层到浅层不必经过每个中间层；
-选择是内容相关的，不同深层 block 可以取回不同历史表示。它缓解的是“深度方向
-的压缩与干扰”，不是把普通 residual 整体替换掉。
+这条路径更短，且不同深层 block 可以取回不同的历史表示。
 
-**Tradeoff 是保存粒度与系统成本。** 保存每一层输出的 Full AttnRes 选择最细，
-但每个 token 要保留并读取更多深度状态，还会增加显存、带宽和 pipeline 通信；
-Block AttnRes 只保存每组的累计摘要，把状态从随层数增长的
-<code>O(Ld)</code> 降到 <code>O(Nd)</code>。block 越小，取回越精细但越贵；
-block 越大，越便宜但组内各层已经相加，无法再单独取回。K3 每 12 层压成一份
-摘要，约在 8 份 block 历史之间做选择，就是在效果和成本之间取中间点。原论文
-的优化实现中，典型推理延迟开销低于 2%，使用 pipeline parallelism 时训练墙钟
-开销低于 4%，代价是需要额外缓存、通信与两阶段计算逻辑。
+<details className="lesson-details">
+  <summary>数学与成本：为什么 K3 每 12 层保存一份摘要</summary>
+  <p>对后续 block ℓ，pseudo-query 计算权重 <code>α<sub>ℓi</sub></code>，再取回 <code>r<sub>ℓ</sub> = Σ<sub>i&lt;ℓ</sub> α<sub>ℓi</sub>v<sub>i</sub></code>。这是对 embedding 和历史 block 摘要的 softmax 加权混合，不是硬选某一层。</p>
+  <p>Full AttnRes 保存每层输出，取回粒度最细，但显存、带宽和 pipeline 通信都更贵。Block AttnRes 只保存每组摘要，把状态从 <code>O(Ld)</code> 降到 <code>O(Nd)</code>。K3 每 12 层取一份摘要；优化实现的典型推理延迟开销低于 2%，pipeline parallelism 下的训练墙钟开销低于 4%。</p>
+</details>
 
 ### LatentMoE
 
-FFN 全部是 MoE：896 个 routed expert 每 token 选 16 个，另有 2 个每个
-token 都经过的 shared expert。只看 routed pool，选中比例是
-`16/896 ≈ 1.8%`；另一个整模型口径下，每 token 激活的参数比例是
-`104B/2.8T ≈ 3.7%`。两者分母不同；对比 K2 的 384 选 8，稀疏度进一步提高。
+K3 的 FFN 全部使用 MoE：896 个 routed experts 中每个 token 选 16 个，另有 2 个
+shared experts 始终激活。因此 routed pool 的选中比例是 `16/896 ≈ 1.8%`；
+整模型每 token 激活参数的另一个口径是 `104B/2.8T ≈ 3.7%`。
 
-路由和分发不在 7168 维 hidden 上做：先降到 3584 维隐空间，router 在半宽
-向量上打分，expert 也在半宽上计算，最后升回 7168 维。16 份 dispatch 的
-all-to-all 流量和 expert 权重体积都省一半：
+路由和 expert 计算会先从 7168 维 hidden 降到 3584 维隐空间，最后再升回原宽度。
+这使 16 份 dispatch 的 all-to-all 流量和 expert 权重体积都减半：
 
 <MoeViz />
 
-只选 routed pool 的 1.8% 时，训练容易不稳定。报告用了三个手段：RMSNorm、
-有界的 SiTU-GLU 激活，以及 Quantile Balancing（expert 配额直接从 router
-分数的分位数导出，不需要再调 aux-loss 系数）。
+高稀疏度会让训练更难稳定。K3 用 RMSNorm、有界 SiTU-GLU 和 Quantile Balancing 来
+稳定路由，其中 expert 配额直接由 router 分数的分位数导出。
 
 ### 训练侧
 
-- 量化感知训练从 SFT 阶段开始，MXFP4 权重 + MXFP8 激活，发布的权重就是
-  低精度格式；
-- 优化器是 Per-Head Muon，按 attention head 独立做正交化更新；
-- 1M 上下文按课程拉长：8K → 64K → 256K → 1M；
-- RL 覆盖 general、agentic、coding 三个域和多档 reasoning effort；工具、
-  prompt、memory、subagent 等 scaffold 在训练中持续变化，避免模型只适应
-  单一工作流。
+训练侧还有四个值得记住的选择：从 SFT 开始，对 MoE expert 权重及其输入激活分别做
+MXFP4 和 MXFP8 量化感知训练；用 Per-Head Muon 按 attention head 做正交化更新；按
+8K → 64K → 256K → 1M 逐步拉长上下文；RL 则覆盖 general、agentic 和 coding 等多种工作流。
+
+**读完 K3 架构部分，你应该能回答：**
+
+- 为什么 1M 上下文不能让 93 层全部使用全局 softmax attention？
+- DeltaNet 和 KDA 分别解决固定状态的哪个问题？
+- Attention Residual 和 LatentMoE 分别如何处理深度信息和稀疏计算？
 
 ## SGLang 的 Day-0 适配
 
-上面的架构落到推理引擎里，首先要处理的是两种性质不同的推理状态：
+K3 的混合架构会产生两种生命周期完全不同的推理状态：
 
 | | MLA（24 层） | KDA（69 层） |
 | --- | --- | --- |
 | 状态形式 | KV cache，逐 token 追加 | 递归状态，固定大小 |
-| 增长方式 | 每 token 约 27 KB，只增不减 | 每请求约 54 MB（`TP=8`），每步原地覆写 |
+| 增长方式 | 每 token 约 27KB，只增不减 | 每请求约 54MB（`TP=8`），每步原地覆写 |
 
-KV 逐 token 追加、按页共享这些默认假设对 KDA 都不成立，SGLang 的适配从
-这里开始。
+MLA 的 KV 随 token 追加，KDA 的状态却按请求固定占用并且每步覆写。这个差异一路
+传到显存分配、prefill 并行和 decode 扩容，也构成了 SGLang Day-0 适配的主线。
 
 ### 双状态显存管理
 
-旧方案在启动时把显存池按预估切成 KDA 区和 MLA 区。问题是 KDA 需求只跟并发数
-相关，MLA 需求跟总上下文长度相关，负载一偏就会一侧耗尽、另一侧闲置。SGLang
-改成统一池：KDA 固定块从左端分配，MLA 页从右端分配，中间是一段连续的空闲区，
-按需取用：
+旧方案在启动时预先切出 KDA 区和 MLA 区。但 KDA 需求取决于并发数，MLA 需求取决于
+总上下文长度，一旦负载偏离预估，就会出现一边耗尽、另一边空着的情况。SGLang
+把两者放进同一个池：KDA 固定块从左边分配，MLA 页从右边分配，共用中间的空闲区：
 
 <PoolViz client:visible />
 
-注意 t=14：静态双池的 MLA 区耗尽，R2 生成到一半被驱逐，而 KDA 区还空着 6 页。
-统一池在同一时刻没有任何失败。
+在图中的 t=14，静态双池已经耗尽 MLA 区并驱逐 R2，KDA 区却还空着 6 页；
+统一池仍然可以继续运行所有请求。
 
-前缀缓存（radix tree）这边，KDA 状态会被原地覆写，不能像 KV 那样直接共享。
-SGLang 用三个操作管理它：copy-on-write（使用共享 checkpoint 前先拷到私有槽）、
-snapshot（乒乓缓冲抓快照）、donate（按槽位索引捐给 radix tree）。整套设计
-按构造无竞态，细节见文末博客。
+前缀缓存也要随之改变：KDA 状态会被原地覆写，无法像 KV 那样直接共享。SGLang
+用 copy-on-write、snapshot 和 donate 管理 radix tree 上的 KDA checkpoint，避免共享状态被
+请求相互覆写。
 
 ### Chunked pipeline prefill
 
-这里不是笼统地说“PP 比 TP 好”，而是 **prefill 的任务形态更适合 PP**。
-Prefill 一次处理整段长 prompt，天然有大量 token 可以切成 chunks；计算以大矩阵
-乘为主，也有足够工作把深流水线灌满。TP8 却让 8 张卡在每一层锁步：同一层的
-计算切成 8 份，每层结束都等 AllReduce，GEMM 也被切窄。chunked PP8 改为把
-93 层按深度分给 G1–G8，再把 prompt 切成 chunks。每张 GPU 跑一段完整层，
-不同 GPU 同时推进不同 chunk。
-
-图中的 P2P 是 **point-to-point activation hand-off**：G1 算完 C1 后，把 C1 的
-中间 activation 直接发给 G2；G1 随即开始算 C2。它不是 8 张卡共同参与的
-AllReduce，因此这次传输可以藏在下一 chunk 的计算后面：
+Prefill 一次处理大量 prompt tokens，有足够工作可以切成 chunks 灌满流水线。TP8
+让 8 张卡在每层锁步，每层都需要 AllReduce，同时还把 GEMM 切窄。Chunked PP8
+则把 93 层按深度分给 G1–G8，让不同 GPU 同时处理不同 chunk。GPU 之间只传递上一段
+层的 activation，这些 P2P 传输可以与下一 chunk 的计算重叠：
 
 <PipelineViz client:visible />
 
-所以提升来自三件事：移除每层 AllReduce、恢复完整且宽 8 倍的整层 GEMM、隐藏
-91% 的 stage 间 P2P。原文在 8K prefill、2×4 GB300、仅改变拓扑的对比中，
-PP8×TP1 的代表点达到 5,958 input tok/s/GPU，是 TEP8 的 1.64×；跨配置统计，
-每个 PP8 节点的 prefill capacity 是 TEP8 的 1.45–1.72×。
+这套分工移除了每层 AllReduce，恢复整层宽 GEMM，并隐藏 91% 的 stage 间 P2P。
+在 8K prefill、2×4 GB300 的同拓扑对比中，PP8×TP1 的代表点达到
+5,958 input tok/s/GPU，是 TEP8 的 1.64×；跨配置的 prefill capacity 提升为
+1.45–1.72×。
 
-**TP 仍然用于 decode。** Decode 每步通常只有一个新 token，无法像长 prefill
-那样切出足够 chunks 灌满 PP；它又更在意单步延迟，因此让多卡共同完成当前一步的
-TP8 更合适。长上下文、高并发 decode 则进一步使用 DCP8 分摊 KV。于是 PD
-disaggregation 下的典型分工是：`PP8 prefill → TP8 / DCP8 decode`。PP 的代价
-是灌入和排空气泡，单请求或 chunk 太少时反而可能更慢。
+Decode 每步通常只有一个新 token，不足以灌满深流水线，而且更在意单步延迟，所以
+TP8 仍然更合适。PD disaggregation 下的典型分工是
+`PP8 prefill → TP8 / DCP8 decode`。PP 也会产生灌入和排空气泡，当请求或 chunk
+太少时并不占优。
 
 ### Decode context parallelism（DCP）
 
-**问题是 MLA 只有一个 KV head，TP 无法按 head 分片。** 于是 TP8 的每张卡都
-复制完整 MLA KV：GPU 数量增加了，能留在显存里的逻辑上下文却没有增加。DCP
-改按 token 位置取模分片；每步先在本地 1/N KV 上算 partial attention，再用
-一次 packed all-to-all 交换 partial output 和 log-sum-exp，最后精确合并：
+MLA 虽然有多个 attention heads，但所有 heads 共享同一份压缩 KV latent，
+cache 没有可供 TP 按 head 分片的轴。因此 TP8 的每张卡都复制完整 MLA KV
+latent，增加 GPU 也不会增加逻辑上下文容量。DCP 改为按 token 位置分片：
+每张卡先在本地 1/N KV 上计算 partial attention，再通过一次 packed all-to-all 精确合并：
 
 <DcpViz client:visible />
 
-DCP 的提升主要来自**容量和并发**，不是让单条短请求更快：更多长会话留在 GPU，
-就不会因为 host offload / re-prefill 导致吞吐坍塌。K3 上 DCP8 把逻辑容量从
-1.5M 提到 12.2M tokens（7.9×），48 个 agent sessions 达到 541 tok/s；代价是
-每个 MLA 层多一次 all-to-all。KDA 状态没有位置轴，仍按 TP/head 切分。
+DCP 主要增加容量和并发，不是降低单条短请求的延迟。它让更多长会话留在 GPU，避免
+host offload 和 re-prefill 造成吞吐坍塌。K3 上，DCP8 把逻辑容量从 1.5M 提到
+12.2M tokens（7.9×），48 个 agent sessions 达到 541 tok/s。代价是每个 MLA 层多一次
+all-to-all；KDA 状态没有 token 位置轴，仍按 TP/head 切分。
 
 ### 性能数字：单请求 decode 与 serving frontier
 
-`BS=1` decode、整机 aggregate throughput 和每用户速度不是同一个口径。下图
-按 LMSYS 原文的两张实测图重画：左边是 15 轮 kernel / 通信优化把非投机
-BS=1 从 44.3 提到 112.5 tok/s（+154%），再单独标出 DSpark 约 423 tok/s；
-右边保留原文的 serving frontier 语义，展示 PD disaggregation 如何在总吞吐和
-每用户速度之间换配置。
+`BS=1` decode、整机 aggregate throughput 和每用户速度是三种不同口径。下图左边展示
+15 轮 kernel/通信优化如何把非投机 `BS=1` 从 44.3 提到 112.5 tok/s，并单独标出
+DSpark 的约 423 tok/s；右边是 PD disaggregation 在总吞吐与每用户速度之间的
+serving frontier。
 
 <ServingPerfViz client:visible />
+
+**读完 serving 部分，你应该能回答：**
+
+- 为什么 KDA 和 MLA 分开预留显存会造成浪费？
+- 为什么长 prefill 适合 chunked PP，decode 却仍然以 TP 为主？
+- DCP 为什么能提高长上下文容量，却不一定让单条短请求更快？

@@ -27,7 +27,7 @@ const BETAS = [1, 0.8, 0.5, 0.3, 0] as const;
 
 const COPY = {
   title: { zh: "DeltaNet：沿完整 key 方向先读、再擦、后写", en: "DeltaNet: read, erase, and write along a full key direction" },
-  subtitle: { zh: "A / B 是二维 key 箭头；S 的两行是 ch₁ / ch₂，所有历史贡献在行内相加", en: "A / B are 2D key arrows; the two rows of S are ch₁ / ch₂, where all historical contributions add" },
+  subtitle: { zh: "调整 β，观察 A=4 如何改写 A=1", en: "Adjust β and see how A=4 rewrites A=1" },
   before: { zh: "本步进入的 S", en: "S entering this step" },
   after: { zh: "本步结束后的 S", en: "S after this step" },
 };
@@ -87,9 +87,9 @@ export default function DeltaRuleViz({ lang = "zh" }: { lang?: Locale }) {
       footer={
         <div className="viz-verdict">
           {lang === "zh" ? <>
-            当 A=4 到来时，S 里没有可单独删除的“A 槽”。DeltaNet 用完整 <code>kₐ</code> 读出旧关联 1，再沿同一方向写入 <code>β(4−1)</code>。图中 A/B 的颜色只是把同一行总值按来源拆开给人看；真实 S 只保存相加结果。
+            DeltaNet 用完整 <code>kₐ</code> 读出旧值 1，再沿同一方向写入 <code>β(4−1)</code>。颜色只追踪贡献来源；真实 S 保存它们的和。
           </> : <>
-            When A=4 arrives, S has no separate “A slot” to delete. DeltaNet reads the old association 1 with the full <code>kₐ</code>, then writes <code>β(4−1)</code> along that same direction. A/B colors only expose provenance inside each row; the real S stores the sums.
+            DeltaNet reads the old value 1 with the full <code>kₐ</code>, then writes <code>β(4−1)</code> along the same direction. Colors trace provenance; the real S stores their sum.
           </>}
         </div>
       }

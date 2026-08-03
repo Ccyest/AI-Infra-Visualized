@@ -214,8 +214,8 @@ export const MOE = {
   statParams: { zh: "整模型参数激活率（另一分母）", en: "whole-model parameter activation (different denominator)" },
   statLatent: { zh: "expert 计算宽度", en: "expert compute width" },
   verdict: {
-    zh: "这张饼图只回答一件事：一个 token 在 896 个 routed expert 中只选 16 个。104B / 2.8T 是整模型层面的参数比例，不能当成同一张饼的另一块。LatentMoE 再把 expert 计算放到 3584 维隐空间，最后投影回 7168 维。",
-    en: "This pie answers one question only: each token chooses 16 of 896 routed experts. The 104B / 2.8T figure is a whole-model parameter ratio, not another slice of this pie. LatentMoE additionally runs expert computation in a 3584-d latent space before projecting back to 7168-d.",
+    zh: "每个 token 只选中 896 个 routed experts 中的 16 个。LatentMoE 在 3584 维隐空间中完成 expert 计算，再投影回 7168 维。",
+    en: "Each token selects only 16 of 896 routed experts. LatentMoE runs expert computation in a 3584-d latent space, then projects back to 7168-d.",
   },
 } satisfies Record<string, Localized>;
 
@@ -252,16 +252,16 @@ export const ARCH_DETAILS: ArchDetail[] = [
     id: "mxfp4",
     label: { zh: "MXFP4", en: "MXFP4" },
     detail: {
-      zh: "从 SFT 阶段起做量化感知训练，MXFP4 权重、MXFP8 激活，发布的权重就是低精度格式。",
-      en: "Quantization-aware training from the SFT stage on: MXFP4 weights, MXFP8 activations; the released weights are already low-precision.",
+      zh: "从 SFT 阶段起做量化感知训练：MoE expert 权重使用 MXFP4、输入激活使用 MXFP8；attention、LatentMoE projection、shared expert 和 router 等非 expert 模块保持更高精度。",
+      en: "Quantization-aware training starts at SFT: MoE expert weights use MXFP4 and their input activations use MXFP8; non-expert modules such as attention, LatentMoE projections, shared experts, and routers stay at higher precision.",
     },
   },
   {
     id: "vision",
-    label: { zh: "MoonViT3d", en: "MoonViT3d" },
+    label: { zh: "MoonViT-V2", en: "MoonViT-V2" },
     detail: {
-      zh: "原生视觉塔，图像/视频编码后与文本 token 一起进入主干。",
-      en: "The native vision tower; image and video tokens enter the trunk alongside text.",
+      zh: "K3 的原生视觉塔；图像和视频经过编码与轻量 projector 后进入共享 embedding 空间。",
+      en: "K3's native vision tower; images and videos enter the shared embedding space through the encoder and a lightweight projector.",
     },
   },
   {

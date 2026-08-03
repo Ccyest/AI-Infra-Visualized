@@ -26,8 +26,8 @@ const TOKENS: TimelineItem[] = [
 ];
 
 const COPY = {
-  title: { zh: "KDA：先逐 channel 衰减，再沿完整 key 方向做 delta update", en: "KDA: decay channels first, then delta-update along a full key direction" },
-  subtitle: { zh: "同一串 A=1 → B=2 → A=4 → qₐ?；A/B 始终是箭头，ch₁/ch₂ 始终是 S 的行", en: "The same A=1 → B=2 → A=4 → qₐ? sequence; A/B stay arrows, ch₁/ch₂ stay rows of S" },
+  title: { zh: "KDA：先按 channel 衰减，再做 delta update", en: "KDA: decay by channel, then apply the delta update" },
+  subtitle: { zh: "调整 α₁、α₂ 和 β，观察状态如何变化", en: "Adjust α₁, α₂, and β to see how the state changes" },
   entering: { zh: "① A=4 进入前的 S", en: "① S before A=4" },
   gated: { zh: "② Diag(α) 后的 S", en: "② S after Diag(α)" },
   final: { zh: "③ 沿 kₐ delta 后的 S", en: "③ S after delta along kₐ" },
@@ -119,9 +119,9 @@ export default function KdaGateViz({ lang = "zh" }: { lang?: Locale }) {
       footer={
         <div className="viz-verdict">
           {lang === "zh" ? <>
-            A=4 到来前，A=1 与 B=2 已经叠加在同两条 S 行里。<code>Diag(α)</code> 不是选择 A 或 B，而是把每一行里的所有历史贡献一起缩放。本例门控后 <code>kₐᵀS={format(oldReadA)}</code>；delta update 再沿完整 <code>kₐ</code> 写入 <code>β(4−{format(oldReadA)})={format(deltaWrite)}</code>。因此最终 <code>qₐ→{format(readA)}</code>；同时 <code>qᵦ→{format(readB)}</code>，展示这三个旋钮对完整 key 方向的共同影响。
+            <code>Diag(α)</code> 先缩放 S 的行，delta update 再写入 <code>β(4−{format(oldReadA)})={format(deltaWrite)}</code>。当前设置下，<code>qₐ→{format(readA)}</code>，<code>qᵦ→{format(readB)}</code>。
           </> : <>
-            Before A=4, A=1 and B=2 are already superposed in the same two rows of S. <code>Diag(α)</code> does not select A or B; it scales every historical contribution in each row together. After gating, <code>kₐᵀS={format(oldReadA)}</code>; the delta update then writes <code>β(4−{format(oldReadA)})={format(deltaWrite)}</code> along the full <code>kₐ</code>. Thus <code>qₐ→{format(readA)}</code>, while <code>qᵦ→{format(readB)}</code> shows how all three controls affect complete key directions.
+            <code>Diag(α)</code> first scales the rows of S; the delta update then writes <code>β(4−{format(oldReadA)})={format(deltaWrite)}</code>. With the current settings, <code>qₐ→{format(readA)}</code> and <code>qᵦ→{format(readB)}</code>.
           </>}
         </div>
       }

@@ -449,7 +449,7 @@ main {
   max-width: 780px;
 }
 
-.prose > :is(h2, h3, p, ul, ol, blockquote, table) {
+.prose > :is(h2, h3, p, ul, ol, blockquote, table, details) {
   max-width: 44em;
 }
 
@@ -477,6 +477,35 @@ main {
 
 .prose blockquote p {
   margin: 0.3rem 0;
+}
+
+.lesson-details {
+  margin: 1rem 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+  color: var(--ink-2);
+}
+
+.lesson-details summary {
+  cursor: pointer;
+  padding: 0.75rem 1rem;
+  color: var(--ink);
+  font-weight: 650;
+}
+
+.lesson-details[open] summary {
+  border-bottom: 1px solid var(--border);
+}
+
+.lesson-details p {
+  margin: 0;
+  padding: 0.75rem 1rem;
+}
+
+.lesson-details p + p {
+  padding-top: 0;
 }
 
 .prose table {

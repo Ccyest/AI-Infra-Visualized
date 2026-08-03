@@ -125,7 +125,7 @@ export default function ArchViz({ lang = "zh" }: { lang?: Locale }) {
           {tile("mxfp4", WIDTH - 96, 10, 86, 26, "MXFP4")}
 
           {/* 输入侧 */}
-          {tile("vision", 10, 58, 96, 40, "MoonViT3d", ARCH.vision[lang])}
+          {tile("vision", 10, 58, 96, 40, "MoonViT-V2", ARCH.vision[lang])}
           {tile("text", 10, 132, 96, 40, ARCH.text[lang], undefined, "var(--surface)", "var(--ink-2)")}
           {arrow(106, 78, 138, 104)}
           {arrow(106, 152, 138, 126)}

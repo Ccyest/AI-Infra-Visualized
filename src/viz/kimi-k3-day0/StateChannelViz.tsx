@@ -8,12 +8,12 @@ const VALUE_VALUES = [0.6, -0.3, 0.8, 0.1];
 
 const COPY = {
   title: {
-    zh: "Linear attention 的 key 特征维度：kₜʰ 是列向量，Sʰ 每一行对应它的一个坐标",
-    en: "Key feature dimensions in linear attention: kₜʰ is a column vector, and each row of Sʰ matches one coordinate",
+    zh: "Linear attention：一个 head 如何写入固定状态 S",
+    en: "Linear attention: how one head writes into the fixed state S",
   },
   subtitle: {
-    zh: "这些坐标在 naive linear attention 里就存在；KDA 后面才对它们做逐 channel 门控",
-    en: "These coordinates already exist in naive linear attention; KDA later adds channel-wise gating over them",
+    zh: "选择一个 key channel，观察外积如何更新 S 的对应行",
+    en: "Select a key channel and see how the outer product updates its row in S",
   },
 };
 
@@ -139,12 +139,12 @@ export default function StateChannelViz({ lang = "zh" }: { lang?: Locale }) {
 
       <div className="state-channel-equation">
         <code>j={selectedIndex}: ΔSₜʰ[j, :] = kₜʰ[j]·(vₜʰ)ᵀ = {selectedKey}·(vₜʰ)ᵀ</code>
-        <span>{lang === "zh" ? "naive linear attention 已经会按 k[j] 更新 S 的第 j 行；KDA 新增的是对这些行做逐 channel 衰减。channel 不是 token 槽。" : "Naive linear attention already updates row j of S by k[j]; KDA adds channel-wise decay over those rows. A channel is not a token slot."}</span>
+        <span>{lang === "zh" ? "k[j] 更新 S 的第 j 行；KDA 会再对这些行做逐 channel 衰减。" : "k[j] updates row j of S; KDA later adds channel-wise decay over these rows."}</span>
       </div>
 
       <div className="viz-footer">
         <div className="viz-verdict">
-          {lang === "zh" ? <><b>为什么是 128？</b> 它不是数学规定，而是 head dimension 这个容量/开销超参数。增大它会增加 key 特征轴和 value 宽度，但若两边一起放大，每 head 的状态从 <code>d²</code> 增长。K3 选择 <code>d=128</code>，而不是用整个 <code>7168</code> 维 hidden state 直接做 S。</> : <><b>Why 128?</b> It is not mathematically required; it is a head-dimension capacity/cost hyperparameter. Increasing it adds key feature axes and value width, but if both axes grow together, per-head state grows as <code>d²</code>. K3 chooses <code>d=128</code> instead of building S directly from the full <code>7168</code>-d hidden state.</>}
+          {lang === "zh" ? <><b>为什么是 128？</b> 这是容量与开销的折中；两条轴一起增大时，每个 head 的状态按 <code>d²</code> 增长。</> : <><b>Why 128?</b> It balances capacity and cost; when both axes grow, per-head state grows as <code>d²</code>.</>}
         </div>
       </div>
     </figure>
