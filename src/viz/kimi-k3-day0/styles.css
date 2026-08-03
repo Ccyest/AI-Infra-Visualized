@@ -391,7 +391,7 @@
 
 .parallel-pp-track {
   display: grid;
-  grid-template-columns: repeat(12, minmax(3.2rem, 1fr));
+  grid-template-columns: repeat(var(--pp-columns, 12), minmax(3.2rem, 1fr));
   gap: 0.24rem;
 }
 
@@ -431,7 +431,7 @@
 
 .parallel-p2p-track {
   display: grid;
-  grid-template-columns: repeat(12, minmax(3.2rem, 1fr));
+  grid-template-columns: repeat(var(--pp-columns, 12), minmax(3.2rem, 1fr));
   gap: 0.24rem;
 }
 
@@ -449,6 +449,46 @@
   color: var(--muted);
   font-size: 0.66rem;
   line-height: 1.4;
+}
+
+.parallel-chunk-control {
+  display: grid;
+  grid-template-columns: minmax(8rem, auto) minmax(9rem, 1fr);
+  gap: 0.35rem 0.8rem;
+  align-items: center;
+  margin-bottom: 0.6rem;
+  padding: 0.55rem 0.65rem;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--accent) 5%, var(--surface));
+  color: var(--ink-2);
+  font-size: 0.7rem;
+}
+
+.parallel-chunk-control > span:first-child {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: space-between;
+}
+
+.parallel-chunk-control output {
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.parallel-chunk-control output b {
+  color: var(--ink);
+}
+
+.parallel-live-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 1rem;
+}
+
+.parallel-chunk-control > small {
+  color: var(--muted);
+  font-size: 0.62rem;
+  line-height: 1.35;
 }
 
 .parallel-facts {
@@ -563,6 +603,37 @@
 }
 
 /* DCP: replicated and position-sharded KV remain visible at the same time. */
+.dcp-gpu-control {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: center;
+  margin: 0 0.8rem 0.65rem;
+  padding: 0.5rem 0.65rem;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--accent) 5%, var(--surface));
+}
+
+.dcp-gpu-control > span,
+.dcp-gpu-control > output {
+  color: var(--ink-2);
+  font-size: 0.7rem;
+}
+
+.dcp-gpu-control > output {
+  margin-left: auto;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.dcp-gpu-control .viz-btn,
+.serving-goal-control .viz-btn {
+  min-width: 2.4rem;
+  height: 1.7rem;
+  padding: 0 0.55rem;
+  font-size: 0.7rem;
+}
+
 .dcp-kv-grid {
   display: grid;
   gap: 0.22rem;
@@ -735,6 +806,11 @@
   stroke-width: 3;
 }
 
+.serving-kernel-line.background {
+  stroke: var(--grid);
+  stroke-width: 2;
+}
+
 .serving-kernel-point {
   fill: var(--surface);
   stroke: var(--series-2);
@@ -745,6 +821,12 @@
   fill: var(--series-2);
   stroke: var(--surface);
   stroke-width: 2;
+}
+
+.serving-kernel-selected {
+  fill: var(--accent);
+  stroke: var(--surface);
+  stroke-width: 3;
 }
 
 .serving-chart-muted,
@@ -776,6 +858,38 @@
   padding: 0.55rem;
   border-radius: 8px;
   background: color-mix(in srgb, var(--series-4) 7%, var(--surface));
+}
+
+.serving-round-control {
+  display: grid;
+  gap: 0.35rem;
+  margin-top: 0.3rem;
+  padding: 0.5rem 0.55rem;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--accent) 5%, var(--surface));
+}
+
+.serving-round-control > span:first-child {
+  display: flex;
+  justify-content: space-between;
+  color: var(--ink-2);
+  font-size: 0.66rem;
+}
+
+.serving-round-control output {
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.serving-round-values {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.8rem;
+  font-size: 0.58rem;
+}
+
+.serving-round-values b {
+  color: var(--ink);
 }
 
 .serving-dspark-jump > span {
@@ -874,6 +988,20 @@
   color: var(--ink);
 }
 
+.serving-goal-control {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  align-items: center;
+  margin-top: 0.55rem;
+}
+
+.serving-goal-control > span {
+  margin-right: 0.15rem;
+  color: var(--ink-2);
+  font-size: 0.65rem;
+}
+
 .serving-metric-panels {
   display: grid;
   gap: 0.5rem;
@@ -905,6 +1033,15 @@
   gap: 0.4rem;
   align-items: center;
   min-height: 2.1rem;
+}
+
+.serving-metric-row.dimmed {
+  opacity: 0.38;
+}
+
+.serving-metric-row.selected {
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--accent) 5%, transparent);
 }
 
 .serving-metric-row > span {
@@ -977,6 +1114,22 @@
 
 .serving-deployment-knob span:last-child {
   text-align: right;
+}
+
+.serving-goal-detail {
+  display: block;
+  margin-top: 0.45rem;
+  padding: 0.45rem 0.5rem;
+  border-left: 3px solid var(--accent);
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--accent) 5%, var(--surface));
+  color: var(--ink-2);
+  font-size: 0.61rem;
+  line-height: 1.45;
+}
+
+.serving-goal-detail b {
+  color: var(--ink);
 }
 
 .serving-frontier-values {
@@ -1097,6 +1250,15 @@
   .dcp-flow-steps > i {
     justify-self: center;
     transform: rotate(90deg);
+  }
+
+  .parallel-chunk-control {
+    grid-template-columns: 1fr;
+  }
+
+  .dcp-gpu-control > output {
+    width: 100%;
+    margin-left: 0;
   }
 }
 

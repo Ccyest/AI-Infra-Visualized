@@ -1,11 +1,12 @@
+import { useState, type CSSProperties } from "react";
 import type { Locale } from "../../lib/i18n";
 import { seriesColor } from "../../lib/palette";
 import "./styles.css";
 
 const RANKS = 8;
 const TP_ROUNDS = 3;
-const PP_CHUNKS = 5;
-const PP_COLUMNS = RANKS - 1 + PP_CHUNKS;
+const DEFAULT_PP_CHUNKS = 5;
+const MAX_PP_CHUNKS = 12;
 const LAYER_RANGES = ["L1–12", "L13–24", "L25–36", "L37–48", "L49–60", "L61–72", "L73–84", "L85–93"];
 
 const COPY = {
@@ -22,7 +23,12 @@ const COPY = {
     tpFact2: "通信处在关键路径",
     tpFact3: "GEMM 被切窄，效率下降",
     ppTitle: "Chunked PP8：模型按层切 8 段，prompt 再切成 chunks",
-    ppIntro: "G1–G8 各自执行一段完整层；长 prompt 切成 C1–C5，前一张 GPU 算完一个 chunk 后，把 activation 直接交给下一张。",
+    ppIntro: "G1–G8 各自执行一段完整层；长 prompt 切成多个 chunks，前一张 GPU 算完一个 chunk 后，把 activation 直接交给下一张。",
+    chunkControl: "Prompt chunks",
+    chunkUnit: "块",
+    utilization: "流水线 slot 利用率",
+    bubble: "气泡占比",
+    utilizationNote: "等长 stage 的教学模型：chunks 越多，灌入/排空气泡越容易被摊薄。",
     gpu: "G",
     chunk: "C",
     p2p: "P2P activation",
@@ -58,7 +64,12 @@ const COPY = {
     tpFact2: "Communication stays on the critical path",
     tpFact3: "Eight-way slicing makes GEMMs narrower",
     ppTitle: "Chunked PP8: split layers into 8 stages and the prompt into chunks",
-    ppIntro: "G1–G8 each execute a run of complete layers. The long prompt becomes C1–C5; after one chunk, a GPU sends its activation directly to the next GPU.",
+    ppIntro: "G1–G8 each execute a run of complete layers. The long prompt becomes multiple chunks; after one chunk, a GPU sends its activation directly to the next GPU.",
+    chunkControl: "Prompt chunks",
+    chunkUnit: "chunks",
+    utilization: "pipeline-slot utilization",
+    bubble: "bubble share",
+    utilizationNote: "Equal-stage teaching model: more chunks amortize the fill and drain bubbles.",
     gpu: "G",
     chunk: "C",
     p2p: "P2P activation",
@@ -102,18 +113,20 @@ function TpSchedule({ lang }: { lang: Locale }) {
   );
 }
 
-function PpSchedule({ lang }: { lang: Locale }) {
+function PpSchedule({ chunks, lang }: { chunks: number; lang: Locale }) {
   const copy = COPY[lang];
+  const columns = RANKS - 1 + chunks;
+  const scheduleStyle = { "--pp-columns": columns } as CSSProperties;
   return (
-    <div className="parallel-pp-schedule" aria-label={copy.ppTitle}>
+    <div className="parallel-pp-schedule" aria-label={copy.ppTitle} style={scheduleStyle}>
       {Array.from({ length: RANKS }, (_, stage) => (
         <div className="parallel-pp-stage" key={stage}>
           <div className="parallel-schedule-row">
             <b><strong>{copy.gpu}{stage + 1}</strong><small>{LAYER_RANGES[stage]}</small></b>
             <span className="parallel-pp-track">
-              {Array.from({ length: PP_COLUMNS }, (_, column) => {
+              {Array.from({ length: columns }, (_, column) => {
                 const chunk = column - stage;
-                const active = chunk >= 0 && chunk < PP_CHUNKS;
+                const active = chunk >= 0 && chunk < chunks;
                 const before = column < stage;
                 return (
                   <i
@@ -170,6 +183,9 @@ function Facts({ items }: { items: readonly string[] }) {
 
 export default function PipelineViz({ lang = "zh" }: { lang?: Locale }) {
   const copy = COPY[lang];
+  const [chunks, setChunks] = useState(DEFAULT_PP_CHUNKS);
+  const utilization = Math.round((chunks / (chunks + RANKS - 1)) * 100);
+  const bubbleShare = 100 - utilization;
   return (
     <figure className="viz-stage parallel-explainer" style={{ margin: "1.6rem 0" }}>
       <div className="viz-head">
@@ -190,7 +206,24 @@ export default function PipelineViz({ lang = "zh" }: { lang?: Locale }) {
         <section className="parallel-card solution">
           <div className="parallel-card-head"><span>{copy.solution}</span><b>{copy.ppTitle}</b></div>
           <p>{copy.ppIntro}</p>
-          <PpSchedule lang={lang} />
+          <label className="parallel-chunk-control">
+            <span><b>{copy.chunkControl}</b><output>{chunks} {copy.chunkUnit}</output></span>
+            <input
+              className="viz-scrub"
+              type="range"
+              min="1"
+              max={MAX_PP_CHUNKS}
+              step="1"
+              value={chunks}
+              onChange={(event) => setChunks(Number(event.target.value))}
+            />
+            <span className="parallel-live-metrics">
+              <output>{copy.utilization} <b>{utilization}%</b></output>
+              <output>{copy.bubble} <b>{bubbleShare}%</b></output>
+            </span>
+            <small>{copy.utilizationNote}</small>
+          </label>
+          <PpSchedule chunks={chunks} lang={lang} />
           <Facts items={[copy.ppFact1, copy.ppFact2, copy.ppFact3]} />
           <GainChart lang={lang} />
         </section>
