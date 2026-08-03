@@ -408,20 +408,26 @@
   display: grid;
   grid-template-columns: 2rem minmax(0, 1fr) 2.7rem;
   gap: 0.4rem;
-  align-items: center;
+  align-items: start;
   margin-top: 0.55rem;
 }
 
 .channel-state-row > b {
+  padding-top: 0.55rem;
   color: var(--ink-2);
   font-size: 0.72rem;
 }
 
 .channel-state-row > output {
+  padding-top: 0.55rem;
   color: var(--ink);
   font-size: 0.72rem;
   font-variant-numeric: tabular-nums;
   text-align: right;
+}
+
+.channel-row-visual {
+  min-width: 0;
 }
 
 .channel-signed-track {
@@ -459,13 +465,6 @@
   transition: left 180ms ease, width 180ms ease;
 }
 
-.channel-contribution > b {
-  padding: 0 0.14rem;
-  font-size: 0.58rem;
-  line-height: 1;
-  white-space: nowrap;
-}
-
 .channel-total-marker {
   position: absolute;
   z-index: 3;
@@ -476,6 +475,57 @@
   background: var(--ink);
   transform: translateX(-1px);
   transition: left 180ms ease;
+}
+
+.channel-row-callouts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.28rem;
+  align-items: center;
+  min-height: 1.55rem;
+  padding-top: 0.48rem;
+}
+
+.channel-callout {
+  position: relative;
+  display: inline-flex;
+  gap: 0.18rem;
+  align-items: center;
+  padding: 0.12rem 0.25rem;
+  border: 1px solid;
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink-2);
+  font-size: 0.56rem;
+  line-height: 1.15;
+  white-space: nowrap;
+}
+
+.channel-callout-line {
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  width: 1px;
+  height: 0.5rem;
+  transform: translateX(-50%);
+}
+
+.channel-callout-dot {
+  width: 0.42rem;
+  height: 0.42rem;
+  flex: none;
+  border-radius: 50%;
+}
+
+.channel-callout b {
+  color: var(--ink);
+  font-weight: 650;
+}
+
+.channel-callout em {
+  color: var(--muted);
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
 }
 
 .channel-state-axis {

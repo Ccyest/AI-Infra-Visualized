@@ -127,12 +127,29 @@ function SignedContributionBar({ contributions, maxAbs = 6 }: { contributions: R
             key={item.id}
             style={{ left: `${left}%`, width: `${width}%`, background: seriesColor(item.color) }}
             title={`${item.label}: ${format(item.value)}`}
-          >
-            {width >= 8 && <b>{item.label} {item.value >= 0 ? "+" : ""}{format(item.value)}</b>}
-          </span>
+          />
         );
       })}
       <i className="channel-total-marker" style={{ left: `${50 + Math.max(-49, Math.min(49, (total / maxAbs) * 49))}%` }} />
+    </div>
+  );
+}
+
+function ContributionCallouts({ contributions }: { contributions: RowContribution[] }) {
+  if (!contributions.length) return null;
+  return (
+    <div className="channel-row-callouts">
+      {contributions.map((item) => {
+        const color = seriesColor(item.color);
+        return (
+          <span className="channel-callout" key={`callout-${item.id}`} style={{ borderColor: color }}>
+            <i className="channel-callout-line" style={{ background: color }} />
+            <i className="channel-callout-dot" style={{ background: color }} />
+            <b>{item.label}</b>
+            <em>{item.value >= 0 ? "+" : ""}{format(item.value)}</em>
+          </span>
+        );
+      })}
     </div>
   );
 }
@@ -159,12 +176,18 @@ export function ChannelStatePanel({
       <div className="channel-state-title">{title}</div>
       <div className="channel-state-row">
         <b>ch₁</b>
-        <SignedContributionBar contributions={rows[0]} maxAbs={maxAbs} />
+        <div className="channel-row-visual">
+          <SignedContributionBar contributions={rows[0]} maxAbs={maxAbs} />
+          <ContributionCallouts contributions={rows[0]} />
+        </div>
         <output>{format(totals[0])}</output>
       </div>
       <div className="channel-state-row">
         <b>ch₂</b>
-        <SignedContributionBar contributions={rows[1]} maxAbs={maxAbs} />
+        <div className="channel-row-visual">
+          <SignedContributionBar contributions={rows[1]} maxAbs={maxAbs} />
+          <ContributionCallouts contributions={rows[1]} />
+        </div>
         <output>{format(totals[1])}</output>
       </div>
       <div className="channel-state-axis"><span>−</span><span>0</span><span>+</span></div>

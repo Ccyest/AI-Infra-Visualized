@@ -17,6 +17,7 @@ import {
 import "./styles.css";
 
 const RETENTIONS = [1, 0.8, 0.5, 0.3, 0.1] as const;
+const WRITE_STRENGTHS = [1, 0.8, 0.5, 0.3, 0] as const;
 const TOKENS: TimelineItem[] = [
   { label: "A=1", kind: "write", color: 1 },
   { label: "B=2", kind: "write", color: 2 },
@@ -54,12 +55,22 @@ function earlyState(completed: number): StateTerm[] {
   return terms;
 }
 
-function ParameterRow({ label, value, onChange }: { label: string; value: number; onChange: (value: number) => void }) {
+function ParameterRow({
+  label,
+  value,
+  options = RETENTIONS,
+  onChange,
+}: {
+  label: string;
+  value: number;
+  options?: readonly number[];
+  onChange: (value: number) => void;
+}) {
   return (
     <span className="kda-parameter-row">
       <b>{label}</b>
       <span className="viz-presets" role="group" aria-label={label}>
-        {RETENTIONS.map((option) => (
+        {options.map((option) => (
           <button key={option} type="button" className={`viz-btn${value === option ? " primary" : ""}`} onClick={() => onChange(option)}>{option}</button>
         ))}
       </span>
@@ -70,6 +81,7 @@ function ParameterRow({ label, value, onChange }: { label: string; value: number
 export default function KdaGateViz({ lang = "zh" }: { lang?: Locale }) {
   const [alpha1, setAlpha1] = useState<number>(0.8);
   const [alpha2, setAlpha2] = useState<number>(0.3);
+  const [beta, setBeta] = useState<number>(1);
   const player = useSimPlayer(TOKENS.length, 1.2);
   const t = Math.min(player.t, TOKENS.length);
   const showingRewrite = t >= 3;
@@ -80,8 +92,9 @@ export default function KdaGateViz({ lang = "zh" }: { lang?: Locale }) {
     : entering;
   const oldReadA = stateRead(gated, KEY_A);
   const correction = showingRewrite ? 4 - oldReadA : t === 1 ? 1 : t === 2 ? 2 : 0;
+  const deltaWrite = beta * correction;
   const final: StateTerm[] = showingRewrite
-    ? [...gated, { id: "delta-a", label: "ΔA", vector: KEY_A, scalar: correction, color: 4 }]
+    ? [...gated, { id: "delta-a", label: "ΔA", vector: KEY_A, scalar: deltaWrite, color: 4 }]
     : t === 1
       ? earlyState(1)
       : t === 2
@@ -97,17 +110,18 @@ export default function KdaGateViz({ lang = "zh" }: { lang?: Locale }) {
       player={player}
       lang={lang}
       headExtra={
-        <span className="kda-parameter-controls" aria-label={lang === "zh" ? "A=4 这一步的 channel 保留系数" : "channel retentions for the A=4 step"}>
+        <span className="kda-parameter-controls" aria-label={lang === "zh" ? "A=4 这一步的保留系数与写入强度" : "retentions and write strength for the A=4 step"}>
           <ParameterRow label="α₁" value={alpha1} onChange={setAlpha1} />
           <ParameterRow label="α₂" value={alpha2} onChange={setAlpha2} />
+          <ParameterRow label="β" value={beta} options={WRITE_STRENGTHS} onChange={setBeta} />
         </span>
       }
       footer={
         <div className="viz-verdict">
           {lang === "zh" ? <>
-            A=4 到来前，A=1 与 B=2 已经叠加在同两条 S 行里。<code>Diag(α)</code> 不是选择 A 或 B，而是把每一行里的所有历史贡献一起缩放。本例门控后 <code>kₐᵀS={format(oldReadA)}</code>，随后 β=1 的 delta update 沿完整 <code>kₐ</code> 写入残差 <code>4−{format(oldReadA)}={format(correction)}</code>，所以最终 <code>qₐ→{format(readA)}</code>；同时 <code>qᵦ→{format(readB)}</code>，展示门控对另一完整方向的影响。
+            A=4 到来前，A=1 与 B=2 已经叠加在同两条 S 行里。<code>Diag(α)</code> 不是选择 A 或 B，而是把每一行里的所有历史贡献一起缩放。本例门控后 <code>kₐᵀS={format(oldReadA)}</code>；delta update 再沿完整 <code>kₐ</code> 写入 <code>β(4−{format(oldReadA)})={format(deltaWrite)}</code>。因此最终 <code>qₐ→{format(readA)}</code>；同时 <code>qᵦ→{format(readB)}</code>，展示这三个旋钮对完整 key 方向的共同影响。
           </> : <>
-            Before A=4, A=1 and B=2 are already superposed in the same two rows of S. <code>Diag(α)</code> does not select A or B; it scales every historical contribution in each row together. Here <code>kₐᵀS={format(oldReadA)}</code> after gating, then the β=1 delta update writes residual <code>4−{format(oldReadA)}={format(correction)}</code> along the full <code>kₐ</code>. Thus <code>qₐ→{format(readA)}</code>, while <code>qᵦ→{format(readB)}</code> shows the gate's effect on the other full direction.
+            Before A=4, A=1 and B=2 are already superposed in the same two rows of S. <code>Diag(α)</code> does not select A or B; it scales every historical contribution in each row together. After gating, <code>kₐᵀS={format(oldReadA)}</code>; the delta update then writes <code>β(4−{format(oldReadA)})={format(deltaWrite)}</code> along the full <code>kₐ</code>. Thus <code>qₐ→{format(readA)}</code>, while <code>qᵦ→{format(readB)}</code> shows how all three controls affect complete key directions.
           </>}
         </div>
       }
@@ -131,7 +145,7 @@ export default function KdaGateViz({ lang = "zh" }: { lang?: Locale }) {
         />
         <StateOperation
           label={lang === "zh" ? "沿完整 kₐ 做 delta" : "delta along full kₐ"}
-          detail={showingRewrite ? `+kₐ×${format(correction)}` : (lang === "zh" ? "首次写入" : "first write")}
+          detail={showingRewrite ? `+kₐ×${beta}×${format(correction)} = +kₐ×${format(deltaWrite)}` : (lang === "zh" ? "首次写入" : "first write")}
         />
         <ChannelStatePanel
           title={tr(lang, COPY.final)}
