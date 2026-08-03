@@ -123,6 +123,11 @@ view, run the same sentence again:
 
 <LinearFlowViz client:visible lang="en" />
 
+In “Math” mode, the diagram reduces the real <code>128×128</code> state to a
+<code>dₖ=2, dᵥ=1</code> slice. A/B are full key arrows and ch₁/ch₂ are the two
+rows of S. Colors inside a row only expose the provenance of contributions;
+the real S does not preserve those colored pieces separately.
+
 The step for "it" is the whole point: last section had a 0.72 line straight
 to "cat", but S has no position axis, that line cannot be drawn, and the
 read is a blend of the whole history.
@@ -157,9 +162,11 @@ the old association and writes a β fraction of the new one; only β=1 performs
 a full replacement.
 
 Break one rebinding into its actual steps: when `A=4` arrives, DeltaNet uses
-A's `k` to read the old value 1 and computes `4−1=3`. The diagram uses β=1,
-so the same matrix update can be read either as `1+(4−1)=4`, or as subtracting
-the old association 1 and adding the new association 4:
+A's `k` to read the old value 1 and computes `4−1=3`. The diagram lets β vary.
+At β=1, the same matrix update can be read either as `1+(4−1)=4`, or as
+subtracting the old association 1 and adding the new association 4. The 2D
+state rows show A and B contributing to the same numbers rather than depicting
+them as independent slots:
 
 <DeltaRuleViz client:visible lang="en" />
 
@@ -193,12 +200,19 @@ a vector <code>αₜ ∈ (0,1)<sup>dₖ</sup></code>; each entry scales one key
 channel of S. KDA also does not rotate non-orthogonal keys into orthogonal ones.
 Instead, before a new write, it shrinks old state components channel by channel
 so that some old influence on later readouts can decay. The diagram keeps the
-full A/B key-direction scope and opens up a minimal 2D interior:
+same `A=1 → B=2 → A=4 → qₐ?` sequence used by Naive / DeltaNet and opens up a
+minimal 2D interior:
 <code>k<sub>A</sub>=(1/√2)[1,1]ᵀ</code> and
 <code>k<sub>B</sub>=(1/√2)[1,−1]ᵀ</code>. Both A and B therefore span ch₁/ch₂;
-neither equals one channel. <code>α₁ ≠ α₂</code> first scales the two rows of S,
-then qₐ/qᵦ read the complete A/B directions. C=5 is another new write with β
-fixed at 1.
+neither equals one channel.
+
+Before A=4 arrives, A=1 and B=2 are already superposed in one S; their colors
+remain only to trace provenance. <code>Diag(α)</code> multiplies the ch₁/ch₂ rows
+by α₁/α₂, so the A and B history inside each row shrinks together. The ordinary
+delta rule then still runs: it reads the gated old association along the full
+kₐ and, with β=1, writes the residual required to reach target value 4. Thus
+qₐ still reads 4 at the end, while the change in qᵦ shows how channel-wise
+decay affects another full key direction.
 
 <KdaGateViz client:visible lang="en" />
 

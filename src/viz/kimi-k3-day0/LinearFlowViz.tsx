@@ -6,6 +6,18 @@ import { useSimPlayer } from "../../components/core/useSimPlayer";
 import type { Locale } from "../../lib/i18n";
 import { seriesColor } from "../../lib/palette";
 import { LINFLOW, MHA_TOKENS, linflowBoxTooltip, mhaChip, mhaCellTooltip } from "./strings";
+import {
+  ChannelStatePanel,
+  ContributionLegend,
+  KEY_A,
+  KEY_B,
+  KeySpacePanel,
+  StateOperation,
+  TokenTimeline,
+  stateRead,
+  type StateTerm,
+  type TimelineItem,
+} from "./KeyChannelDiagram";
 import "./styles.css";
 
 type ExampleMode = "sentence" | "math";
@@ -38,6 +50,14 @@ const STRIPE_W = 13;
 const WIDTH = 620;
 const HEIGHT = 205;
 
+function mathStateAfter(completed: number, lang: Locale): StateTerm[] {
+  const terms: StateTerm[] = [];
+  if (completed >= 1) terms.push({ id: "a-old", label: lang === "zh" ? "A旧" : "A old", vector: KEY_A, scalar: 1, color: 1 });
+  if (completed >= 2) terms.push({ id: "b", label: "B", vector: KEY_B, scalar: 2, color: 2 });
+  if (completed >= 3) terms.push({ id: "a-new", label: lang === "zh" ? "A新" : "A new", vector: KEY_A, scalar: 4, color: 4 });
+  return terms;
+}
+
 function drawState(indices: number[], tokens: DemoToken[], x: number, y: number, current: number, onHover: (e: ReactMouseEvent) => void) {
   return <g onMouseEnter={onHover}>
     <rect x={x} y={y} width={BOX_W} height={BOX_H} rx={8} fill="none" stroke="var(--ink)" strokeOpacity={0.4} strokeWidth={1.3} />
@@ -46,7 +66,7 @@ function drawState(indices: number[], tokens: DemoToken[], x: number, y: number,
 }
 
 export default function LinearFlowViz({ lang = "zh" }: { lang?: Locale }) {
-  const [mode, setMode] = useState<ExampleMode>("sentence");
+  const [mode, setMode] = useState<ExampleMode>("math");
   const tokens: DemoToken[] = mode === "sentence"
     ? MHA_TOKENS[lang].map((token, i) => ({ text: token.text, kind: "write-read", color: i + 1 }))
     : MATH_TOKENS;
@@ -58,6 +78,14 @@ export default function LinearFlowViz({ lang = "zh" }: { lang?: Locale }) {
   const beforeIndices = tokens.slice(0, Math.max(0, cur)).map((_, i) => i).filter((i) => tokens[i].kind !== "query");
   const afterIndices = tokens.slice(0, t).map((_, i) => i).filter((i) => tokens[i].kind !== "query");
   const currentIsQuery = cur >= 0 && tokens[cur].kind === "query";
+  const mathBefore = mathStateAfter(Math.min(3, Math.max(0, t - 1)), lang);
+  const mathAfter = currentIsQuery ? mathBefore : mathStateAfter(Math.min(3, t), lang);
+  const mathReadA = stateRead(mathAfter, KEY_A);
+  const mathTimeline: TimelineItem[] = MATH_TOKENS.map((token) => ({
+    label: token.text === "A?" ? "qₐ?" : token.text,
+    kind: token.kind === "query" ? "query" : "write",
+    color: token.color,
+  }));
 
   const switchMode = (next: ExampleMode) => {
     setMode(next);
@@ -85,16 +113,32 @@ export default function LinearFlowViz({ lang = "zh" }: { lang?: Locale }) {
       }
       footer={
         <>
-          <Legend items={[
-            { label: lang === "zh" ? "颜色 = 同一个 token 及其状态贡献" : "color = the same token and its state contribution", swatch: { background: "linear-gradient(90deg, var(--series-1) 0 50%, var(--series-2) 50%)" } },
-            { label: LINFLOW.legendWrite[lang], swatch: { background: "color-mix(in srgb, var(--accent) 60%, transparent)" } },
-            { label: LINFLOW.legendRead[lang], swatch: { background: "repeating-linear-gradient(90deg, var(--accent) 0 3px, transparent 3px 6px)" } },
-          ]} />
+          {mode === "sentence" && <Legend items={[
+              { label: lang === "zh" ? "颜色 = 同一个 token 及其状态贡献" : "color = the same token and its state contribution", swatch: { background: "linear-gradient(90deg, var(--series-1) 0 50%, var(--series-2) 50%)" } },
+              { label: LINFLOW.legendWrite[lang], swatch: { background: "color-mix(in srgb, var(--accent) 60%, transparent)" } },
+              { label: LINFLOW.legendRead[lang], swatch: { background: "repeating-linear-gradient(90deg, var(--accent) 0 3px, transparent 3px 6px)" } },
+            ]} />}
           <div className="viz-verdict">{mode === "sentence" ? LINFLOW.verdict[lang] : (lang === "zh" ? <>Naive linear attention 直接累加 <code>kvᵀ</code>。因此 <code>A=1</code> 和 <code>A=4</code> 都写进同一个 A 方向；到 <code>A?</code> 时，<code>qₐ</code> 从 S 读到的是 <code>1+4=5</code> 的叠加，而不是可寻址的最新值 4。</> : <>Naive linear attention directly accumulates <code>kvᵀ</code>. Both <code>A=1</code> and <code>A=4</code> therefore write along the same A direction; on <code>A?</code>, <code>qₐ</code> reads the superposition <code>1+4=5</code> from S rather than an addressable latest value of 4.</>)}</div>
         </>
       }
     >
-      <div className="viz-section">
+      {mode === "math" ? <div className="viz-section">
+        <div className="viz-section-head">
+          <span className="viz-section-stats">{lang === "zh" ? "二维教学切片：真实每个 head 的 S 为 128×128" : "2D teaching slice: the real S is 128×128 per head"}</span>
+          {t >= 1 && <span className="k3a-chip">t={t} {mhaChip(lang, tokens[cur].text)}</span>}
+        </div>
+        <TokenTimeline items={mathTimeline} t={t} />
+        <div className="key-channel-workbench">
+          <KeySpacePanel lang={lang} />
+          <ChannelStatePanel title={lang === "zh" ? "本步进入的 S" : "S entering this step"} terms={mathBefore} lang={lang} />
+          <StateOperation
+            label={currentIsQuery ? (lang === "zh" ? `qₐ 读出 ${Number(mathReadA.toFixed(2))}` : `qₐ reads ${Number(mathReadA.toFixed(2))}`) : (lang === "zh" ? "直接累加 kvᵀ" : "directly add kvᵀ")}
+            detail={currentIsQuery ? "o=Sᵀqₐ" : "S←S+kvᵀ"}
+          />
+          <ChannelStatePanel title={lang === "zh" ? "本步结束后的 S" : "S after this step"} terms={mathAfter} lang={lang} accent={t > 0} />
+        </div>
+        <ContributionLegend lang={lang} third="new" />
+      </div> : <div className="viz-section">
         <div className="viz-section-head">
           <span className="viz-section-stats">{mode === "sentence" ? <>{LINFLOW.statState[lang]} · {LINFLOW.statStep[lang]} · {LINFLOW.statCum[lang]} {t} · {LINFLOW.statMha[lang]} {t} {LINFLOW.statMhaCum[lang]} {(t * (t - 1)) / 2}</> : <>{lang === "zh" ? `状态大小 常数 · 已写入 ${afterIndices.length} 条关联` : `state size constant · ${afterIndices.length} associations written`}</>}</span>
           {t >= 1 && <span className="k3a-chip">t={t} {mhaChip(lang, tokens[cur].text)}</span>}
@@ -121,20 +165,16 @@ export default function LinearFlowViz({ lang = "zh" }: { lang?: Locale }) {
             <text x={RIGHT_BOX + BOX_W / 2} y={BOX_Y - 12} textAnchor="middle" fontSize="10" fill="var(--muted)" fontWeight="650">{currentIsQuery ? (lang === "zh" ? "读取后的 S（没有改写）" : "S after read (unchanged)") : (lang === "zh" ? "写入后的 S（大小不变）" : "S after write (same size)")}</text>
             {drawState(afterIndices, tokens, RIGHT_BOX, BOX_Y, currentIsQuery ? -1 : cur, (e) => showTooltip(e, linflowBoxTooltip(lang, afterIndices.length)))}
             {t >= 1 && <g transform="translate(225 120)">
-              {mode === "math" && currentIsQuery ? <>
-                <text x="0" y="0" fontSize="10" fill="var(--muted)">{lang === "zh" ? "本步只读，不写入" : "read only; no write this step"}</text>
-                <text x="0" y="22" fontSize="10" fill="var(--ink-2)">oₐ = Sᵀqₐ</text>
-                <text x="0" y="44" fontSize="10" fill="var(--series-8)" fontWeight="700">A: 1 + 4 = 5</text>
-              </> : <>
+              <>
                 <text x="0" y="0" fontSize="10" fill="var(--ink-2)">{lang === "zh" ? "写入" : "write"}: <tspan fill="var(--ink)" fontWeight="700">Sₜ = Sₜ₋₁ + kₜvₜᵀ</tspan></text>
-                <text x="0" y="22" fontSize="10" fill="var(--accent)" fontWeight="700">{mode === "math" && tokens[cur]?.text === "A=4" ? (lang === "zh" ? "与 A=1 沿同一 kₐ 方向累加" : "adds along the same kₐ as A=1") : (lang === "zh" ? "固定状态原地更新" : "fixed state updated in place")}</text>
+                <text x="0" y="22" fontSize="10" fill="var(--accent)" fontWeight="700">{lang === "zh" ? "固定状态原地更新" : "fixed state updated in place"}</text>
                 <text x="0" y="44" fontSize="10" fill="var(--ink-2)">{lang === "zh" ? "读出" : "read"}: <tspan fill="var(--ink)" fontWeight="700">oₜ = Sₜᵀqₜ</tspan></text>
-              </>}
+              </>
             </g>}
           </svg>
           {hover && <div className="viz-tooltip" style={{ left: hover.x, top: hover.y, transform: "translate(-50%, -130%)" }}>{hover.text}</div>}
         </div>
-      </div>
+      </div>}
     </VizStage>
   );
 }

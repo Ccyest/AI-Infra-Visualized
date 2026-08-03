@@ -1,36 +1,38 @@
 import { useState } from "react";
-import Legend from "../../components/core/Legend";
 import VizStage from "../../components/core/VizStage";
 import { useSimPlayer } from "../../components/core/useSimPlayer";
 import type { Locale } from "../../lib/i18n";
-import { seriesColor } from "../../lib/palette";
+import {
+  ChannelStatePanel,
+  ContributionLegend,
+  KEY_A,
+  KEY_B,
+  KeySpacePanel,
+  StateOperation,
+  TokenTimeline,
+  stateRead,
+  type StateTerm,
+  type TimelineItem,
+} from "./KeyChannelDiagram";
 import "./styles.css";
 
 const RETENTIONS = [1, 0.8, 0.5, 0.3, 0.1] as const;
-const INV_SQRT2 = Math.SQRT1_2;
-const BASE_CH1 = (4 + 2) * INV_SQRT2;
-const BASE_CH2 = (4 - 2) * INV_SQRT2;
-
-const STEPS = [
-  { label: "A=4", color: 1, kind: "write" },
-  { label: "B=2", color: 2, kind: "write" },
-  { label: "C=5", color: 5, kind: "gate-write" },
-  { label: "qₐ?", color: 0, kind: "query" },
-  { label: "qᵦ?", color: 0, kind: "query" },
-] as const;
+const TOKENS: TimelineItem[] = [
+  { label: "A=1", kind: "write", color: 1 },
+  { label: "B=2", kind: "write", color: 2 },
+  { label: "A=4", kind: "write", color: 4 },
+  { label: "qₐ?", kind: "query", color: 0 },
+];
 
 const COPY = {
-  title: { zh: "KDA：门控作用于 channel，影响的是完整 key 方向", en: "KDA: gates act on channels and change full key directions" },
-  subtitle: { zh: "A / B 都横跨 ch₁、ch₂；调节 α₁ / α₂，观察 qₐ / qᵦ 如何变化", en: "A and B both span ch₁ and ch₂; adjust α₁ / α₂ and watch qₐ / qᵦ change" },
-  before: { zh: "本步前的 S 行", en: "Rows of S before this step" },
-  after: { zh: "门控 + 写入后的 S 行", en: "Rows of S after gate + write" },
-  gate: { zh: "① Diag(α) 衰减 S 的行", en: "① Diag(α) decays rows of S" },
-  write: { zh: "② delta 写入 C=5", en: "② delta-write C=5" },
-  queryA: { zh: "qₐ 读取完整 A 方向", en: "qₐ reads the full A direction" },
-  queryB: { zh: "qᵦ 读取完整 B 方向", en: "qᵦ reads the full B direction" },
+  title: { zh: "KDA：先逐 channel 衰减，再沿完整 key 方向做 delta update", en: "KDA: decay channels first, then delta-update along a full key direction" },
+  subtitle: { zh: "同一串 A=1 → B=2 → A=4 → qₐ?；A/B 始终是箭头，ch₁/ch₂ 始终是 S 的行", en: "The same A=1 → B=2 → A=4 → qₐ? sequence; A/B stay arrows, ch₁/ch₂ stay rows of S" },
+  entering: { zh: "① A=4 进入前的 S", en: "① S before A=4" },
+  gated: { zh: "② Diag(α) 后的 S", en: "② S after Diag(α)" },
+  final: { zh: "③ 沿 kₐ delta 后的 S", en: "③ S after delta along kₐ" },
 };
 
-function text(lang: Locale, value: { zh: string; en: string }) {
+function tr(lang: Locale, value: { zh: string; en: string }) {
   return value[lang];
 }
 
@@ -38,138 +40,108 @@ function format(value: number): string {
   return String(Number(value.toFixed(2)));
 }
 
-interface Channel {
-  label: string;
-  value: number;
-  retention: number;
-  color: number;
+function baseTerms(): StateTerm[] {
+  return [
+    { id: "a-old", label: "A", vector: KEY_A, scalar: 1, color: 1 },
+    { id: "b", label: "B", vector: KEY_B, scalar: 2, color: 2 },
+  ];
 }
 
-function drawState(channels: Channel[], x: number, y: number, highlights: string[] = []) {
-  const slotW = 34;
-  const boxW = 150;
-  const boxH = 48;
-  return <g>
-    <rect x={x} y={y} width={boxW} height={boxH} rx={8} fill="none" stroke="var(--ink)" strokeOpacity={0.4} strokeWidth={1.3} />
-    {channels.map((channel, i) => {
-      const xx = x + 4 + i * (slotW + 3);
-      return <g key={channel.label}>
-        <rect x={xx} y={y + 4} width={slotW} height={boxH - 8} rx={3} fill="none" stroke="var(--grid)" strokeWidth="1" />
-        <rect x={xx} y={y + 4} width={slotW * channel.retention} height={boxH - 8} rx={3} fill={seriesColor(channel.color)} opacity="0.86" />
-        <text x={xx + slotW / 2} y={y + boxH + 13} textAnchor="middle" fontSize="8.5" fill={highlights.includes(channel.label) ? "var(--accent)" : "var(--muted)"} fontWeight={highlights.includes(channel.label) ? 700 : 400}>{channel.label}={format(channel.value)}</text>
-      </g>;
-    })}
-  </g>;
+function earlyState(completed: number): StateTerm[] {
+  if (completed <= 0) return [];
+  const terms: StateTerm[] = [{ id: "a-old", label: "A", vector: KEY_A, scalar: 1, color: 1 }];
+  if (completed >= 2) terms.push({ id: "b", label: "B", vector: KEY_B, scalar: 2, color: 2 });
+  return terms;
 }
 
 function ParameterRow({ label, value, onChange }: { label: string; value: number; onChange: (value: number) => void }) {
-  return <span className="kda-parameter-row">
-    <b>{label}</b>
-    <span className="viz-presets" role="group" aria-label={label}>
-      {RETENTIONS.map((option) => <button key={option} type="button" className={`viz-btn${value === option ? " primary" : ""}`} onClick={() => onChange(option)}>{option}</button>)}
+  return (
+    <span className="kda-parameter-row">
+      <b>{label}</b>
+      <span className="viz-presets" role="group" aria-label={label}>
+        {RETENTIONS.map((option) => (
+          <button key={option} type="button" className={`viz-btn${value === option ? " primary" : ""}`} onClick={() => onChange(option)}>{option}</button>
+        ))}
+      </span>
     </span>
-  </span>;
-}
-
-function aOnly(): Channel[] {
-  return [
-    { label: "ch₁", value: 4 * INV_SQRT2, retention: 1, color: 6 },
-    { label: "ch₂", value: 4 * INV_SQRT2, retention: 1, color: 7 },
-  ];
-}
-
-function bothKeys(): Channel[] {
-  return [
-    { label: "ch₁", value: BASE_CH1, retention: 1, color: 6 },
-    { label: "ch₂", value: BASE_CH2, retention: 1, color: 7 },
-  ];
-}
-
-function gated(alpha1: number, alpha2: number): Channel[] {
-  return [
-    { label: "ch₁", value: BASE_CH1 * alpha1, retention: alpha1, color: 6 },
-    { label: "ch₂", value: BASE_CH2 * alpha2, retention: alpha2, color: 7 },
-    { label: "C", value: 5, retention: 1, color: 5 },
-  ];
+  );
 }
 
 export default function KdaGateViz({ lang = "zh" }: { lang?: Locale }) {
   const [alpha1, setAlpha1] = useState<number>(0.8);
   const [alpha2, setAlpha2] = useState<number>(0.3);
-  const player = useSimPlayer(STEPS.length, 1.2);
-  const t = Math.min(player.t, STEPS.length);
-  const cur = t - 1;
-  const readA = 3 * alpha1 + alpha2;
-  const readB = 3 * alpha1 - alpha2;
+  const player = useSimPlayer(TOKENS.length, 1.2);
+  const t = Math.min(player.t, TOKENS.length);
+  const showingRewrite = t >= 3;
 
-  const stateBefore = t <= 1 ? [] : t === 2 ? aOnly() : t === 3 ? bothKeys() : gated(alpha1, alpha2);
-  const stateAfter = t === 0 ? [] : t === 1 ? aOnly() : t === 2 ? bothKeys() : gated(alpha1, alpha2);
-  const highlights = t >= 4 ? ["ch₁", "ch₂"] : t === 3 ? ["C"] : [];
+  const entering = showingRewrite ? baseTerms() : earlyState(Math.max(0, t - 1));
+  const gated: StateTerm[] = showingRewrite
+    ? baseTerms().map((term) => ({ ...term, rowScale: [alpha1, alpha2] as const }))
+    : entering;
+  const oldReadA = stateRead(gated, KEY_A);
+  const correction = showingRewrite ? 4 - oldReadA : t === 1 ? 1 : t === 2 ? 2 : 0;
+  const final: StateTerm[] = showingRewrite
+    ? [...gated, { id: "delta-a", label: "ΔA", vector: KEY_A, scalar: correction, color: 4 }]
+    : t === 1
+      ? earlyState(1)
+      : t === 2
+        ? earlyState(2)
+        : [];
+  const readA = stateRead(final, KEY_A);
+  const readB = stateRead(final, KEY_B);
 
   return (
     <VizStage
-      title={text(lang, COPY.title)}
-      subtitle={text(lang, COPY.subtitle)}
+      title={tr(lang, COPY.title)}
+      subtitle={tr(lang, COPY.subtitle)}
       player={player}
       lang={lang}
+      headExtra={
+        <span className="kda-parameter-controls" aria-label={lang === "zh" ? "A=4 这一步的 channel 保留系数" : "channel retentions for the A=4 step"}>
+          <ParameterRow label="α₁" value={alpha1} onChange={setAlpha1} />
+          <ParameterRow label="α₂" value={alpha2} onChange={setAlpha2} />
+        </span>
+      }
       footer={
-        <>
-          <Legend items={[
-            { label: lang === "zh" ? "A / B = 完整 key 方向，均跨两条 channel" : "A / B = full key directions spanning both channels", swatch: { background: "linear-gradient(90deg, var(--series-1) 0 50%, var(--series-2) 50%)" } },
-            { label: lang === "zh" ? "行内彩色宽度 = 该 channel 的保留系数" : "colored row width = that channel's retention", swatch: { background: "linear-gradient(90deg, var(--series-6) 0 65%, var(--grid) 65%)" } },
-            { label: lang === "zh" ? "C=5 固定 β=1，只为同时画出 delta write" : "C=5 uses β=1 only to show the delta write", swatch: { background: "var(--series-5)" } },
-          ]} />
-          <div className="viz-verdict">{lang === "zh" ? <>A / B 不是 ch₁ / ch₂。这里取 <code>kₐ=(1/√2)[1,1]ᵀ</code>、<code>kᵦ=(1/√2)[1,−1]ᵀ</code>，所以两个完整 key 方向都横跨两条 channel。<code>Diag(α)</code> 先缩放 S 的行，随后 <code>qₐ → 3α₁+α₂={format(readA)}</code>、<code>qᵦ → 3α₁−α₂={format(readB)}</code>。</> : <>A / B are not ch₁ / ch₂. This toy uses <code>kₐ=(1/√2)[1,1]ᵀ</code> and <code>kᵦ=(1/√2)[1,−1]ᵀ</code>, so both full key directions span both channels. <code>Diag(α)</code> scales rows of S first; then <code>qₐ → 3α₁+α₂={format(readA)}</code> and <code>qᵦ → 3α₁−α₂={format(readB)}</code>.</>}</div>
-        </>
+        <div className="viz-verdict">
+          {lang === "zh" ? <>
+            A=4 到来前，A=1 与 B=2 已经叠加在同两条 S 行里。<code>Diag(α)</code> 不是选择 A 或 B，而是把每一行里的所有历史贡献一起缩放。本例门控后 <code>kₐᵀS={format(oldReadA)}</code>，随后 β=1 的 delta update 沿完整 <code>kₐ</code> 写入残差 <code>4−{format(oldReadA)}={format(correction)}</code>，所以最终 <code>qₐ→{format(readA)}</code>；同时 <code>qᵦ→{format(readB)}</code>，展示门控对另一完整方向的影响。
+          </> : <>
+            Before A=4, A=1 and B=2 are already superposed in the same two rows of S. <code>Diag(α)</code> does not select A or B; it scales every historical contribution in each row together. Here <code>kₐᵀS={format(oldReadA)}</code> after gating, then the β=1 delta update writes residual <code>4−{format(oldReadA)}={format(correction)}</code> along the full <code>kₐ</code>. Thus <code>qₐ→{format(readA)}</code>, while <code>qᵦ→{format(readB)}</code> shows the gate's effect on the other full direction.
+          </>}
+        </div>
       }
     >
-      <div className="kda-parameter-controls">
-        <ParameterRow label="α₁" value={alpha1} onChange={setAlpha1} />
-        <ParameterRow label="α₂" value={alpha2} onChange={setAlpha2} />
+      <TokenTimeline items={TOKENS} t={t} />
+      <div className="key-channel-workbench three-state">
+        <KeySpacePanel lang={lang} />
+        <ChannelStatePanel
+          title={showingRewrite ? tr(lang, COPY.entering) : (lang === "zh" ? "本步进入的 S" : "S entering this step")}
+          terms={entering}
+          lang={lang}
+          note={showingRewrite ? (lang === "zh" ? "A/B 已在每条 row 内相加" : "A/B already add inside every row") : undefined}
+        />
+        <StateOperation label="Diag(α)" detail={showingRewrite ? `ch₁×${alpha1}, ch₂×${alpha2}` : "α=1"} />
+        <ChannelStatePanel
+          title={tr(lang, COPY.gated)}
+          terms={gated}
+          lang={lang}
+          accent={showingRewrite}
+          note={showingRewrite ? (lang === "zh" ? "整行缩放：A 与 B 一起衰减" : "whole-row scaling: A and B decay together") : undefined}
+        />
+        <StateOperation
+          label={lang === "zh" ? "沿完整 kₐ 做 delta" : "delta along full kₐ"}
+          detail={showingRewrite ? `+kₐ×${format(correction)}` : (lang === "zh" ? "首次写入" : "first write")}
+        />
+        <ChannelStatePanel
+          title={tr(lang, COPY.final)}
+          terms={final}
+          lang={lang}
+          accent={t > 0}
+          note={showingRewrite ? `qₐ=${format(readA)} · qᵦ=${format(readB)}` : undefined}
+        />
       </div>
-      <div className="kda-key-scope">
-        <span><b>A</b><code>kₐ = (1/√2)[1, 1]ᵀ</code></span>
-        <span><b>B</b><code>kᵦ = (1/√2)[1, −1]ᵀ</code></span>
-        <small>{lang === "zh" ? "两者都是完整向量，都使用 ch₁ 和 ch₂" : "Both are full vectors and use both ch₁ and ch₂"}</small>
-      </div>
-      <div className="viz-grid-wrap">
-        <svg className="viz-grid" style={{ minWidth: 500, maxWidth: 680 }} viewBox="0 0 620 205" role="img" aria-label={text(lang, COPY.title)}>
-          <defs><marker id="kda-gate-arrow" viewBox="0 0 8 8" refX="6.5" refY="4" markerWidth="7" markerHeight="7" markerUnits="userSpaceOnUse" orient="auto"><path d="M0 0 L8 4 L0 8z" fill="var(--accent)" /></marker></defs>
-          {STEPS.map((step, i) => {
-            const x = 18 + i * 47;
-            const seen = i < t;
-            const query = step.kind === "query";
-            return <g key={step.label}>
-              <rect x={x} y="28" width="30" height="30" rx="5" fill={seen ? (query ? "var(--axis)" : seriesColor(step.color)) : "none"} opacity={seen ? (query ? 0.5 : 0.86) : 1} stroke={i === cur ? "var(--accent)" : "var(--grid)"} strokeWidth={i === cur ? 2 : 1} />
-              {seen && <text x={x + 15} y="71" textAnchor="middle" fontSize="9" fill={i === cur ? "var(--accent)" : "var(--muted)"} fontWeight={i === cur ? 700 : 400}>{step.label}</text>}
-            </g>;
-          })}
-
-          {t >= 1 && <>
-            <path d="M175 139 L218 139" fill="none" stroke="var(--accent)" strokeWidth="2.2" opacity="0.7" />
-            <path d="M422 139 L440 139" fill="none" stroke="var(--accent)" strokeWidth="2.2" opacity="0.7" markerEnd="url(#kda-gate-arrow)" />
-          </>}
-          <text x="93" y="103" textAnchor="middle" fontSize="10" fill="var(--muted)" fontWeight="650">{text(lang, COPY.before)}</text>
-          {drawState(stateBefore, 18, 115)}
-          <text x="525" y="103" textAnchor="middle" fontSize="10" fill="var(--muted)" fontWeight="650">{text(lang, COPY.after)}</text>
-          {drawState(stateAfter, 450, 115, highlights)}
-
-          <g transform="translate(225 109)">
-            {t === 3 ? <>
-              <text x="0" y="0" fontSize="10" fill="var(--accent)" fontWeight="700">{text(lang, COPY.gate)}</text>
-              <text x="0" y="17" fontSize="9.5" fill="var(--ink-2)">ch₁: {format(BASE_CH1)}×{alpha1} = {format(BASE_CH1 * alpha1)}</text>
-              <text x="0" y="33" fontSize="9.5" fill="var(--ink-2)">ch₂: {format(BASE_CH2)}×{alpha2} = {format(BASE_CH2 * alpha2)}</text>
-              <text x="0" y="53" fontSize="10" fill="var(--good)" fontWeight="700">{text(lang, COPY.write)} (β=1)</text>
-            </> : t === 4 ? <>
-              <text x="0" y="17" fontSize="10" fill="var(--good)" fontWeight="700">{text(lang, COPY.queryA)}</text>
-              <text x="0" y="39" fontSize="9.5" fill="var(--ink-2)">3α₁ + α₂ = {format(readA)}</text>
-            </> : t === 5 ? <>
-              <text x="0" y="10" fontSize="10" fill="var(--good)" fontWeight="700">qₐ: 3α₁ + α₂ = {format(readA)}</text>
-              <text x="0" y="36" fontSize="10" fill="var(--good)" fontWeight="700">qᵦ: 3α₁ − α₂ = {format(readB)}</text>
-            </> : t >= 1 ? <text x="0" y="26" fontSize="10" fill="var(--accent)" fontWeight="700">delta write: {STEPS[cur].label} (β=1)</text> : null}
-          </g>
-        </svg>
-      </div>
+      <ContributionLegend lang={lang} third="delta" />
     </VizStage>
   );
 }
