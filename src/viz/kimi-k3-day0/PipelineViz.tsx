@@ -187,7 +187,7 @@ export default function PipelineViz({ lang = "zh" }: { lang?: Locale }) {
   const utilization = Math.round((chunks / (chunks + RANKS - 1)) * 100);
   const bubbleShare = 100 - utilization;
   return (
-    <figure className="viz-stage parallel-explainer" style={{ margin: "1.6rem 0" }}>
+    <figure className="viz-stage k3-viz parallel-explainer" style={{ margin: "1.6rem 0" }}>
       <div className="viz-head">
         <span className="viz-title">{copy.title}</span>
         <span className="viz-subtitle">{copy.subtitle}</span>

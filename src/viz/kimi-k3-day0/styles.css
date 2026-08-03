@@ -1,6 +1,15 @@
 /* Kimi K3 Day-0 课程专用样式
    (网格/分段/结论条等通用可视化样式见 src/styles/global.css) */
 
+/* Shared typography scale for K3 diagrams. Keep secondary labels at 11px or above. */
+.k3-viz {
+  --k3-viz-font-xs: 0.7rem;
+  --k3-viz-font-sm: 0.75rem;
+  --k3-viz-font-body: 0.82rem;
+  --k3-viz-font-label: 0.88rem;
+  --k3-viz-font-heading: 0.95rem;
+}
+
 .k3-event {
   font-size: 0.82rem;
   font-weight: 650;
@@ -360,7 +369,7 @@
   border-radius: 999px;
   background: color-mix(in srgb, var(--series-2) 14%, var(--surface));
   color: var(--ink);
-  font-size: 0.7rem;
+  font-size: var(--k3-viz-font-sm);
   font-weight: 700;
 }
 
@@ -370,13 +379,13 @@
 
 .parallel-card-head > b {
   color: var(--ink);
-  font-size: 0.9rem;
+  font-size: var(--k3-viz-font-heading);
 }
 
 .parallel-card > p {
   margin: 0.45rem 0 0.65rem;
   color: var(--ink-2);
-  font-size: 0.78rem;
+  font-size: var(--k3-viz-font-body);
   line-height: 1.5;
 }
 
@@ -409,12 +418,12 @@
 
 .parallel-schedule-row > b {
   color: var(--muted);
-  font-size: 0.65rem;
+  font-size: var(--k3-viz-font-xs);
 }
 
 .parallel-tp-round {
   display: grid;
-  height: 1.4rem;
+  height: 1.55rem;
   grid-template-columns: minmax(0, 1.6fr) minmax(3.2rem, 0.7fr);
   overflow: hidden;
   border-radius: 4px;
@@ -425,7 +434,7 @@
   display: grid;
   place-items: center;
   color: var(--accent-ink);
-  font-size: 0.58rem;
+  font-size: var(--k3-viz-font-xs);
   font-style: normal;
   font-weight: 700;
 }
@@ -448,12 +457,12 @@
 
 .parallel-pp-schedule .parallel-schedule-row > b strong {
   color: var(--ink-2);
-  font-size: 0.72rem;
+  font-size: var(--k3-viz-font-sm);
 }
 
 .parallel-pp-schedule .parallel-schedule-row > b small {
   color: var(--muted);
-  font-size: 0.55rem;
+  font-size: var(--k3-viz-font-xs);
   font-weight: 500;
 }
 
@@ -465,11 +474,11 @@
 
 .parallel-pp-track > i {
   display: grid;
-  height: 1.4rem;
+  height: 1.55rem;
   place-items: center;
   border-radius: 4px;
   color: var(--accent-ink);
-  font-size: 0.56rem;
+  font-size: var(--k3-viz-font-xs);
   font-style: normal;
   font-weight: 700;
 }
@@ -492,7 +501,7 @@
 .parallel-p2p-row {
   display: grid;
   min-width: 790px;
-  height: 0.7rem;
+  height: 0.85rem;
   grid-template-columns: 5.4rem minmax(690px, 1fr);
   align-items: center;
 }
@@ -506,7 +515,7 @@
 .parallel-p2p-track > i {
   align-self: center;
   color: var(--good);
-  font-size: 0.55rem;
+  font-size: var(--k3-viz-font-xs);
   font-style: normal;
   font-weight: 700;
   line-height: 1;
@@ -515,7 +524,7 @@
 
 .parallel-pp-schedule > small {
   color: var(--muted);
-  font-size: 0.66rem;
+  font-size: var(--k3-viz-font-sm);
   line-height: 1.4;
 }
 
@@ -529,7 +538,7 @@
   border-radius: 8px;
   background: color-mix(in srgb, var(--accent) 5%, var(--surface));
   color: var(--ink-2);
-  font-size: 0.7rem;
+  font-size: var(--k3-viz-font-sm);
 }
 
 .parallel-chunk-control > span:first-child {
@@ -555,7 +564,7 @@
 
 .parallel-chunk-control > small {
   color: var(--muted);
-  font-size: 0.62rem;
+  font-size: var(--k3-viz-font-xs);
   line-height: 1.35;
 }
 
@@ -568,7 +577,7 @@
 
 .parallel-facts > span {
   color: var(--ink-2);
-  font-size: 0.7rem;
+  font-size: var(--k3-viz-font-sm);
 }
 
 .parallel-card.problem .parallel-facts > span::first-letter {
@@ -590,7 +599,7 @@
 
 .parallel-gain-chart > b {
   color: var(--ink);
-  font-size: 0.72rem;
+  font-size: var(--k3-viz-font-body);
 }
 
 .parallel-gain-columns {
@@ -609,7 +618,7 @@
 .parallel-gain-columns section > span {
   grid-column: 1 / -1;
   color: var(--ink-2);
-  font-size: 0.64rem;
+  font-size: var(--k3-viz-font-sm);
   font-weight: 650;
 }
 
@@ -620,7 +629,7 @@
 .parallel-gain-columns em,
 .parallel-gain-columns output {
   color: var(--muted);
-  font-size: 0.58rem;
+  font-size: var(--k3-viz-font-xs);
   font-style: normal;
   font-variant-numeric: tabular-nums;
 }
@@ -662,7 +671,7 @@
   display: grid;
   gap: 0.45rem;
   color: var(--ink-2);
-  font-size: 0.8rem;
+  font-size: var(--k3-viz-font-body);
   line-height: 1.55;
 }
 
