@@ -44,7 +44,6 @@ import MoeViz from "../../../viz/kimi-k3-day0/MoeViz";
 import PoolViz from "../../../viz/kimi-k3-day0/PoolViz";
 import PipelineViz from "../../../viz/kimi-k3-day0/PipelineViz";
 import DcpViz from "../../../viz/kimi-k3-day0/DcpViz";
-import Mapping from "../../../viz/kimi-k3-day0/Mapping";
 
 ## Kimi K3 的架构
 
@@ -322,7 +321,3 @@ KDA 层仍按 TP 切分，所以混合架构的并行策略也是按层混合的
 
 > AllReduce 是同步点，在那里省 1 微秒，步时就省 1 微秒；
 > 藏在别的 stream overlap 里的 kernel，只值大约十分之一。
-
-## 图 ↔ 真实系统对照
-
-<Mapping client:visible />
