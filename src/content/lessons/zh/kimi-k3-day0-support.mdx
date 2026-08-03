@@ -64,16 +64,12 @@ softmax attention 解码每个 token 都要扫遍历史（$O(N)$），KDA 只更
 
 ### MHA：每步扫全部历史
 
-先看 KDA 替代了什么。在普通 MHA 中，第 $N$ 个 token 会与 cache 里前 $N-1$ 个 token
-分别计算分数，再经过 softmax 归一化，最后对 value 做加权求和：
+先看 KDA 替代了什么。在普通 MHA 中，第 $N$ 个 token 会读取 cache 里前
+$N-1$ 个 token，分三步计算：
 
-$$
-\begin{aligned}
-z_i &= \frac{q_N^\top k_i}{\sqrt{d}}, \\
-a_i &= \frac{\exp(z_i)}{\sum_{j=1}^{N-1}\exp(z_j)}, \\
-o_N &= \sum_{i=1}^{N-1} a_i v_i.
-\end{aligned}
-$$
+1. **打分**：对每个历史 token $i$ 计算 $z_i = q_N^\top k_i / \sqrt{d}$。
+2. **归一化**：先求 $Z = \sum_{j=1}^{N-1}\exp(z_j)$，再得到注意力权重 $a_i = \exp(z_i) / Z$。
+3. **汇总**：用这些权重对 value 加权求和，$o_N = \sum_{i=1}^{N-1} a_i v_i$。
 
 长度为 $N$ 的序列累计约有 $N^2/2$ 次点积，计算为 $O(N^2)$，cache 为 $O(N)$。
 下图中，「它」可以直接把权重放到 5 个 token 之前的「猫」上：

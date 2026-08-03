@@ -69,17 +69,12 @@ history for every decoded token ($O(N)$), while KDA updates a fixed-size state
 
 ### MHA: scan the whole history each step
 
-First look at what KDA replaces. In ordinary MHA, token $N$ computes a score
-against each of the $N-1$ cached tokens, applies softmax normalization, and
-finally takes a weighted sum of the values:
+First look at what KDA replaces. In ordinary MHA, token $N$ reads the preceding
+$N-1$ cached tokens in three steps:
 
-$$
-\begin{aligned}
-z_i &= \frac{q_N^\top k_i}{\sqrt{d}}, \\
-a_i &= \frac{\exp(z_i)}{\sum_{j=1}^{N-1}\exp(z_j)}, \\
-o_N &= \sum_{i=1}^{N-1} a_i v_i.
-\end{aligned}
-$$
+1. **Score:** compare against each earlier token $i$ with $z_i = q_N^\top k_i / \sqrt{d}$.
+2. **Normalize:** compute $Z = \sum_{j=1}^{N-1}\exp(z_j)$, then assign attention weight $a_i = \exp(z_i) / Z$.
+3. **Aggregate:** take the weighted sum of values, $o_N = \sum_{i=1}^{N-1} a_i v_i$.
 
 A length-$N$ sequence therefore performs about $N^2/2$ dot products: $O(N^2)$
 compute and $O(N)$ cache. In the diagram, "it" can place its weight directly on
