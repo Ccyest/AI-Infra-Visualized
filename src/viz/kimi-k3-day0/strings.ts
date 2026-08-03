@@ -317,6 +317,41 @@ export const ARCH_DETAILS: ArchDetail[] = [
   },
 ];
 
+export const ARCH_CALLOUTS = {
+  scale: {
+    zh: "2.8T 总参数，每 token 激活 104B",
+    en: "2.8T total; 104B active per token",
+  },
+  mxfp4: {
+    zh: "MoE expert 权重采用 MXFP4",
+    en: "MoE expert weights use MXFP4",
+  },
+  vision: {
+    zh: "图像与视频编码到共享表示空间",
+    en: "Encodes images and video into shared representations",
+  },
+  embed: {
+    zh: "NoPE；位置由 KDA 递归隐式提供",
+    en: "NoPE; KDA recurrence supplies position implicitly",
+  },
+  kda: {
+    zh: "固定状态的线性注意力，解码 O(1)",
+    en: "Fixed-state linear attention with O(1) decode",
+  },
+  mla: {
+    zh: "全局 softmax attention，负责跨全文交互",
+    en: "Global softmax attention connects the full context",
+  },
+  moe: {
+    zh: "每 token 路由 16 / 896 个 experts",
+    en: "Routes each token to 16 of 896 experts",
+  },
+  attnres: {
+    zh: "每 12 层保留摘要，按权重跨层取回",
+    en: "Keeps 12-layer summaries for weighted retrieval",
+  },
+} satisfies Record<string, Localized>;
+
 export const MHA = {
   title: {
     zh: "MHA：读取随历史增长的 KV cache",

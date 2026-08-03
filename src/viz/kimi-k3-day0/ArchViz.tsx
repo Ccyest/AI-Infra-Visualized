@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { ReactNode } from "react";
 import type { Locale } from "../../lib/i18n";
-import { ARCH, ARCH_DETAILS } from "./strings";
+import { ARCH, ARCH_CALLOUTS, ARCH_DETAILS } from "./strings";
 import "./styles.css";
 
 /** K3 整体结构图：3:1 KDA/MLA 混排 + 8 个 AttnRes 深度分组。 */
@@ -17,8 +17,17 @@ const HEIGHT = 372;
 
 const LAYERS = ["kda", "kda", "kda", "mla"] as const;
 
+interface ArchSelection {
+  id: keyof typeof ARCH_CALLOUTS;
+  key: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 export default function ArchViz({ lang = "zh" }: { lang?: Locale }) {
-  const [active, setActive] = useState("kda");
+  const [active, setActive] = useState<ArchSelection | null>(null);
 
   const tile = (
     id: string,
@@ -31,13 +40,15 @@ export default function ArchViz({ lang = "zh" }: { lang?: Locale }) {
     fill = "var(--surface)",
     textFill = "var(--ink)",
   ) => {
-    const selected = active === id;
+    const key = `${id}-${x}-${y}`;
+    const selected = active?.key === key;
     const detail = ARCH_DETAILS.find((d) => d.id === id);
-    const clickable = Boolean(detail);
+    const clickable = Boolean(detail && id in ARCH_CALLOUTS);
     return (
       <g
-        key={`${id}-${x}-${y}`}
-        onClick={clickable ? () => setActive(id) : undefined}
+        key={key}
+        className={clickable ? "arch-clickable" : undefined}
+        onClick={clickable ? () => setActive({ id: id as keyof typeof ARCH_CALLOUTS, key, x, y, width: w, height: h }) : undefined}
         style={clickable ? { cursor: "pointer" } : undefined}
       >
         {detail && <title>{detail.detail[lang]}</title>}
@@ -47,6 +58,7 @@ export default function ArchViz({ lang = "zh" }: { lang?: Locale }) {
           width={w}
           height={h}
           rx={8}
+          className={`arch-tile${selected ? " is-selected" : ""}`}
           fill={fill}
           stroke={selected ? "var(--ink)" : "var(--border)"}
           strokeWidth={selected ? 3.2 : 1}
@@ -125,6 +137,41 @@ export default function ArchViz({ lang = "zh" }: { lang?: Locale }) {
         ))}
         <line x1={x + groupWidth / 2} y1={summaryY} x2={x + groupWidth / 2} y2={groupY} stroke="var(--axis)" strokeWidth="1" />
         <circle cx={x + groupWidth / 2} cy={summaryY} r="3.2" fill="var(--surface)" stroke="var(--axis)" strokeWidth="1.4" />
+      </g>
+    );
+  };
+
+  const selectionCallout = () => {
+    if (!active) return null;
+    const bubbleWidth = lang === "zh" ? 200 : 260;
+    const bubbleHeight = 34;
+    const centerY = active.y + active.height / 2;
+    const fitsRight = active.x + active.width + 12 + bubbleWidth <= WIDTH - 10;
+    let bubbleX = fitsRight ? active.x + active.width + 12 : active.x - bubbleWidth - 12;
+    let bubbleY = Math.max(6, Math.min(HEIGHT - bubbleHeight - 6, centerY - bubbleHeight / 2));
+    let lineX1 = fitsRight ? active.x + active.width : active.x;
+    let lineY1 = centerY;
+    let lineX2 = fitsRight ? bubbleX : bubbleX + bubbleWidth;
+    let lineY2 = bubbleY + bubbleHeight / 2;
+
+    if (active.id === "attnres") {
+      bubbleX = 530;
+      bubbleY = 218;
+      lineX1 = active.x + active.width / 2;
+      lineY1 = active.y;
+      lineX2 = bubbleX;
+      lineY2 = bubbleY + bubbleHeight / 2;
+    }
+
+    return (
+      <g key={active.key} aria-live="polite">
+        <line className="arch-callout-line" x1={lineX1} y1={lineY1} x2={lineX2} y2={lineY2} />
+        <g className="arch-callout">
+          <rect x={bubbleX} y={bubbleY} width={bubbleWidth} height={bubbleHeight} rx="9" />
+          <text x={bubbleX + bubbleWidth / 2} y={bubbleY + 21} textAnchor="middle">
+            {ARCH_CALLOUTS[active.id][lang]}
+          </text>
+        </g>
       </g>
     );
   };
@@ -209,15 +256,26 @@ export default function ArchViz({ lang = "zh" }: { lang?: Locale }) {
           {/* 下图：3 个 4-layer unit 组成一个 12-layer block，AttnRes 保留各 block 摘要 */}
           <rect x="140" y="210" width="620" height="156" rx="12" fill="color-mix(in srgb, var(--accent) 2%, var(--surface))" stroke="var(--border)" strokeWidth="1.4" />
           <text x="160" y="233" fontSize="11" fontWeight="650" fill="var(--ink)">{ARCH.repeat[lang]}</text>
-          <g onClick={() => setActive("attnres")} style={{ cursor: "pointer" }}>
+          <g
+            className="arch-clickable"
+            onClick={() => setActive({
+              id: "attnres",
+              key: "attnres-rail",
+              x: groupStartX,
+              y: summaryY - 6,
+              width: 7 * groupStep + groupWidth,
+              height: 12,
+            })}
+            style={{ cursor: "pointer" }}
+          >
             <title>{ARCH_DETAILS.find((d) => d.id === "attnres")?.detail[lang]}</title>
             <text
               x="450"
               y="271"
               textAnchor="middle"
               fontSize="10"
-              fontWeight={active === "attnres" ? 700 : 400}
-              fill={active === "attnres" ? "var(--ink)" : "var(--muted)"}
+              fontWeight={active?.key === "attnres-rail" ? 700 : 400}
+              fill={active?.key === "attnres-rail" ? "var(--ink)" : "var(--muted)"}
             >
               {ARCH.attnresArc[lang]}
             </text>
@@ -226,8 +284,8 @@ export default function ArchViz({ lang = "zh" }: { lang?: Locale }) {
               y1={summaryY}
               x2={groupStartX + 7 * groupStep + groupWidth / 2}
               y2={summaryY}
-              stroke={active === "attnres" ? "var(--ink)" : "var(--axis)"}
-              strokeWidth={active === "attnres" ? 3 : 1.6}
+              stroke={active?.key === "attnres-rail" ? "var(--ink)" : "var(--axis)"}
+              strokeWidth={active?.key === "attnres-rail" ? 3 : 1.6}
               strokeLinecap="round"
             />
             <line x1={groupStartX} y1={summaryY} x2={groupStartX + 7 * groupStep + groupWidth} y2={summaryY} stroke="transparent" strokeWidth="28" />
@@ -240,6 +298,7 @@ export default function ArchViz({ lang = "zh" }: { lang?: Locale }) {
           {/* 输出侧 */}
           {arrow(blockRight + 4, 115, blockRight + 40, 115)}
           {tile("out", blockRight + 42, 92, 82, 46, ARCH.outLabel[lang], undefined, "var(--surface)", "var(--ink-2)")}
+          {selectionCallout()}
         </svg>
       </div>
     </figure>
