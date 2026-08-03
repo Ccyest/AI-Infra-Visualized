@@ -256,9 +256,522 @@
   color: var(--ink);
 }
 
+/* Serving parallelism: always show naive problem and optimized solution together. */
+.parallel-compare-stack,
+.dcp-compare-stack {
+  display: grid;
+  gap: 0.55rem;
+  padding: 0.8rem;
+}
+
+.parallel-card {
+  min-width: 0;
+  padding: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+.parallel-card.problem {
+  border-left: 4px solid var(--series-2);
+}
+
+.parallel-card.solution {
+  border-left: 4px solid var(--accent);
+}
+
+.parallel-card-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem 0.7rem;
+  align-items: center;
+}
+
+.parallel-card-head > span {
+  padding: 0.12rem 0.48rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--series-2) 14%, var(--surface));
+  color: var(--ink);
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.parallel-card.solution .parallel-card-head > span {
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface));
+}
+
+.parallel-card-head > b {
+  color: var(--ink);
+  font-size: 0.9rem;
+}
+
+.parallel-card > p {
+  margin: 0.45rem 0 0.65rem;
+  color: var(--ink-2);
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+
+.parallel-down-arrow {
+  color: var(--accent);
+  font-size: 1.65rem;
+  font-weight: 750;
+  line-height: 0.8;
+  text-align: center;
+}
+
+.parallel-tp-schedule,
+.parallel-pp-schedule {
+  display: grid;
+  gap: 0.22rem;
+  padding: 0.45rem;
+  overflow-x: auto;
+  border: 1px solid var(--grid);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--axis) 5%, var(--surface));
+}
+
+.parallel-schedule-row {
+  display: grid;
+  min-width: 650px;
+  grid-template-columns: 2rem repeat(3, minmax(0, 1fr));
+  gap: 0.25rem;
+  align-items: center;
+}
+
+.parallel-schedule-row > b {
+  color: var(--muted);
+  font-size: 0.65rem;
+}
+
+.parallel-tp-round {
+  display: grid;
+  height: 1.4rem;
+  grid-template-columns: minmax(0, 1.6fr) minmax(3.2rem, 0.7fr);
+  overflow: hidden;
+  border-radius: 4px;
+}
+
+.parallel-tp-round i,
+.parallel-tp-round em {
+  display: grid;
+  place-items: center;
+  color: var(--accent-ink);
+  font-size: 0.58rem;
+  font-style: normal;
+  font-weight: 700;
+}
+
+.parallel-tp-round em {
+  background: color-mix(in srgb, var(--series-2) 55%, var(--surface));
+  color: var(--ink);
+}
+
+.parallel-pp-schedule .parallel-schedule-row {
+  grid-template-columns: 2rem minmax(620px, 1fr);
+}
+
+.parallel-pp-track {
+  display: grid;
+  grid-template-columns: repeat(15, minmax(1.9rem, 1fr));
+  gap: 0.18rem;
+}
+
+.parallel-pp-track > i {
+  display: grid;
+  height: 1.4rem;
+  place-items: center;
+  border-radius: 4px;
+  color: var(--accent-ink);
+  font-size: 0.56rem;
+  font-style: normal;
+  font-weight: 700;
+}
+
+.parallel-pp-track > i.bubble {
+  border: 1px dashed var(--grid);
+  background: repeating-linear-gradient(45deg, transparent 0 3px, var(--axis) 3px 4px);
+  opacity: 0.55;
+}
+
+.parallel-pp-schedule > small {
+  color: var(--muted);
+  font-size: 0.66rem;
+  line-height: 1.4;
+}
+
+.parallel-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.7rem;
+  margin-top: 0.55rem;
+}
+
+.parallel-facts > span {
+  color: var(--ink-2);
+  font-size: 0.7rem;
+}
+
+.parallel-card.problem .parallel-facts > span::first-letter {
+  color: var(--series-2);
+}
+
+.parallel-card.solution .parallel-facts > span::first-letter {
+  color: var(--good);
+}
+
+.parallel-footer {
+  display: grid;
+  gap: 0.45rem;
+  color: var(--ink-2);
+  font-size: 0.8rem;
+  line-height: 1.55;
+}
+
+.parallel-footer b {
+  color: var(--ink);
+}
+
+/* DCP: replicated and position-sharded KV remain visible at the same time. */
+.dcp-kv-grid {
+  display: grid;
+  gap: 0.22rem;
+  overflow-x: auto;
+}
+
+.dcp-position-axis,
+.dcp-kv-row {
+  display: grid;
+  min-width: 570px;
+  grid-template-columns: 2.4rem repeat(12, minmax(1.5rem, 1fr));
+  gap: 0.2rem;
+  align-items: center;
+}
+
+.dcp-position-axis b,
+.dcp-kv-row > b {
+  color: var(--muted);
+  font-size: 0.6rem;
+  text-align: center;
+}
+
+.dcp-kv-row > i,
+.dcp-inline-legend i {
+  height: 1.5rem;
+  border-radius: 4px;
+}
+
+.dcp-kv-row > i.stored {
+  opacity: 0.86;
+}
+
+.dcp-kv-row > i.empty,
+.dcp-inline-legend i.empty {
+  border: 1px solid var(--grid);
+  background: color-mix(in srgb, var(--axis) 3%, var(--surface));
+}
+
+.dcp-grid-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 1rem;
+  justify-content: space-between;
+  margin-top: 0.6rem;
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.dcp-grid-summary b {
+  color: var(--ink);
+}
+
+.dcp-exact-flow {
+  margin: 0 0.8rem 0.8rem;
+  padding: 0.75rem;
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--accent) 4%, var(--surface));
+}
+
+.dcp-exact-title {
+  display: block;
+  margin-bottom: 0.55rem;
+  color: var(--ink);
+  font-size: 0.82rem;
+}
+
+.dcp-flow-steps {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto minmax(0, 1fr) auto minmax(0, 1fr);
+  gap: 0.35rem;
+  align-items: center;
+}
+
+.dcp-flow-steps > i {
+  color: var(--accent);
+  font-size: 1.1rem;
+  font-style: normal;
+  font-weight: 700;
+}
+
+.dcp-flow-step {
+  display: flex;
+  min-height: 3.5rem;
+  flex-direction: column;
+  justify-content: center;
+  padding: 0.45rem;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface);
+}
+
+.dcp-flow-step b {
+  color: var(--ink);
+  font-size: 0.7rem;
+}
+
+.dcp-flow-step small {
+  margin-top: 0.18rem;
+  color: var(--muted);
+  font-size: 0.62rem;
+}
+
+.dcp-inline-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  margin: 0 0.8rem 0.75rem;
+  color: var(--ink-2);
+  font-size: 0.7rem;
+}
+
+.dcp-inline-legend > span {
+  display: inline-flex;
+  gap: 0.35rem;
+  align-items: center;
+}
+
+.dcp-inline-legend i {
+  width: 1rem;
+  height: 1rem;
+  background: var(--series-1);
+}
+
+/* Serving numbers: separate latency, aggregate throughput, and per-user speed. */
+.serving-perf-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+  gap: 0.8rem;
+  padding: 0.8rem;
+}
+
+.serving-perf-card {
+  min-width: 0;
+  padding: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+.serving-perf-card h3 {
+  margin: 0 0 0.65rem;
+  color: var(--ink);
+  font-size: 0.88rem;
+}
+
+.serving-perf-card > p {
+  margin: 0.7rem 0 0;
+  color: var(--muted);
+  font-size: 0.7rem;
+  line-height: 1.5;
+}
+
+.serving-decode-row {
+  display: grid;
+  grid-template-columns: minmax(8.5rem, 0.9fr) minmax(8rem, 1.25fr) 3rem;
+  gap: 0.45rem;
+  align-items: center;
+  margin-top: 0.55rem;
+}
+
+.serving-decode-row > div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.serving-decode-row b {
+  color: var(--ink);
+  font-size: 0.68rem;
+}
+
+.serving-decode-row small {
+  color: var(--muted);
+  font-size: 0.58rem;
+}
+
+.serving-decode-track {
+  height: 1.2rem;
+  overflow: hidden;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--axis) 12%, var(--surface));
+}
+
+.serving-decode-track i {
+  display: block;
+  height: 100%;
+  min-width: 2px;
+  border-radius: inherit;
+}
+
+.serving-decode-track i.base {
+  background: var(--axis);
+}
+
+.serving-decode-track i.optimized {
+  background: var(--series-1);
+}
+
+.serving-decode-track i.dspark {
+  background: var(--series-4);
+}
+
+.serving-decode-row output {
+  color: var(--ink);
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.serving-frontier {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto minmax(0, 1fr);
+  gap: 0.35rem;
+  align-items: stretch;
+}
+
+.serving-frontier > i {
+  align-self: center;
+  color: var(--accent);
+  font-size: 1.1rem;
+  font-style: normal;
+}
+
+.serving-frontier-point {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  padding: 0.55rem;
+  border: 1px solid var(--border);
+  border-top: 3px solid var(--series-1);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--series-1) 5%, var(--surface));
+}
+
+.serving-frontier-point.dcp {
+  border-top-color: var(--series-3);
+  background: color-mix(in srgb, var(--series-3) 5%, var(--surface));
+}
+
+.serving-frontier-point.interactive {
+  border-top-color: var(--series-4);
+  background: color-mix(in srgb, var(--series-4) 5%, var(--surface));
+}
+
+.serving-frontier-point > span {
+  color: var(--ink);
+  font-size: 0.67rem;
+  font-weight: 700;
+}
+
+.serving-frontier-point > small {
+  min-height: 2.35rem;
+  margin-top: 0.25rem;
+  color: var(--muted);
+  font-size: 0.56rem;
+  line-height: 1.35;
+}
+
+.serving-frontier-point > b {
+  margin-top: 0.4rem;
+  color: var(--accent);
+  font-size: 1.35rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.serving-frontier-point > em {
+  color: var(--ink-2);
+  font-size: 0.58rem;
+  font-style: normal;
+}
+
+.serving-critical-path {
+  display: grid;
+  grid-template-columns: minmax(9rem, 0.65fr) minmax(0, 1fr) minmax(0, 1fr);
+  gap: 0.55rem;
+  align-items: center;
+  margin: 0 0.8rem 0.8rem;
+  padding: 0.65rem 0.75rem;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--accent) 5%, var(--surface));
+}
+
+.serving-critical-path > b {
+  color: var(--ink);
+  font-size: 0.75rem;
+}
+
+.serving-critical-path > span {
+  display: grid;
+  grid-template-columns: minmax(7rem, 0.8fr) minmax(2rem, 1fr);
+  gap: 0.25rem 0.45rem;
+  align-items: center;
+}
+
+.serving-critical-path em,
+.serving-critical-path strong {
+  color: var(--ink-2);
+  font-size: 0.62rem;
+  font-style: normal;
+  font-weight: 500;
+}
+
+.serving-critical-path strong {
+  grid-column: 1 / -1;
+  color: var(--muted);
+}
+
+.serving-critical-path i {
+  height: 0.55rem;
+  border-radius: 999px;
+  background: var(--series-1);
+}
+
+.serving-critical-path i.tenth {
+  width: 10%;
+  min-width: 3px;
+  background: var(--axis);
+}
+
 @media (max-width: 860px) {
   .attnres-compare {
     grid-template-columns: 1fr;
+  }
+
+  .serving-perf-grid,
+  .serving-critical-path {
+    grid-template-columns: 1fr;
+  }
+
+  .dcp-flow-steps,
+  .serving-frontier {
+    grid-template-columns: 1fr;
+  }
+
+  .dcp-flow-steps > i,
+  .serving-frontier > i {
+    justify-self: center;
+    transform: rotate(90deg);
   }
 }
 

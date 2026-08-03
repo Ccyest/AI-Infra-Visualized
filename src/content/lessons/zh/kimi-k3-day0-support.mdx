@@ -17,20 +17,8 @@ references:
     url: "https://www.lmsys.org/blog/2026-07-27-kimi-k3-day0-support/"
   - label: "Kimi Linear: An Expressive, Efficient Attention Architecture（KDA 的出处，含 3:1 混排的消融）"
     url: "https://arxiv.org/abs/2510.26692"
-  - label: "Kimi K3 官方 config（hidden size、head 数与 KDA head dimension）"
-    url: "https://huggingface.co/moonshotai/Kimi-K3/blob/main/config.json"
-  - label: "Gated Delta Networks: Improving Mamba2 with Delta Rule（delta rule 加门控的先例）"
-    url: "https://arxiv.org/abs/2412.06464"
   - label: "Attention Residuals Technical Report（跨深度 softmax 与 Block AttnRes 的开销）"
     url: "https://arxiv.org/abs/2603.15031"
-  - label: "Sebastian Raschka：Kimi K3 Architecture Notes（NoPE 与 AttnRes 的成本数字）"
-    url: "https://sebastianraschka.com/blog/2026/kimi-k3-architecture-notes.html"
-  - label: "LMSYS Blog：DSpark in SGLang（投机解码）"
-    url: "https://www.lmsys.org/blog/2026-07-06-dspark-sglang"
-  - label: "SGLang Cookbook：Memory Management（双状态显存在引擎里的落地）"
-    url: "https://sgl-project-sglang-93.mintlify.app/developer/memory-management"
-  - label: "Awesome-ML-SYS-Tutorial（本站配套的中文文字讲解库）"
-    url: "https://github.com/zhaochenyang20/Awesome-ML-SYS-Tutorial"
 ---
 
 import ArchViz from "../../../viz/kimi-k3-day0/ArchViz";
@@ -46,6 +34,7 @@ import MoeViz from "../../../viz/kimi-k3-day0/MoeViz";
 import PoolViz from "../../../viz/kimi-k3-day0/PoolViz";
 import PipelineViz from "../../../viz/kimi-k3-day0/PipelineViz";
 import DcpViz from "../../../viz/kimi-k3-day0/DcpViz";
+import ServingPerfViz from "../../../viz/kimi-k3-day0/ServingPerfViz";
 
 ## Kimi K3 的架构
 
@@ -291,44 +280,36 @@ snapshot（乒乓缓冲抓快照）、donate（按槽位索引捐给 radix tree�
 
 ### Chunked pipeline prefill
 
-TP8 让 8 张卡合算同一个 chunk，但每层都要 AllReduce，通信在关键路径上。
-chunked PP8 把模型按层切成 8 段，prompt 切成 chunk 依次流过各段，P2P 交接
-藏在下一个 chunk 的计算后面（实测 91% 被隐藏）：
+**问题不只是通信多，而是 8 张卡每层都锁步。** TP8 把同一层的计算切到 8 卡，
+每层结束都要等 AllReduce；同时每张卡拿到的 GEMM 变窄，硬件效率也下降。
+chunked PP8 先把 93 层按深度切成 8 个 stage，再把长 prompt 切成 chunks。
+流水线灌满后，各 stage 同时处理不同 chunk，P2P 交接还能与下一块计算重叠：
 
 <PipelineViz client:visible />
 
-预热气泡只付一次，稳态每 2 列出一个 chunk。实测 PP8 prefill 吞吐是 TEP8
-节点的 1.45–1.72×（TEP = tensor + expert 并行，图中简化为纯 TP 作对照）。
+所以提升来自三件事：移除每层 AllReduce、恢复完整而更宽的 GEMM、隐藏 91% 的
+stage 间 P2P。代价是流水线灌入和排空气泡；单请求或 chunk 太少时 PP8 会输，
+但长 prompt / 高并发 prefill 能摊薄气泡。实测 PP8 节点容量是 TEP8 的
+1.45–1.72×。
 
 ### Decode context parallelism（DCP）
 
-decode 阶段的瓶颈是显存：TP 下每张卡都存一份完整 KV。DCP 按 token 位置取模
-分片，rank r 只存 `position mod N = r` 的 KV；每步 decode 先本地算局部
-attention，再用一次 all-to-all 交换部分结果，log-sum-exp 合并后与单卡输出
-一致：
+**问题是 MLA 只有一个 KV head，TP 无法按 head 分片。** 于是 TP8 的每张卡都
+复制完整 MLA KV：GPU 数量增加了，能留在显存里的逻辑上下文却没有增加。DCP
+改按 token 位置取模分片；每步先在本地 1/N KV 上算 partial attention，再用
+一次 packed all-to-all 交换 partial output 和 log-sum-exp，最后精确合并：
 
 <DcpViz client:visible />
 
-K3 上的实测：DCP8 把逻辑上下文容量放大 7.9×；长 agent 会话下 TP8 在 16 个
-并发 session 崩掉，DCP8 撑到 48 个，总吞吐 541 tok/s。KDA 状态没有位置轴，
-KDA 层仍按 TP 切分，所以混合架构的并行策略也是按层混合的。
+DCP 的提升主要来自**容量和并发**，不是让单条短请求更快：更多长会话留在 GPU，
+就不会因为 host offload / re-prefill 导致吞吐坍塌。K3 上 DCP8 把逻辑容量从
+1.5M 提到 12.2M tokens（7.9×），48 个 agent sessions 达到 541 tok/s；代价是
+每个 MLA 层多一次 all-to-all。KDA 状态没有位置轴，仍按 TP/head 切分。
 
-### 单卡数字
+### 性能数字：单请求 decode 与 serving frontier
 
-投机解码介入之前，`BS=1` 解码靠四类手段从 63.8 tok/s 提到约 113 tok/s
-（括号内为博客给出的单项增益）：
+`BS=1` decode、整机 aggregate throughput 和每用户速度不是同一个口径。下图
+把它们分开：左边看 kernel 优化与 DSpark 如何缩短单请求 decode；右边看
+PD disaggregation 怎样在总吞吐和交互速度之间换配置。
 
-| 类别 | 代表手段 |
-| --- | --- |
-| 启动开销消除（+19.9 tok/s） | MoE 前段合成单个 GEMM、KDA 投影合并、寄存器内路由 |
-| 专用 kernel（+10.3） | 融合 KDA decode、W4A8 MoE、TMA 聚合 attention residual |
-| 通信融合（+27.6） | 融合 all-reduce：multicast + NVLS 在交换机内归约，顺路做 residual/RMSNorm |
-| 重叠与前奏（+10.4） | GEMV-GEMM 重叠、residual 写回融合、PDL 预热 attention |
-
-在此之上，DSpark 投机解码把 `BS=1` 提到约 423 tok/s（约 3.7×）。
-
-组合的 serving 边界：PP8 prefill + TP8 decode 达到 2,808 tok/s/GPU（FP4）；
-交互式配置可以换到 116+ tok/s/用户。博客里值得记住的一句：
-
-> AllReduce 是同步点，在那里省 1 微秒，步时就省 1 微秒；
-> 藏在别的 stream overlap 里的 kernel，只值大约十分之一。
+<ServingPerfViz client:visible />

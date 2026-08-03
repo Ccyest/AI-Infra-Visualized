@@ -17,20 +17,8 @@ references:
     url: "https://www.lmsys.org/blog/2026-07-27-kimi-k3-day0-support/"
   - label: "Kimi Linear: An Expressive, Efficient Attention Architecture (where KDA comes from, incl. the 3:1 ablation)"
     url: "https://arxiv.org/abs/2510.26692"
-  - label: "Official Kimi K3 config (hidden size, head count, and KDA head dimension)"
-    url: "https://huggingface.co/moonshotai/Kimi-K3/blob/main/config.json"
-  - label: "Gated Delta Networks: Improving Mamba2 with Delta Rule (the delta rule + gating precedent)"
-    url: "https://arxiv.org/abs/2412.06464"
   - label: "Attention Residuals Technical Report (depth-wise softmax and Block AttnRes overhead)"
     url: "https://arxiv.org/abs/2603.15031"
-  - label: "Sebastian Raschka: Kimi K3 Architecture Notes (NoPE and the AttnRes cost numbers)"
-    url: "https://sebastianraschka.com/blog/2026/kimi-k3-architecture-notes.html"
-  - label: "LMSYS Blog: DSpark in SGLang (speculative decoding)"
-    url: "https://www.lmsys.org/blog/2026-07-06-dspark-sglang"
-  - label: "SGLang Cookbook: Memory Management (how two-state memory lands in an engine)"
-    url: "https://sgl-project-sglang-93.mintlify.app/developer/memory-management"
-  - label: "Awesome-ML-SYS-Tutorial (companion written tutorials)"
-    url: "https://github.com/zhaochenyang20/Awesome-ML-SYS-Tutorial"
 ---
 
 import ArchViz from "../../../viz/kimi-k3-day0/ArchViz";
@@ -46,6 +34,7 @@ import MoeViz from "../../../viz/kimi-k3-day0/MoeViz";
 import PoolViz from "../../../viz/kimi-k3-day0/PoolViz";
 import PipelineViz from "../../../viz/kimi-k3-day0/PipelineViz";
 import DcpViz from "../../../viz/kimi-k3-day0/DcpViz";
+import ServingPerfViz from "../../../viz/kimi-k3-day0/ServingPerfViz";
 
 ## The Kimi K3 architecture
 
@@ -340,51 +329,43 @@ blog below.
 
 ### Chunked pipeline prefill
 
-TP8 has all 8 GPUs co-compute each chunk, with an AllReduce every layer, so
-communication sits on the critical path. Chunked PP8 splits the model into 8
-stages by layer and streams prompt chunks through; P2P hand-offs hide behind
-the next chunk's compute (91% hidden in practice):
+**The problem is not merely more communication; all eight GPUs advance in
+lockstep.** TP8 splits every layer across eight ranks and waits for an
+AllReduce after each one, while the eight-way split also makes GEMMs narrower.
+Chunked PP8 instead cuts the 93 layers into eight stages and the long prompt
+into chunks. Once full, stages process different chunks concurrently and P2P
+hand-offs overlap the next chunk's compute:
 
 <PipelineViz client:visible lang="en" />
 
-The warm-up bubble is paid once; at steady state a chunk ships every 2 columns.
-Measured: PP8 prefill delivers 1.45–1.72× the throughput of a TEP8 node
-(TEP = tensor + expert parallelism; the diagram simplifies it to plain TP).
+The gain therefore has three sources: remove per-layer AllReduce, recover wide
+whole-layer GEMMs, and hide 91% of inter-stage P2P. The tradeoff is pipeline
+fill and drain bubbles; PP8 loses with one request or too few chunks, while
+long prompts and concurrent prefill amortize them. Measured PP8 node capacity
+is 1.45–1.72× TEP8.
 
 ### Decode context parallelism (DCP)
 
-Decode's bottleneck is memory: under TP every GPU stores a full copy of the KV.
-DCP shards by token position, so rank r keeps only the positions where
-`p mod N = r`. Each decode step runs local attention first, then one
-all-to-all exchanges the partial results; a log-sum-exp merge reproduces the
-single-GPU output exactly:
+**MLA has one KV head, so TP cannot shard KV by head.** Every TP8 rank therefore
+replicates the complete MLA KV: adding GPUs does not increase logical context
+capacity. DCP shards by token position instead. Each step computes partial
+attention over local 1/N KV, exchanges partial outputs and log-sum-exp in one
+packed all-to-all, then merges them exactly:
 
 <DcpViz client:visible lang="en" />
 
-Measured on K3: DCP8 multiplies logical context capacity by 7.9×. On long
-agent sessions TP8 collapses at 16 concurrent sessions, while DCP8 sustains 48
-at 541 tok/s. KDA state has no position axis, so KDA layers stay TP-sharded —
-with a hybrid model, parallelism is also per-layer hybrid.
+DCP primarily improves **capacity and concurrency**, not latency for one short
+request. Keeping more long sessions on device avoids host offload, re-prefill,
+and throughput collapse. On K3, DCP8 raises logical capacity from 1.5M to
+12.2M tokens (7.9×) and reaches 541 tok/s at 48 agent sessions. The cost is one
+all-to-all per MLA layer. KDA state has no position axis and remains
+TP/head-sharded.
 
-### Single-GPU numbers
+### Performance numbers: single-request decode and the serving frontier
 
-Before speculation, BS=1 decode went from 63.8 tok/s to about 113 tok/s
-through four families of work (per-item gains from the blog in parentheses):
+BS=1 decode, aggregate system throughput, and per-user speed use different
+denominators. The figure separates them: the left shows how kernel work and
+DSpark shorten single-request decode; the right shows how PD disaggregation
+trades aggregate throughput for interactive speed.
 
-| Family | Representative moves |
-| --- | --- |
-| Launch elimination (+19.9 tok/s) | Collapse the MoE front into one GEMM, merge KDA projections, register-resident routing |
-| Dedicated kernels (+10.3) | Fused KDA decode, W4A8 MoE, TMA attention-residual aggregation |
-| Communication fusion (+27.6) | Fused all-reduce: multicast + NVLS in-switch reduction with residual/RMSNorm folded in |
-| Overlap & prologue (+10.4) | GEMV–GEMM overlap, fused residual write-back, PDL attention arming |
-
-On top of that, DSpark speculative decoding lifts BS=1 to about 423 tok/s
-(~3.7×).
-
-The combined serving frontier: PP8 prefill feeding TP8 decode reaches
-2,808 tok/s per GPU (fp4); interactive configs trade down to 116+ tok/s per
-user. One line from the blog worth remembering:
-
-> All-reduce is a synchronization point, so a microsecond saved there converts
-> one-for-one into step time; a kernel in another stream's overlap slack
-> converts at roughly one-tenth.
+<ServingPerfViz client:visible lang="en" />

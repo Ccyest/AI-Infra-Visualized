@@ -1,241 +1,151 @@
-import { useRef, useState } from "react";
-import type { MouseEvent as ReactMouseEvent } from "react";
-import Legend from "../../components/core/Legend";
 import type { Locale } from "../../lib/i18n";
 import { seriesColor } from "../../lib/palette";
-import { DCP, DCP_PHASES, dcpCellTooltip } from "./strings";
 import "./styles.css";
 
 const RANKS = 4;
-const POSITIONS = 16;
-/** 每个 rank 的 KV 显存预算(页):TP 下要装下全部位置,DCP 下只装 1/N */
-const BUDGET = 16;
+const POSITIONS = 12;
 
-const CELL = 18;
-const GAP = 3;
-const PITCH = CELL + GAP;
-const LABEL_W = 52;
-const AXIS_H = 20;
-/** 右侧 all-to-all 交换通道的预留宽度 */
-const CHANNEL_W = 12;
+const COPY = {
+  zh: {
+    title: "Decode Context Parallelism：不再复制整份 KV，改按 token 位置分片",
+    subtitle: "同一段 12-token MLA context；上面是 naive TP，下面是 DCP",
+    problem: "问题",
+    solution: "解决",
+    tpTitle: "Naive TP：每张卡都保存完整 MLA KV",
+    tpIntro: "MLA 只有一个 KV head，无法像多头 attention 那样按 head 切分；TP8 因而在 8 卡上复制同一份 KV。GPU 变多了，逻辑上下文容量却没有变大。",
+    dcpTitle: "DCP：position mod N 决定 KV 存在哪张卡",
+    dcpIntro: "Query 很小，复制给所有 rank；长而占显存的 KV 按 token 位置轮转分片，每个位置只存一份。",
+    rank: "R",
+    position: "token 位置",
+    sameContext: "同一段 12-token context",
+    tpCopies: "物理 KV cells：48（复制 4×）",
+    dcpCopies: "物理 KV cells：12（每位置仅 1 份）",
+    sameMemory: "同样 48-cell 显存：逻辑容量 12 → 48 tokens",
+    flowTitle: "一次 MLA decode 为什么仍然精确",
+    step1: "① 复制新 token 的 q",
+    step1Note: "q 很小",
+    step2: "② 各 rank 本地 attention",
+    step2Note: "只扫自己 1/N 的 KV",
+    step3: "③ 一次 packed all-to-all",
+    step3Note: "交换 partial output + LSE",
+    step4: "④ LSE 精确合并",
+    step4Note: "结果与完整 softmax 一致",
+    whyTitle: "为什么吞吐提高",
+    why: "DCP 的主要收益不是让一条短请求的 attention 算得更快，而是把 MLA 的活跃 KV 工作集分散到多卡。更多长会话能留在 GPU 上，避免 host offload、重新 prefill 和并发坍塌。K3 上 DCP8 把逻辑容量从 1.5M 提到 12.2M tokens（7.9×），48 个 agent sessions 达到 541 tok/s；TP8 在 16 个时已崩塌。",
+    tradeoffTitle: "Tradeoff",
+    tradeoff: "每个 MLA 层增加一次 all-to-all 和 LSE merge；短上下文、低并发时，这笔通信可能不值得。KDA 状态是每请求一个固定矩阵，没有 token-position 轴，不能用 DCP 分片，仍按 TP/head 处理。",
+    stored: "实色 = 该 rank 保存",
+    empty: "空框 = 此位置在其他 rank",
+  },
+  en: {
+    title: "Decode Context Parallelism: shard KV by token position instead of replicating it",
+    subtitle: "The same 12-token MLA context; naive TP above, DCP below",
+    problem: "Problem",
+    solution: "Solution",
+    tpTitle: "Naive TP: every GPU stores the complete MLA KV",
+    tpIntro: "MLA has one KV head, so it cannot be sharded by head like standard multi-head attention. TP8 therefore replicates the same KV on all eight GPUs: more GPUs do not increase logical context capacity.",
+    dcpTitle: "DCP: position mod N decides which rank owns each KV",
+    dcpIntro: "The small query is replicated to all ranks; the long, memory-heavy KV is striped round-robin by token position, with each position stored once.",
+    rank: "R",
+    position: "token position",
+    sameContext: "The same 12-token context",
+    tpCopies: "Physical KV cells: 48 (4× replicated)",
+    dcpCopies: "Physical KV cells: 12 (one copy per position)",
+    sameMemory: "With the same 48-cell memory: 12 → 48 logical tokens",
+    flowTitle: "Why one MLA decode step remains exact",
+    step1: "① Replicate the new token's q",
+    step1Note: "q is small",
+    step2: "② Local attention per rank",
+    step2Note: "scan only 1/N of KV",
+    step3: "③ One packed all-to-all",
+    step3Note: "exchange partial output + LSE",
+    step4: "④ Exact LSE merge",
+    step4Note: "matches the full softmax result",
+    whyTitle: "Why throughput improves",
+    why: "DCP's main win is not lower latency for one short request. It spreads MLA's active KV working set across GPUs, keeping more long sessions on device and avoiding host offload, re-prefill, and concurrency collapse. On K3, DCP8 raises logical capacity from 1.5M to 12.2M tokens (7.9×) and reaches 541 tok/s at 48 agent sessions; TP8 has already collapsed at 16.",
+    tradeoffTitle: "Tradeoff",
+    tradeoff: "Every MLA layer adds one all-to-all and an LSE merge, which may not pay off for short contexts or low concurrency. KDA state is one fixed matrix per request with no token-position axis, so it cannot use DCP and remains TP/head-sharded.",
+    stored: "filled = stored on this rank",
+    empty: "outline = owned by another rank",
+  },
+} as const;
 
-type DcpMode = "tp" | "dcp";
-
-/** TP 全复制 vs DCP 按位置取模分片:交互式 KV 布局对比 + 一步 decode 走查 */
-export default function DcpViz({ lang = "zh" }: { lang?: Locale }) {
-  const [mode, setMode] = useState<DcpMode>("tp");
-  const [phase, setPhase] = useState(0);
-  const wrapRef = useRef<HTMLDivElement>(null);
-  const [hover, setHover] = useState<{ x: number; y: number; text: string } | null>(null);
-
-  const copies = mode === "tp" ? RANKS * POSITIONS : POSITIONS;
-  const context = mode === "tp" ? BUDGET : BUDGET * RANKS;
-  const width = LABEL_W + POSITIONS * PITCH + CHANNEL_W;
-  const height = RANKS * PITCH - GAP + AXIS_H;
-  const rowsH = RANKS * PITCH - GAP;
-  const phasing = mode === "dcp";
-
-  const showTooltip = (e: ReactMouseEvent, text: string) => {
-    const wrap = wrapRef.current;
-    if (!wrap) return;
-    const rect = wrap.getBoundingClientRect();
-    setHover({
-      x: e.clientX - rect.left + wrap.scrollLeft,
-      y: e.clientY - rect.top,
-      text,
-    });
-  };
-
-  const switchMode = (m: DcpMode) => {
-    setMode(m);
-    setPhase(0);
-  };
-
+function KvGrid({ mode, lang }: { mode: "tp" | "dcp"; lang: Locale }) {
+  const copy = COPY[lang];
   return (
-    <figure className="viz-stage" style={{ margin: "1.6rem 0" }}>
-      <div className="viz-head">
-        <span className="viz-title">{DCP.title[lang]}</span>
-        <span className="viz-subtitle">{DCP.subtitle[lang]}</span>
-        <span className="viz-head-extra">
-          <span className="viz-presets" role="group">
-            <button
-              type="button"
-              className={`viz-btn${mode === "tp" ? " primary" : ""}`}
-              onClick={() => switchMode("tp")}
-            >
-              {DCP.tpToggle[lang]}
-            </button>
-            <button
-              type="button"
-              className={`viz-btn${mode === "dcp" ? " primary" : ""}`}
-              onClick={() => switchMode("dcp")}
-            >
-              {DCP.dcpToggle[lang]}
-            </button>
-          </span>
-        </span>
+    <div className={`dcp-kv-grid ${mode}`}>
+      <div className="dcp-position-axis">
+        <span />
+        {Array.from({ length: POSITIONS }, (_, position) => <b key={position}>{position}</b>)}
       </div>
-
-      <div className="viz-grid-wrap" ref={wrapRef}>
-        <svg
-          className="viz-grid"
-          style={{ minWidth: 460 }}
-          viewBox={`0 0 ${width} ${height}`}
-          role="img"
-          aria-label={DCP[mode === "tp" ? "tpToggle" : "dcpToggle"][lang]}
-          onMouseLeave={() => setHover(null)}
-        >
-          {Array.from({ length: RANKS }, (_, r) => (
-            <text
-              key={r}
-              x={LABEL_W - 8}
-              y={r * PITCH + CELL / 2 + 4}
-              textAnchor="end"
-              fontSize="10"
-              fill={phasing && phase === 0 ? "var(--accent)" : "var(--muted)"}
-              fontWeight={phasing && phase === 0 ? 700 : 400}
-            >
-              {phasing && phase === 0 ? "Q→" : ""}
-              {DCP.rank[lang]} {r + 1}
-            </text>
-          ))}
-          {Array.from({ length: RANKS }, (_, r) =>
-            Array.from({ length: POSITIONS }, (_, p) => {
-              const owned = p % RANKS === r;
-              const filled = mode === "tp" || owned;
-              const x = LABEL_W + p * PITCH;
-              const y = r * PITCH;
-              const highlight = phasing && phase === 1 && owned;
-              if (!filled) {
-                return (
-                  <rect
-                    key={`${r}-${p}`}
-                    x={x}
-                    y={y}
-                    width={CELL}
-                    height={CELL}
-                    rx={3}
-                    fill="none"
-                    stroke="var(--grid)"
-                    strokeWidth="1"
-                    onMouseEnter={(e) => showTooltip(e, dcpCellTooltip(lang, mode, r, p))}
-                  />
-                );
-              }
-              return (
-                <rect
-                  key={`${r}-${p}`}
-                  className="viz-cell"
-                  x={x}
-                  y={y}
-                  width={CELL}
-                  height={CELL}
-                  rx={3}
-                  fill={seriesColor(r + 1)}
-                  stroke={highlight ? "var(--ink)" : "none"}
-                  strokeWidth={highlight ? 2 : 0}
-                  onMouseEnter={(e) => showTooltip(e, dcpCellTooltip(lang, mode, r, p))}
-                />
-              );
-            }),
-          )}
-          {/* all-to-all 相位:右侧交换通道 */}
-          {phasing && phase === 2 && (
-            <g stroke="var(--accent)" strokeWidth="1.6" fill="none">
-              <line
-                x1={width - 5}
-                y1={CELL / 2}
-                x2={width - 5}
-                y2={rowsH - CELL / 2}
+      {Array.from({ length: RANKS }, (_, rank) => (
+        <div className="dcp-kv-row" key={rank}>
+          <b>{copy.rank}{rank + 1}</b>
+          {Array.from({ length: POSITIONS }, (_, position) => {
+            const stored = mode === "tp" || position % RANKS === rank;
+            return (
+              <i
+                className={stored ? "stored" : "empty"}
+                key={position}
+                style={stored ? { background: seriesColor((position % 7) + 1) } : undefined}
+                title={stored ? `${copy.position} ${position}` : copy.empty}
               />
-              {Array.from({ length: RANKS }, (_, r) => (
-                <line
-                  key={r}
-                  x1={LABEL_W + POSITIONS * PITCH - GAP}
-                  y1={r * PITCH + CELL / 2}
-                  x2={width - 5}
-                  y2={r * PITCH + CELL / 2}
-                />
-              ))}
-            </g>
-          )}
-          {Array.from({ length: POSITIONS / 4 }, (_, i) => (
-            <text
-              key={i}
-              x={LABEL_W + i * 4 * PITCH - GAP / 2}
-              y={rowsH + 14}
-              textAnchor="middle"
-              fontSize="9"
-              fill="var(--muted)"
-            >
-              {i * 4}
-            </text>
-          ))}
-          <text x={width - 2} y={rowsH + 14} textAnchor="end" fontSize="9" fill="var(--muted)">
-            {DCP.position[lang]}
-          </text>
-        </svg>
-        {hover && (
-          <div
-            className="viz-tooltip"
-            style={{ left: hover.x, top: hover.y, transform: "translate(-50%, -130%)" }}
-          >
-            {hover.text}
-          </div>
-        )}
+            );
+          })}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function FlowStep({ title, note }: { title: string; note: string }) {
+  return <span className="dcp-flow-step"><b>{title}</b><small>{note}</small></span>;
+}
+
+export default function DcpViz({ lang = "zh" }: { lang?: Locale }) {
+  const copy = COPY[lang];
+  return (
+    <figure className="viz-stage dcp-explainer" style={{ margin: "1.6rem 0" }}>
+      <div className="viz-head">
+        <span className="viz-title">{copy.title}</span>
+        <span className="viz-subtitle">{copy.subtitle}</span>
       </div>
 
-      {phasing && (
-        <div className="k3-phase">
-          <span className="k3-phase-title">{DCP.phaseTitle[lang]}</span>
-          <button
-            type="button"
-            className="viz-btn"
-            onClick={() => setPhase((p) => Math.max(0, p - 1))}
-            disabled={phase === 0}
-            aria-label={DCP.phasePrev[lang]}
-          >
-            ◀
-          </button>
-          <button
-            type="button"
-            className="viz-btn"
-            onClick={() => setPhase((p) => Math.min(DCP_PHASES.length - 1, p + 1))}
-            disabled={phase === DCP_PHASES.length - 1}
-            aria-label={DCP.phaseNext[lang]}
-          >
-            ▶
-          </button>
-          <span
-            className={`k3-phase-caption${
-              phase === DCP_PHASES.length - 1 ? " k3-phase-final" : ""
-            }`}
-          >
-            {DCP_PHASES[phase][lang]}
-          </span>
-        </div>
-      )}
+      <div className="dcp-compare-stack">
+        <section className="parallel-card problem">
+          <div className="parallel-card-head"><span>{copy.problem}</span><b>{copy.tpTitle}</b></div>
+          <p>{copy.tpIntro}</p>
+          <KvGrid mode="tp" lang={lang} />
+          <div className="dcp-grid-summary"><span>{copy.sameContext}</span><b>{copy.tpCopies}</b></div>
+        </section>
 
-      <div className="viz-footer">
-        <div className="viz-stats">
-          <span className="viz-stat">
-            {DCP.statCopies[lang]} <b>{copies}</b>
-          </span>
-          <span className="viz-stat">
-            {DCP.statContext[lang]} <b>{context}</b> {DCP.tokens[lang]}
-            {mode === "dcp" && <b> (×{RANKS})</b>}
-          </span>
+        <div className="parallel-down-arrow" aria-hidden="true">↓</div>
+
+        <section className="parallel-card solution">
+          <div className="parallel-card-head"><span>{copy.solution}</span><b>{copy.dcpTitle}</b></div>
+          <p>{copy.dcpIntro}</p>
+          <KvGrid mode="dcp" lang={lang} />
+          <div className="dcp-grid-summary"><span>{copy.dcpCopies}</span><b>{copy.sameMemory}</b></div>
+        </section>
+      </div>
+
+      <section className="dcp-exact-flow">
+        <b className="dcp-exact-title">{copy.flowTitle}</b>
+        <div className="dcp-flow-steps">
+          <FlowStep title={copy.step1} note={copy.step1Note} />
+          <i>→</i>
+          <FlowStep title={copy.step2} note={copy.step2Note} />
+          <i>→</i>
+          <FlowStep title={copy.step3} note={copy.step3Note} />
+          <i>→</i>
+          <FlowStep title={copy.step4} note={copy.step4Note} />
         </div>
-        <Legend
-          items={[
-            { label: DCP.legendStored[lang], swatch: { background: "var(--series-1)" } },
-            {
-              label: DCP.legendEmpty[lang],
-              swatch: { background: "transparent", border: "1px solid var(--grid)" },
-            },
-          ]}
-        />
-        <div className="viz-verdict">{DCP.note[lang]}</div>
+      </section>
+
+      <div className="dcp-inline-legend"><span><i className="stored" />{copy.stored}</span><span><i className="empty" />{copy.empty}</span></div>
+      <div className="viz-footer parallel-footer">
+        <div><b>{copy.whyTitle}：</b>{copy.why}</div>
+        <div><b>{copy.tradeoffTitle}：</b>{copy.tradeoff}</div>
       </div>
     </figure>
   );
