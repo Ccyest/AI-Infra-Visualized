@@ -17,22 +17,26 @@ const COPY = {
     dsparkTo: "约 423 tok/s",
     dsparkGain: "约 3.7× non-speculative",
     dsparkNote: "不是让单个 kernel 快 3.7×，而是让 target 一步验证并接收多个 draft tokens。",
-    frontierTitle: "PD disaggregation serving frontier",
-    frontierContext: "GB300 · 8K input / 1K output · 69 个实测点",
-    yAxis: "aggregate throughput（tok/s/GPU）↑",
-    xAxis: "每用户 decode 速度（tok/s/user）→",
-    direction: "增加独立 decode instances →",
+    frontierTitle: "两种单位，分开比较",
+    frontierContext: "GB300 · 8K input / 1K output",
+    aggregateTitle: "整机效率（tok/s/GPU）",
+    perUserTitle: "单用户速度（tok/s/user）",
     throughput: "吞吐端",
-    throughputValue: "2,808 tok/s/GPU",
-    throughputDetail: "18.7 tok/s/user · PP8 prefill → TP8 decode · FP4",
+    throughputValue: "2,808",
+    throughputDetail: "PP8 prefill → TP8 decode · FP4",
     dcp: "长上下文折中",
-    dcpValue: "2,633 tok/s/GPU",
+    dcpValue: "2,633",
     dcpDetail: "2×PP8 prefill → 2×DCP8 decode",
     interactive: "交互端",
-    interactiveValue: "116+ tok/s/user",
+    interactiveValue: "116+",
     interactiveDetail: "增加独立 TP8 decode instances",
-    whyDown: "为什么曲线向下？",
-    frontierNote: "每个点是不同的部署配置，不是同一配置优化前后。向右增加独立 decode instances，会把固定 GPU 资源分给更少的并发用户：单用户速度提高，但整机 aggregate throughput 下降。",
+    throughputUserValue: "18.7",
+    throughputUserDetail: "吞吐端配置中的单用户速度",
+    knobLeft: "更强 batching · 总吞吐优先",
+    knob: "增加独立 decode instances →",
+    knobRight: "更少 batching · 单用户优先",
+    noCross: "不要跨面板比数字：",
+    frontierNote: "上面只比较每 GPU 总吞吐，下面只比较每用户速度；116+ 不是从 2,808 降下来，而是另一个单位下从 18.7 提高到 116+。",
     criticalTitle: "原文的优化判断",
     critical: "关键路径 AllReduce：省 1 μs，step 约省 1 μs",
     overlap: "藏在 overlap slack 的 kernel：省 1 μs，step 约省 0.1 μs",
@@ -50,22 +54,26 @@ const COPY = {
     dsparkTo: "~423 tok/s",
     dsparkGain: "~3.7× non-speculative",
     dsparkNote: "This does not make one kernel 3.7× faster; the target verifies and accepts several draft tokens in one step.",
-    frontierTitle: "PD-disaggregated serving frontier",
-    frontierContext: "GB300 · 8K input / 1K output · 69 measured points",
-    yAxis: "aggregate throughput (tok/s/GPU) ↑",
-    xAxis: "per-user decode speed (tok/s/user) →",
-    direction: "add independent decode instances →",
+    frontierTitle: "Two units, compared separately",
+    frontierContext: "GB300 · 8K input / 1K output",
+    aggregateTitle: "System efficiency (tok/s/GPU)",
+    perUserTitle: "Per-user speed (tok/s/user)",
     throughput: "Throughput end",
-    throughputValue: "2,808 tok/s/GPU",
-    throughputDetail: "18.7 tok/s/user · PP8 prefill → TP8 decode · FP4",
+    throughputValue: "2,808",
+    throughputDetail: "PP8 prefill → TP8 decode · FP4",
     dcp: "Long-context balance",
-    dcpValue: "2,633 tok/s/GPU",
+    dcpValue: "2,633",
     dcpDetail: "2×PP8 prefill → 2×DCP8 decode",
     interactive: "Interactive end",
-    interactiveValue: "116+ tok/s/user",
+    interactiveValue: "116+",
     interactiveDetail: "add independent TP8 decode instances",
-    whyDown: "Why does the curve slope down?",
-    frontierNote: "Each point is a different deployment configuration, not a before/after optimization. Moving right gives fixed GPU capacity to fewer concurrent users: per-user speed rises, while aggregate system throughput falls.",
+    throughputUserValue: "18.7",
+    throughputUserDetail: "per-user speed at the throughput endpoint",
+    knobLeft: "stronger batching · throughput-first",
+    knob: "add independent decode instances →",
+    knobRight: "less batching · user-first",
+    noCross: "Do not compare across panels: ",
+    frontierNote: "the upper panel compares total throughput per GPU; the lower panel compares speed per user. 116+ is not a drop from 2,808—it is a rise from 18.7 under a different unit.",
     criticalTitle: "The source's optimization rule",
     critical: "Critical-path AllReduce: save 1 μs, and the step saves ~1 μs",
     overlap: "Kernel inside overlap slack: save 1 μs, and the step saves ~0.1 μs",
@@ -114,29 +122,31 @@ function FrontierChart({ lang }: { lang: Locale }) {
     <section className="serving-source-card serving-frontier-card">
       <h3>{copy.frontierTitle}</h3>
       <small>{copy.frontierContext}</small>
-      <div className="serving-frontier-plot" role="img" aria-label={`${copy.throughputValue}; ${copy.interactiveValue}`}>
-        <span className="serving-frontier-y">{copy.yAxis}</span>
-        <svg viewBox="0 0 470 225" aria-hidden="true">
-          <line x1="50" y1="18" x2="50" y2="190" className="serving-frontier-axis" />
-          <line x1="50" y1="190" x2="448" y2="190" className="serving-frontier-axis" />
-          <path d="M 82 42 C 135 58, 172 89, 220 112 S 338 154, 420 174" className="serving-frontier-curve" />
-          <circle cx="82" cy="42" r="6" className="serving-frontier-throughput" />
-          <circle cx="118" cy="55" r="6" className="serving-frontier-dcp" />
-          <circle cx="420" cy="174" r="6" className="serving-frontier-interactive" />
-          <text x="70" y="28" className="serving-chart-label">{copy.throughput}</text>
-          <text x="122" y="48" className="serving-chart-label">DCP</text>
-          <text x="368" y="160" className="serving-chart-label">{copy.interactive}</text>
-          <text x="205" y="84" className="serving-frontier-direction">{copy.direction}</text>
-        </svg>
-        <span className="serving-frontier-x">{copy.xAxis}</span>
+      <div className="serving-metric-panels" role="img" aria-label={`${copy.aggregateTitle}; ${copy.perUserTitle}`}>
+        <section>
+          <h4>{copy.aggregateTitle}</h4>
+          <MetricBar label={copy.throughput} detail={copy.throughputDetail} value={copy.throughputValue} width="100%" tone="throughput" />
+          <MetricBar label={copy.dcp} detail={copy.dcpDetail} value={copy.dcpValue} width="93.8%" tone="dcp" />
+        </section>
+        <section>
+          <h4>{copy.perUserTitle}</h4>
+          <MetricBar label={copy.throughput} detail={copy.throughputUserDetail} value={copy.throughputUserValue} width="16.1%" tone="throughput" />
+          <MetricBar label={copy.interactive} detail={copy.interactiveDetail} value={copy.interactiveValue} width="100%" tone="interactive" />
+        </section>
       </div>
-      <div className="serving-frontier-values">
-        <span><b>{copy.throughput}</b><strong>{copy.throughputValue}</strong><small>{copy.throughputDetail}</small></span>
-        <span><b>{copy.dcp}</b><strong>{copy.dcpValue}</strong><small>{copy.dcpDetail}</small></span>
-        <span><b>{copy.interactive}</b><strong>{copy.interactiveValue}</strong><small>{copy.interactiveDetail}</small></span>
-      </div>
-      <p><b>{copy.whyDown}</b>{copy.frontierNote}</p>
+      <div className="serving-deployment-knob"><span>{copy.knobLeft}</span><b>{copy.knob}</b><span>{copy.knobRight}</span></div>
+      <p><b>{copy.noCross}</b>{copy.frontierNote}</p>
     </section>
+  );
+}
+
+function MetricBar({ label, detail, value, width, tone }: { label: string; detail: string; value: string; width: string; tone: "throughput" | "dcp" | "interactive" }) {
+  return (
+    <div className="serving-metric-row">
+      <span><b>{label}</b><small>{detail}</small></span>
+      <i><u className={tone} style={{ width }} /></i>
+      <output>{value}</output>
+    </div>
   );
 }
 
