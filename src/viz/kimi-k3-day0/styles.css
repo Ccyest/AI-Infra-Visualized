@@ -681,8 +681,7 @@
 
 /* Mutable KDA state reuse: workload growth, copy-on-write, and bounded checkpoints. */
 .radix-growth,
-.radix-workbench,
-.radix-limits {
+.radix-workbench {
   margin: 0 0.8rem 0.8rem;
   padding: 0.75rem;
   border: 1px solid var(--border);
@@ -699,8 +698,7 @@
   margin-bottom: 0.55rem;
 }
 
-.radix-section-title b,
-.radix-limits > b {
+.radix-section-title b {
   color: var(--ink);
   font-size: var(--k3-viz-font-heading);
 }
@@ -893,7 +891,7 @@
   align-items: center;
 }
 
-.radix-policy-step > span {
+.radix-policy-step > button {
   display: flex;
   min-height: 4.2rem;
   min-width: 0;
@@ -904,6 +902,20 @@
   border: 1px solid var(--grid);
   border-radius: 7px;
   background: var(--surface);
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.radix-policy-step > button:hover,
+.radix-policy-step > button.selected {
+  border-color: var(--good);
+  background: color-mix(in srgb, var(--good) 10%, var(--surface));
+}
+
+.radix-policy-step > button.selected {
+  box-shadow: inset 0 0 0 1px var(--good);
 }
 
 .radix-policy-step strong {
@@ -974,12 +986,6 @@
   fill: color-mix(in srgb, var(--series-1) 65%, var(--surface));
 }
 
-.radix-tree-node.donated circle {
-  fill: color-mix(in srgb, var(--good) 22%, var(--surface));
-  stroke: var(--good);
-  stroke-width: 3;
-}
-
 .radix-tree-caption,
 .radix-incoming {
   fill: var(--muted);
@@ -997,20 +1003,6 @@
   fill: color-mix(in srgb, var(--series-1) 26%, var(--surface));
   stroke: var(--series-1);
   stroke-dasharray: none;
-}
-
-.radix-snapshot-tag rect {
-  fill: color-mix(in srgb, var(--good) 14%, var(--surface));
-  stroke: var(--good);
-  stroke-width: 1.5;
-  stroke-dasharray: 3 2;
-}
-
-.radix-snapshot-tag text {
-  fill: var(--ink-2);
-  font-family: inherit;
-  font-size: 9px;
-  font-weight: 650;
 }
 
 .radix-work-slot text {
@@ -1059,122 +1051,92 @@
   line-height: 1.4;
 }
 
-.radix-limits > div {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.5rem;
-  margin-top: 0.55rem;
-}
-
-.radix-limits article {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  gap: 0.25rem;
-  padding: 0.6rem;
-  border: 1px solid var(--grid);
-  border-radius: 7px;
-  background: color-mix(in srgb, var(--axis) 3%, var(--surface));
-}
-
-.radix-limit-diagram {
-  display: block;
-  width: 100%;
-  height: auto;
-  min-height: 5.1rem;
-  border-radius: 6px;
+.radix-policy-tree-wrap {
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--good) 38%, var(--border));
+  border-radius: 8px;
   background: var(--surface);
 }
 
-.radix-limit-diagram .path,
-.radix-limit-diagram .arrow {
-  fill: none;
-  stroke: var(--grid);
-  stroke-linecap: round;
-  stroke-width: 2;
+.radix-policy-tree {
+  margin-top: 0;
 }
 
-.radix-limit-diagram .arrow {
-  stroke: var(--accent);
+.radix-policy-tree .policy-dim {
+  opacity: 0.24;
 }
 
-.radix-limit-diagram circle.plain {
-  fill: var(--surface);
-  stroke: var(--grid);
-  stroke-width: 1.5;
-}
-
-.radix-limit-diagram circle.kept {
+.radix-policy-tree .policy-candidate circle,
+.radix-policy-tree .policy-kept circle,
+.radix-policy-tree .policy-ancestor circle {
   fill: color-mix(in srgb, var(--accent) 22%, var(--surface));
   stroke: var(--accent);
+  stroke-width: 3;
+}
+
+.radix-policy-tree .policy-shared circle,
+.radix-policy-tree .policy-planted circle {
+  fill: color-mix(in srgb, var(--good) 22%, var(--surface));
+  stroke: var(--good);
+  stroke-width: 3.5;
+}
+
+.radix-policy-tree .policy-replay circle {
+  fill: color-mix(in srgb, var(--series-2) 20%, var(--surface));
+  stroke: var(--series-2);
+  stroke-width: 3;
+}
+
+.radix-policy-tree .policy-evicted circle {
+  fill: color-mix(in srgb, var(--series-2) 6%, var(--surface));
+  stroke: var(--series-2);
   stroke-width: 2.5;
-}
-
-.radix-limit-diagram text {
-  fill: var(--muted);
-  font-family: inherit;
-  font-size: 10px;
-}
-
-.radix-limit-diagram .kept-box,
-.radix-limit-diagram .active-box,
-.radix-limit-diagram .tree-box {
-  fill: color-mix(in srgb, var(--series-1) 30%, var(--surface));
-  stroke: var(--series-1);
-  stroke-width: 1.5;
-}
-
-.radix-limit-diagram .evicted,
-.radix-limit-diagram .free-box,
-.radix-limit-diagram .extra-box {
-  fill: var(--surface);
-  stroke: var(--grid);
-  stroke-width: 1.5;
   stroke-dasharray: 4 3;
 }
 
-.radix-limit-diagram .cross {
-  fill: none;
-  stroke: var(--series-2);
-  stroke-linecap: round;
-  stroke-width: 2;
+.radix-policy-tree .policy-evicted text {
+  fill: var(--muted);
+  text-decoration: line-through;
 }
 
-.radix-limit-diagram .event-box,
-.radix-limit-diagram .temp-box,
-.radix-limit-diagram .new-box {
-  fill: color-mix(in srgb, var(--good) 9%, var(--surface));
+.radix-policy-tree .policy-new circle {
+  fill: var(--surface);
+  stroke: var(--good);
+  stroke-width: 3;
+  stroke-dasharray: 4 3;
+}
+
+.radix-tree-edge.policy-replay-edge {
+  stroke: var(--series-2);
+  stroke-width: 4;
+}
+
+.radix-tree-edge.policy-new-edge {
+  stroke: var(--good);
+  stroke-width: 3.5;
+  stroke-dasharray: 5 4;
+}
+
+.radix-policy-badge rect {
+  fill: var(--surface);
   stroke: var(--good);
   stroke-width: 1.5;
 }
 
-.radix-limit-diagram .plus,
-.radix-limit-diagram .flow-arrow {
-  fill: var(--accent);
-  font-size: 15px;
-  font-weight: 750;
-}
-
-.radix-limit-diagram .box-text {
-  fill: var(--ink);
-  font-size: 9px;
+.radix-policy-badge text {
+  fill: var(--ink-2);
+  font-family: inherit;
+  font-size: 10px;
   font-weight: 650;
 }
 
-.radix-limit-diagram .action-text {
-  fill: var(--muted);
-  font-size: 8px;
-}
-
-.radix-limits strong {
-  color: var(--ink);
-  font-size: var(--k3-viz-font-sm);
-}
-
-.radix-limits span {
+.radix-policy-result {
+  padding: 0.65rem 0.75rem;
+  border-top: 1px solid var(--border);
+  background: color-mix(in srgb, var(--good) 5%, var(--surface));
   color: var(--ink-2);
-  font-size: var(--k3-viz-font-xs);
-  line-height: 1.45;
+  font-size: var(--k3-viz-font-body);
+  line-height: 1.5;
 }
 
 .radix-state-viz > .viz-footer {
@@ -1854,10 +1816,6 @@
     grid-template-columns: 1fr;
   }
 
-  .radix-limits > div {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
   .radix-checkpoint-policy > div {
     grid-template-columns: 1fr;
   }
@@ -1867,7 +1825,7 @@
     gap: 0.25rem;
   }
 
-  .radix-policy-step > span {
+  .radix-policy-step > button {
     width: 100%;
     min-height: auto;
   }
@@ -1878,10 +1836,6 @@
 }
 
 @media (max-width: 560px) {
-  .radix-limits > div {
-    grid-template-columns: 1fr;
-  }
-
   .radix-step-flow {
     display: grid;
     gap: 0.3rem;
