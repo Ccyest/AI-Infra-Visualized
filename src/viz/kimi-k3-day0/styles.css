@@ -671,8 +671,8 @@
   display: grid;
   gap: 0.45rem;
   color: var(--ink-2);
-  font-size: var(--k3-viz-font-body);
-  line-height: 1.55;
+  font-size: 1rem;
+  line-height: 1.75;
 }
 
 .parallel-footer b {
