@@ -43,15 +43,17 @@ const COPY = {
     step4Text: "只有决定保留的边界才会 snapshot：先把已推进的工作状态复制到临时槽，donate 再把槽位索引交给 radix tree。点击下面四个判断，看系统会保留哪些 prefix。",
     decisionTitle: "第四步：哪些位置值得变成 checkpoint？",
     candidateTitle: "① 产生候选点",
-    candidateText: "prefill chunk / decode 固定间隔 / 对齐 fork",
+    candidateText: "只定义候选规则：prefill chunk 边界 / decode 固定间隔 / 对齐 radix 节点",
     priorityTitle: "② 优先共享点",
-    priorityText: "真实分支点优先，因为多个子分支都能复用",
+    priorityText: "在候选集合内，真实分支点优先",
     budgetTitle: "③ 检查路径预算",
     budgetText: "超过 per-path cap 就用 LRU 淘汰最冷 checkpoint",
     forkTitle: "④ edge 中途分叉",
     forkText: "最近祖先 checkpoint → replay suffix → 在新 fork 补种",
-    candidateResult: "候选点：D 是 prefill chunk 边界，E 是对齐 fork，I 是 decode 固定间隔。",
-    priorityResult: "优先共享点：C、E、H 都是真实分支点，它们的 checkpoint 可以被多个子分支复用。",
+    candidateResult:
+      "这一步不选择具体节点。候选位置由运行时决定：prefill chunk 在哪里结束、decode 计数何时到达固定间隔，以及该位置是否对应对齐的 radix 节点；单看静态树无法判断哪些字母符合。",
+    priorityResult:
+      "假设 C、E、H 已经通过第一步进入候选集合：它们都是真实分支点，因此比普通直线路径上的候选点更值得保留。",
     budgetResult: "示意 cap=3：在 C → G → H → I 路径上保留 C、H、I，最冷的 G 被 LRU 淘汰。",
     forkResult: "新请求在 H 分叉：从最近的 S(ABC) 恢复，replay G/H，再在新 fork 补种 S(ABCGH)。",
     hitTreeResult: "树上的 S(ABC) 是只读 checkpoint；所有活跃请求都从这个共享前缀开始。",
@@ -89,15 +91,17 @@ const COPY = {
     step4Text: "Only a boundary selected for retention is snapshotted: the advanced working state is copied to a temporary slot, then donate hands that slot index to the radix tree. Click the four decisions below to see which prefixes survive.",
     decisionTitle: "Step 4: which positions are worth turning into checkpoints?",
     candidateTitle: "① Generate candidates",
-    candidateText: "prefill chunks / fixed decode intervals / aligned forks",
+    candidateText: "Define rules only: prefill chunk boundaries / fixed decode intervals / aligned radix nodes",
     priorityTitle: "② Prefer shared points",
-    priorityText: "Real branch points come first because every child can reuse them",
+    priorityText: "Within the candidate set, prefer real branch points",
     budgetTitle: "③ Check the path budget",
     budgetText: "Beyond the per-path cap, LRU evicts the coldest checkpoint",
     forkTitle: "④ Mid-edge divergence",
     forkText: "nearest ancestor checkpoint → replay suffix → plant at the new fork",
-    candidateResult: "Candidates: D is a prefill chunk boundary, E is an aligned fork, and I is a fixed decode interval.",
-    priorityResult: "Prefer shared points: C, E, and H are real branch points whose checkpoints can serve multiple children.",
+    candidateResult:
+      "This step selects no concrete node. Candidates depend on runtime facts: where prefill chunks end, when decode reaches the fixed interval, and whether that position is an aligned radix node. Static topology alone cannot identify the letters.",
+    priorityResult:
+      "Assume C, E, and H already entered the candidate set in step 1. Because they are real branch points, they outrank candidates on unbranched paths.",
     budgetResult: "Illustrative cap=3: on C → G → H → I, keep C, H, and I; LRU evicts the coldest checkpoint G.",
     forkResult: "A new request diverges at H: restore S(ABC), replay G/H, then plant S(ABCGH) at the new fork.",
     hitTreeResult: "S(ABC) in the tree is read-only; every active request starts from this shared checkpoint.",
@@ -184,7 +188,7 @@ function TreeNode({
 }
 
 function policyNodeClass(policy: Policy, label: string): string {
-  if (policy === 0) return ["D", "E", "I"].includes(label) ? "policy-candidate" : "policy-dim";
+  if (policy === 0) return "policy-neutral";
   if (policy === 1) return ["C", "E", "H"].includes(label) ? "policy-shared" : "policy-dim";
   if (policy === 2) {
     if (["C", "H", "I"].includes(label)) return "policy-kept";

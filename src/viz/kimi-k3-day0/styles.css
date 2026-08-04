@@ -1015,7 +1015,6 @@
   opacity: 0.24;
 }
 
-.radix-policy-tree .policy-candidate circle,
 .radix-policy-tree .policy-kept circle,
 .radix-policy-tree .policy-ancestor circle {
   fill: color-mix(in srgb, var(--accent) 22%, var(--surface));
