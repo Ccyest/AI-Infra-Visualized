@@ -13,16 +13,16 @@ const COPY = {
     title: "RadixAttention 遇到可变的 KDA 状态",
     subtitle: "KV 可以共享同一份前缀；KDA 要把共享 checkpoint 恢复到私有工作槽后再改写",
     growthTitle: "负载变化时，两种状态跟着什么增长？",
-    trendNote: "只对比增长形状，四张图不共用纵轴。",
+    trendNote: "只对比增长方向，四张图不共用纵轴。",
     load: "负载变化",
     kda: "KDA state",
     mla: "MLA KV cache",
     longer: "同一请求变长",
-    moreBranches: "共享前缀后分支变多",
+    moreBranches: "缓存 token 总数不变，活跃分支变多",
     flat: "约 54MB / 活跃请求（TP=8），不随 token 数增长",
     tokenGrowth: "约 27KB / token，随上下文线性增长",
     branchGrowth: "每个活跃分支需要自己的可变工作状态",
-    sharedPrefix: "共享 ABC 的 KV 页，只追加各分支的 suffix",
+    sharedPrefix: "只看缓存的 token 总数；分支拓扑本身不增加 KV",
     branches: "同时运行的分支",
     branchUnit: "个",
     step1: "1  命中前缀",
@@ -56,16 +56,16 @@ const COPY = {
     title: "RadixAttention meets mutable KDA state",
     subtitle: "KV can share one prefix in place; KDA must restore a shared checkpoint into a private working slot before mutation",
     growthTitle: "Which workload dimension makes each state grow?",
-    trendNote: "The four plots compare growth shape only; they do not share a y-axis.",
+    trendNote: "The four plots compare growth direction only; they do not share a y-axis.",
     load: "Workload change",
     kda: "KDA state",
     mla: "MLA KV cache",
     longer: "One request gets longer",
-    moreBranches: "More branches share one prefix",
+    moreBranches: "Same cached-token total, more active branches",
     flat: "~54MB / active request (TP=8), independent of token count",
     tokenGrowth: "~27KB / token, linear in context length",
     branchGrowth: "Every active branch needs its own mutable working state",
-    sharedPrefix: "Share the ABC KV pages; append only each branch's suffix",
+    sharedPrefix: "Depends on total cached tokens; branch topology itself adds no KV",
     branches: "Concurrent branches",
     branchUnit: "branches",
     step1: "1  Prefix hit",
@@ -103,18 +103,15 @@ function interpolate(template: string, values: Record<string, number>): string {
   return template.replace(/\{(\w+)\}/g, (_, key: string) => String(values[key]));
 }
 
-function Trend({ rising, gentle = false }: { rising: boolean; gentle?: boolean }) {
-  const points = rising
-    ? gentle
-      ? "8,54 40,46 72,38 104,30 136,22"
-      : "8,58 40,49 72,38 104,25 136,9"
-    : "8,34 40,34 72,34 104,34 136,34";
+function Trend({ rising }: { rising: boolean }) {
+  const startY = rising ? 58 : 34;
+  const endY = rising ? 9 : 34;
   return (
     <svg className="radix-trend" viewBox="0 0 144 68" aria-hidden="true">
       <path d="M8 6V60H138" />
-      <polyline points={points} />
-      <circle cx="8" cy={rising ? (gentle ? 54 : 58) : 34} r="3" />
-      <circle cx="136" cy={rising ? (gentle ? 22 : 9) : 34} r="3" />
+      <line x1="8" y1={startY} x2="136" y2={endY} />
+      <circle cx="8" cy={startY} r="3" />
+      <circle cx="136" cy={endY} r="3" />
     </svg>
   );
 }
@@ -122,8 +119,8 @@ function Trend({ rising, gentle = false }: { rising: boolean; gentle?: boolean }
 function GrowthComparison({ lang }: { lang: Locale }) {
   const copy = COPY[lang];
   const rows = [
-    { label: copy.longer, kda: copy.flat, mla: copy.tokenGrowth, kdaRise: false, mlaGentle: false },
-    { label: copy.moreBranches, kda: copy.branchGrowth, mla: copy.sharedPrefix, kdaRise: true, mlaGentle: true },
+    { label: copy.longer, kda: copy.flat, mla: copy.tokenGrowth, kdaRise: false, mlaRise: true },
+    { label: copy.moreBranches, kda: copy.branchGrowth, mla: copy.sharedPrefix, kdaRise: true, mlaRise: false },
   ];
   return (
     <section className="radix-growth">
@@ -143,7 +140,7 @@ function GrowthComparison({ lang }: { lang: Locale }) {
               <small>{row.kda}</small>
             </div>
             <div>
-              <Trend rising gentle={row.mlaGentle} />
+              <Trend rising={row.mlaRise} />
               <small>{row.mla}</small>
             </div>
           </div>

@@ -773,7 +773,7 @@
   stroke-width: 1.5;
 }
 
-.radix-trend polyline {
+.radix-trend line {
   fill: none;
   stroke: var(--accent);
   stroke-linecap: round;
