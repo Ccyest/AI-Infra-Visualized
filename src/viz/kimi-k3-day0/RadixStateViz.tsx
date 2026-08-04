@@ -25,19 +25,21 @@ const COPY = {
     sharedPrefix: "只看缓存的 token 总数；分支拓扑本身不增加 KV",
     branches: "同时运行的分支",
     branchUnit: "个",
-    step1: "1  命中前缀",
+    step1: "1  命中 checkpoint",
     step2: "2  Copy-on-write",
-    step3: "3  私有改写",
-    step4: "4  Snapshot / donate",
+    step3: "3  独立推进",
+    step4: "4  Snapshot → donate",
+    stepSequence: "一次前缀复用按 1 → 2 → 3 → 4 发生；请求继续生成时，会在后续 checkpoint 边界重复 3 → 4。",
     step1Text: "图中各分支都命中 ABC。树上的 S(ABC) 是只读 checkpoint，不能直接当作请求的工作状态。",
     step2Text: "每个分支把 S(ABC) 恢复到自己的工作槽。后面的 forward 只会改这份私有副本。",
-    step3Text: "D 改写的是 S(D)，E 改写的是 S(E)。S(ABC) 依旧不变，所以后来的分支仍能从 ABC 开始。",
-    step4Text: "在对齐边界才 snapshot。donate 把槽位索引交给 radix tree，不再拷贝整份 S；未保留的中间段需要时从最近 checkpoint 向前 replay。",
+    step3Text: "D 在自己的工作槽中把 S(ABC) 推进为 S(D)，E 则独立推进为 S(E)。树上的 S(ABC) 始终不变。",
+    step4Text: "到达对齐边界时，snapshot 先把已推进的工作状态复制到临时槽；donate 再把这个槽位的索引交给 radix tree，这一步不再拷贝整份 S。请求仍保留自己的工作槽继续生成。",
     checkpoint: "只读 checkpoint",
     incoming: "等待分支",
     privateSlot: "私有工作槽",
-    mutated: "正在原地改写",
+    mutated: "工作槽独立推进",
     donated: "稀疏 checkpoint",
+    snapshotTag: "snapshot → tree",
     currentMemory: "这些分支同时运行时",
     memoryFormula: "最低驻留：1 个起点 checkpoint + {n} 个活跃工作槽 ≈ {mb}MB",
     memoryCaveat: "这里未计树上额外 checkpoint；它们由下面的策略限制。关键是这不是「每个 token 复制一份」，主要随活跃分支数增长。",
@@ -68,19 +70,21 @@ const COPY = {
     sharedPrefix: "Depends on total cached tokens; branch topology itself adds no KV",
     branches: "Concurrent branches",
     branchUnit: "branches",
-    step1: "1  Prefix hit",
+    step1: "1  Checkpoint hit",
     step2: "2  Copy-on-write",
-    step3: "3  Private mutation",
-    step4: "4  Snapshot / donate",
+    step3: "3  Independent advance",
+    step4: "4  Snapshot → donate",
+    stepSequence: "One prefix reuse follows 1 → 2 → 3 → 4. As generation continues, 3 → 4 repeats at later checkpoint boundaries.",
     step1Text: "Every branch shown hits ABC. S(ABC) in the tree is a read-only checkpoint, not a live request's working state.",
     step2Text: "Each branch restores S(ABC) into its own working slot. The following forward pass mutates only that private copy.",
-    step3Text: "D overwrites S(D) and E overwrites S(E). S(ABC) remains unchanged, so later branches can still start from ABC.",
-    step4Text: "Snapshots are taken only at aligned boundaries. Donate hands the slot index to the radix tree without copying S again. An uncached middle segment is replayed forward from the nearest checkpoint when needed.",
+    step3Text: "D advances S(ABC) to S(D) in its own working slot, while E independently advances to S(E). S(ABC) in the tree never changes.",
+    step4Text: "At an aligned boundary, snapshot first copies the advanced working state into a temporary slot. Donate then hands that slot index to the radix tree without copying S again. The request keeps its working slot and continues generating.",
     checkpoint: "read-only checkpoint",
     incoming: "waiting branch",
     privateSlot: "private working slot",
-    mutated: "mutating in place",
+    mutated: "working slot advances",
     donated: "sparse checkpoint",
+    snapshotTag: "snapshot → tree",
     currentMemory: "When these branches run concurrently",
     memoryFormula: "Minimum resident set: 1 starting checkpoint + {n} active working slots ≈ {mb}MB",
     memoryCaveat: "This excludes extra checkpoints retained in the tree; the policies below bound those. The key point is that this is not one copy per token: growth follows active branches.",
@@ -184,7 +188,7 @@ function BranchTree({
     (_, index) => 150 + (500 * index) / Math.max(1, branches - 1),
   );
   return (
-    <svg className="radix-tree" viewBox="0 0 800 330" role="img" aria-label={copy.step1Text}>
+    <svg className="radix-tree" viewBox="0 0 800 356" role="img" aria-label={copy.step1Text}>
       <path className="radix-tree-edge shared" d="M400 40V122" />
       <TreeNode x={400} y={42} label="A" />
       <TreeNode x={400} y={92} label="B" />
@@ -203,14 +207,20 @@ function BranchTree({
             <TreeNode x={x} y={228} label={label} className={donated ? "donated" : "branch"} />
             {step >= 1 && (
               <g
-                className={`radix-work-slot${donated ? " donated" : step >= 2 ? " mutated" : ""}`}
+                className={`radix-work-slot${step >= 2 ? " mutated" : ""}`}
                 transform={`translate(${x - 57} 270)`}
               >
                 <rect width="114" height="36" rx="8" />
                 <text x="57" y="15" textAnchor="middle">S({label})</text>
                 <text x="57" y="28" textAnchor="middle">
-                  {donated ? copy.donated : step >= 2 ? copy.mutated : copy.privateSlot}
+                  {step >= 2 ? copy.mutated : copy.privateSlot}
                 </text>
+              </g>
+            )}
+            {donated && (
+              <g className="radix-snapshot-tag" transform={`translate(${x - 48} 315)`}>
+                <rect width="96" height="22" rx="7" />
+                <text x="48" y="15" textAnchor="middle">{copy.snapshotTag}</text>
               </g>
             )}
           </g>
@@ -239,19 +249,22 @@ function StepControls({
   const descriptions = [copy.step1Text, copy.step2Text, copy.step3Text, copy.step4Text];
   return (
     <div className="radix-steps">
-      <div role="group" aria-label={copy.title}>
+      <div className="radix-step-flow" role="group" aria-label={copy.title}>
         {labels.map((label, index) => (
-          <button
-            className={`viz-btn${step === index ? " primary" : ""}`}
-            type="button"
-            key={label}
-            aria-pressed={step === index}
-            onClick={() => setStep(index as Step)}
-          >
-            {label}
-          </button>
+          <div className="radix-step-unit" key={label}>
+            <button
+              className={`viz-btn${step === index ? " primary" : ""}`}
+              type="button"
+              aria-pressed={step === index}
+              onClick={() => setStep(index as Step)}
+            >
+              {label}
+            </button>
+            {index < labels.length - 1 && <i aria-hidden="true">→</i>}
+          </div>
         ))}
       </div>
+      <small>{copy.stepSequence}</small>
       <p>{descriptions[step]}</p>
     </div>
   );

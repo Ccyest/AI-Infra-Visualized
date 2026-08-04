@@ -819,18 +819,41 @@
   margin-top: 0.6rem;
 }
 
-.radix-steps > div {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 0.35rem;
+.radix-step-flow {
+  display: flex;
+  align-items: center;
+}
+
+.radix-step-unit {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 0;
+  align-items: center;
+}
+
+.radix-step-unit > i {
+  width: 1.25rem;
+  flex: none;
+  color: var(--accent);
+  font-size: 1rem;
+  font-style: normal;
+  font-weight: 750;
+  text-align: center;
 }
 
 .radix-steps .viz-btn {
+  width: 100%;
   min-height: 2rem;
   height: auto;
   padding: 0.35rem 0.5rem;
   font-size: var(--k3-viz-font-sm);
   line-height: 1.2;
+}
+
+.radix-steps > small {
+  color: var(--muted);
+  font-size: var(--k3-viz-font-xs);
+  line-height: 1.4;
 }
 
 .radix-steps > p {
@@ -915,10 +938,18 @@
   stroke-dasharray: none;
 }
 
-.radix-work-slot.donated rect {
-  fill: color-mix(in srgb, var(--good) 16%, var(--surface));
+.radix-snapshot-tag rect {
+  fill: color-mix(in srgb, var(--good) 14%, var(--surface));
   stroke: var(--good);
-  stroke-width: 2;
+  stroke-width: 1.5;
+  stroke-dasharray: 3 2;
+}
+
+.radix-snapshot-tag text {
+  fill: var(--ink-2);
+  font-family: inherit;
+  font-size: 9px;
+  font-weight: 650;
 }
 
 .radix-work-slot text {
@@ -1734,16 +1765,28 @@
     grid-template-columns: 1fr;
   }
 
-  .radix-steps > div,
   .radix-limits > div {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
 @media (max-width: 560px) {
-  .radix-steps > div,
   .radix-limits > div {
     grid-template-columns: 1fr;
+  }
+
+  .radix-step-flow {
+    display: grid;
+    gap: 0.3rem;
+  }
+
+  .radix-step-unit {
+    flex-direction: column;
+    gap: 0.3rem;
+  }
+
+  .radix-step-unit > i {
+    transform: rotate(90deg);
   }
 
   .radix-tree-caption {
