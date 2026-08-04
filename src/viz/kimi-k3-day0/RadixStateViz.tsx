@@ -6,7 +6,14 @@ const MIN_BRANCHES = 2;
 const MAX_BRANCHES = 5;
 const DEFAULT_BRANCHES = 4;
 const KDA_STATE_MB = 54;
-const BRANCH_LABELS = ["D", "E", "F", "G", "H"] as const;
+const ACTIVE_LEAVES = ["F", "X", "I", "Q", "K"] as const;
+const PREFIX_PATHS: Record<string, readonly string[]> = {
+  F: ["C", "D", "E", "F"],
+  X: ["C", "D", "E", "X"],
+  I: ["C", "G", "H", "I"],
+  Q: ["C", "G", "H", "Q"],
+  K: ["C", "J", "K"],
+};
 
 const COPY = {
   zh: {
@@ -34,10 +41,6 @@ const COPY = {
     step2Text: "每个分支把 S(ABC) 恢复到自己的工作槽。后面的 forward 只会改这份私有副本。",
     step3Text: "D 在自己的工作槽中把 S(ABC) 推进为 S(D)，E 则独立推进为 S(E)。树上的 S(ABC) 始终不变。",
     step4Text: "只有决定保留的边界才会 snapshot：先把已推进的工作状态复制到临时槽，donate 再把槽位索引交给 radix tree。点击下面四个判断，看系统会保留哪些 prefix。",
-    checkpoint: "只读 checkpoint",
-    incoming: "等待分支",
-    privateSlot: "私有工作槽",
-    mutated: "工作槽独立推进",
     decisionTitle: "第四步：哪些位置值得变成 checkpoint？",
     candidateTitle: "① 产生候选点",
     candidateText: "prefill chunk / decode 固定间隔 / 对齐 fork",
@@ -51,15 +54,9 @@ const COPY = {
     priorityResult: "优先共享点：C、E、H 都是真实分支点，它们的 checkpoint 可以被多个子分支复用。",
     budgetResult: "示意 cap=3：在 C → G → H → I 路径上保留 C、H、I，最冷的 G 被 LRU 淘汰。",
     forkResult: "新请求在 H 分叉：从最近的 S(ABC) 恢复，replay G/H，再在新 fork 补种 S(ABCGH)。",
-    chunkBadge: "chunk 边界",
-    forkBadge: "aligned fork",
-    intervalBadge: "decode interval",
-    sharedBadge: "共享点",
-    keptBadge: "保留",
-    evictedBadge: "LRU 淘汰",
-    ancestorBadge: "最近 checkpoint",
-    replayBadge: "replay G/H",
-    plantBadge: "补种 fork",
+    hitTreeResult: "树上的 S(ABC) 是只读 checkpoint；所有活跃请求都从这个共享前缀开始。",
+    copyTreeResult: "copy-on-write 把 S(ABC) 恢复到 {n} 个私有工作槽；蓝色叶子表示这些请求的工作端点。",
+    advanceTreeResult: "每个请求沿自己的蓝色路径独立推进；树上的 S(ABC) 仍然不变。",
     currentMemory: "这些分支同时运行时",
     memoryFormula: "最低驻留：1 个起点 checkpoint + {n} 个活跃工作槽 ≈ {mb}MB",
     memoryCaveat: "这里未计树上额外 checkpoint；它们由下面的策略限制。关键是这不是「每个 token 复制一份」，主要随活跃分支数增长。",
@@ -90,10 +87,6 @@ const COPY = {
     step2Text: "Each branch restores S(ABC) into its own working slot. The following forward pass mutates only that private copy.",
     step3Text: "D advances S(ABC) to S(D) in its own working slot, while E independently advances to S(E). S(ABC) in the tree never changes.",
     step4Text: "Only a boundary selected for retention is snapshotted: the advanced working state is copied to a temporary slot, then donate hands that slot index to the radix tree. Click the four decisions below to see which prefixes survive.",
-    checkpoint: "read-only checkpoint",
-    incoming: "waiting branch",
-    privateSlot: "private working slot",
-    mutated: "working slot advances",
     decisionTitle: "Step 4: which positions are worth turning into checkpoints?",
     candidateTitle: "① Generate candidates",
     candidateText: "prefill chunks / fixed decode intervals / aligned forks",
@@ -107,15 +100,9 @@ const COPY = {
     priorityResult: "Prefer shared points: C, E, and H are real branch points whose checkpoints can serve multiple children.",
     budgetResult: "Illustrative cap=3: on C → G → H → I, keep C, H, and I; LRU evicts the coldest checkpoint G.",
     forkResult: "A new request diverges at H: restore S(ABC), replay G/H, then plant S(ABCGH) at the new fork.",
-    chunkBadge: "chunk boundary",
-    forkBadge: "aligned fork",
-    intervalBadge: "decode interval",
-    sharedBadge: "shared point",
-    keptBadge: "keep",
-    evictedBadge: "LRU evicts",
-    ancestorBadge: "nearest checkpoint",
-    replayBadge: "replay G/H",
-    plantBadge: "plant fork",
+    hitTreeResult: "S(ABC) in the tree is read-only; every active request starts from this shared checkpoint.",
+    copyTreeResult: "Copy-on-write restores S(ABC) into {n} private working slots; blue leaves mark those requests' working endpoints.",
+    advanceTreeResult: "Each request advances independently along its blue path while S(ABC) in the tree remains unchanged.",
     currentMemory: "When these branches run concurrently",
     memoryFormula: "Minimum resident set: 1 starting checkpoint + {n} active working slots ≈ {mb}MB",
     memoryCaveat: "This excludes extra checkpoints retained in the tree; the policies below bound those. The key point is that this is not one copy per token: growth follows active branches.",
@@ -196,61 +183,6 @@ function TreeNode({
   );
 }
 
-function BranchTree({
-  branches,
-  step,
-  lang,
-}: {
-  branches: number;
-  step: Step;
-  lang: Locale;
-}) {
-  const copy = COPY[lang];
-  const xs = Array.from(
-    { length: branches },
-    (_, index) => 150 + (500 * index) / Math.max(1, branches - 1),
-  );
-  return (
-    <svg className="radix-tree" viewBox="0 0 800 330" role="img" aria-label={copy.step1Text}>
-      <path className="radix-tree-edge shared" d="M400 40V122" />
-      <TreeNode x={400} y={42} label="A" />
-      <TreeNode x={400} y={92} label="B" />
-      <TreeNode x={400} y={142} label="C" className="checkpoint" />
-      <text className="radix-tree-caption" x="432" y="147">S(ABC) · {copy.checkpoint}</text>
-      {xs.map((x, index) => {
-        const label = BRANCH_LABELS[index];
-        const visible = step >= 1;
-        return (
-          <g key={label} className={visible ? "" : "is-ghost"}>
-            <path
-              className={`radix-tree-edge${step >= 2 ? " active" : ""}`}
-              d={`M400 162 C400 190 ${x} 185 ${x} 218`}
-            />
-            <TreeNode x={x} y={228} label={label} className="branch" />
-            {step >= 1 && (
-              <g
-                className={`radix-work-slot${step >= 2 ? " mutated" : ""}`}
-                transform={`translate(${x - 57} 270)`}
-              >
-                <rect width="114" height="36" rx="8" />
-                <text x="57" y="15" textAnchor="middle">S({label})</text>
-                <text x="57" y="28" textAnchor="middle">
-                  {step >= 2 ? copy.mutated : copy.privateSlot}
-                </text>
-              </g>
-            )}
-          </g>
-        );
-      })}
-      {step === 0 && (
-        <text className="radix-incoming" x="400" y="225" textAnchor="middle">
-          D / E / F / G / H · {copy.incoming}
-        </text>
-      )}
-    </svg>
-  );
-}
-
 function policyNodeClass(policy: Policy, label: string): string {
   if (policy === 0) return ["D", "E", "I"].includes(label) ? "policy-candidate" : "policy-dim";
   if (policy === 1) return ["C", "E", "H"].includes(label) ? "policy-shared" : "policy-dim";
@@ -265,42 +197,90 @@ function policyNodeClass(policy: Policy, label: string): string {
   return "policy-dim";
 }
 
-function PolicyBadge({ x, y, text }: { x: number; y: number; text: string }) {
-  const width = Math.max(64, text.length * 7 + 16);
-  return (
-    <g className="radix-policy-badge" transform={`translate(${x - width / 2} ${y})`}>
-      <rect width={width} height="22" rx="7" />
-      <text x={width / 2} y="15" textAnchor="middle">{text}</text>
-    </g>
-  );
+function activeNodes(branches: number): Set<string> {
+  const active = new Set<string>();
+  ACTIVE_LEAVES.slice(0, branches).forEach((leaf) => {
+    PREFIX_PATHS[leaf].forEach((label) => active.add(label));
+  });
+  return active;
 }
 
-function CheckpointTree({ policy, lang }: { policy: Policy; lang: Locale }) {
+function unifiedNodeClass(
+  step: Step,
+  policy: Policy,
+  label: string,
+  active: Set<string>,
+): string {
+  if (step === 3) return policyNodeClass(policy, label);
+  if (label === "C") return "policy-ancestor";
+  if (step === 0) return "policy-dim";
+  if (step === 1) return ACTIVE_LEAVES.includes(label as (typeof ACTIVE_LEAVES)[number]) && active.has(label)
+    ? "working-leaf"
+    : "policy-dim";
+  if (!active.has(label)) return "policy-dim";
+  return ACTIVE_LEAVES.includes(label as (typeof ACTIVE_LEAVES)[number]) ? "working-leaf" : "working-path";
+}
+
+function edgeClass(
+  step: Step,
+  policy: Policy,
+  from: string,
+  to: string,
+  active: Set<string>,
+): string {
+  if (step === 3 && policy === 3 && ["C-G", "G-H"].includes(`${from}-${to}`)) {
+    return "radix-tree-edge policy-replay-edge";
+  }
+  if (step === 3 && policy === 3 && from === "H" && to === "Q") {
+    return "radix-tree-edge policy-new-edge";
+  }
+  if (step === 2 && active.has(from) && active.has(to)) {
+    return "radix-tree-edge working-edge";
+  }
+  return "radix-tree-edge";
+}
+
+function UnifiedRadixTree({
+  step,
+  policy,
+  branches,
+  lang,
+}: {
+  step: Step;
+  policy: Policy;
+  branches: number;
+  lang: Locale;
+}) {
   const copy = COPY[lang];
-  const results = [copy.candidateResult, copy.priorityResult, copy.budgetResult, copy.forkResult];
+  const policyResults = [copy.candidateResult, copy.priorityResult, copy.budgetResult, copy.forkResult];
+  const stepResults = [
+    copy.hitTreeResult,
+    interpolate(copy.copyTreeResult, { n: branches }),
+    copy.advanceTreeResult,
+  ];
   const nodes = [
     [400, 30, "A"], [400, 75, "B"], [400, 120, "C"],
     [180, 190, "D"], [180, 250, "E"], [105, 320, "F"], [255, 320, "X"],
     [400, 190, "G"], [400, 250, "H"], [330, 320, "I"], [470, 320, "Q"],
     [620, 190, "J"], [620, 250, "K"],
   ] as const;
-  const replay = policy === 3;
+  const edges = [
+    ["A", "B", "M400 30V55"], ["B", "C", "M400 95V100"],
+    ["C", "D", "M388 136C340 155 245 160 190 174"], ["D", "E", "M180 210V230"],
+    ["E", "F", "M168 265L115 305"], ["E", "X", "M192 265L245 305"],
+    ["C", "G", "M400 140V170"], ["G", "H", "M400 210V230"],
+    ["H", "I", "M388 265L340 305"], ["H", "Q", "M412 265L460 305"],
+    ["C", "J", "M412 136C460 155 555 160 610 174"], ["J", "K", "M620 210V230"],
+  ] as const;
+  const active = activeNodes(branches);
+  const result = step === 3 ? policyResults[policy] : stepResults[step];
   return (
     <div className="radix-policy-tree-wrap">
-      <svg className="radix-tree radix-policy-tree" viewBox="0 0 800 380" role="img" aria-label={results[policy]}>
-        <path className="radix-tree-edge" d="M400 30V100" />
-        <path className="radix-tree-edge" d="M388 136C340 155 245 160 190 174M180 210V230M168 265L115 305M192 265L245 305" />
-        <path className={`radix-tree-edge${replay ? " policy-replay-edge" : ""}`} d="M400 140V230" />
-        <path className="radix-tree-edge" d="M388 265L340 305" />
-        <path className={`radix-tree-edge${replay ? " policy-new-edge" : ""}`} d="M412 265L460 305" />
-        <path className="radix-tree-edge" d="M412 136C460 155 555 160 610 174M620 210V230" />
-        {nodes.map(([x, y, label]) => <TreeNode x={x} y={y} label={label} className={policyNodeClass(policy, label)} key={label} />)}
-        {policy === 0 && <><PolicyBadge x={180} y={215} text={copy.chunkBadge} /><PolicyBadge x={180} y={278} text={copy.forkBadge} /><PolicyBadge x={330} y={344} text={copy.intervalBadge} /></>}
-        {policy === 1 && <><PolicyBadge x={465} y={106} text={copy.sharedBadge} /><PolicyBadge x={180} y={278} text={copy.sharedBadge} /><PolicyBadge x={400} y={278} text={copy.sharedBadge} /></>}
-        {policy === 2 && <><PolicyBadge x={462} y={176} text={copy.evictedBadge} /><PolicyBadge x={330} y={344} text={copy.keptBadge} /></>}
-        {policy === 3 && <><PolicyBadge x={485} y={106} text={copy.ancestorBadge} /><PolicyBadge x={455} y={200} text={copy.replayBadge} /><PolicyBadge x={400} y={278} text={copy.plantBadge} /></>}
+      <svg className="radix-tree radix-policy-tree" viewBox="0 0 800 360" role="img" aria-label={result}>
+        {edges.map(([from, to, d]) => <path className={edgeClass(step, policy, from, to, active)} d={d} key={`${from}-${to}`} />)}
+        {nodes.map(([x, y, label]) => <TreeNode x={x} y={y} label={label} className={unifiedNodeClass(step, policy, label, active)} key={label} />)}
       </svg>
-      <div className="radix-policy-result">{results[policy]}</div>
+      <div className="radix-policy-result">{result}</div>
     </div>
   );
 }
@@ -384,32 +364,28 @@ export default function RadixStateViz({ lang = "zh" }: { lang?: Locale }) {
       </div>
       <GrowthComparison lang={lang} />
       <section className="radix-workbench">
-        {step < 3 && (
-          <label className="radix-branch-control">
-            <span>
-              <b>{copy.branches}</b>
-              <output>{branches} {copy.branchUnit}</output>
-            </span>
-            <input
-              className="viz-scrub"
-              type="range"
-              min={MIN_BRANCHES}
-              max={MAX_BRANCHES}
-              step="1"
-              value={branches}
-              onChange={(event) => setBranches(Number(event.target.value))}
-            />
-          </label>
-        )}
+        <label className="radix-branch-control">
+          <span>
+            <b>{copy.branches}</b>
+            <output>{branches} {copy.branchUnit}</output>
+          </span>
+          <input
+            className="viz-scrub"
+            type="range"
+            min={MIN_BRANCHES}
+            max={MAX_BRANCHES}
+            step="1"
+            value={branches}
+            onChange={(event) => setBranches(Number(event.target.value))}
+          />
+        </label>
         <StepControls step={step} setStep={setStep} policy={policy} setPolicy={setPolicy} lang={lang} />
-        {step === 3 ? <CheckpointTree policy={policy} lang={lang} /> : <BranchTree branches={branches} step={step} lang={lang} />}
-        {step < 3 && (
-          <div className="radix-memory-callout">
-            <b>{copy.currentMemory}</b>
-            <output>{interpolate(copy.memoryFormula, { n: branches, mb: memoryMb })}</output>
-            <small>{copy.memoryCaveat}</small>
-          </div>
-        )}
+        <UnifiedRadixTree step={step} policy={policy} branches={branches} lang={lang} />
+        <div className="radix-memory-callout">
+          <b>{copy.currentMemory}</b>
+          <output>{interpolate(copy.memoryFormula, { n: branches, mb: memoryMb })}</output>
+          <small>{copy.memoryCaveat}</small>
+        </div>
       </section>
       <div className="viz-footer parallel-footer">
         <div>{copy.verdict}</div>

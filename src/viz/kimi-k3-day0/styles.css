@@ -957,12 +957,6 @@
   transition: stroke 180ms ease, stroke-width 180ms ease;
 }
 
-.radix-tree-edge.shared,
-.radix-tree-edge.active {
-  stroke: var(--accent);
-  stroke-width: 3.5;
-}
-
 .radix-tree-node circle {
   fill: color-mix(in srgb, var(--axis) 14%, var(--surface));
   stroke: var(--grid);
@@ -974,51 +968,6 @@
   font-family: inherit;
   font-size: 15px;
   font-weight: 750;
-}
-
-.radix-tree-node.checkpoint circle {
-  fill: color-mix(in srgb, var(--accent) 20%, var(--surface));
-  stroke: var(--accent);
-  stroke-width: 3;
-}
-
-.radix-tree-node.branch circle {
-  fill: color-mix(in srgb, var(--series-1) 65%, var(--surface));
-}
-
-.radix-tree-caption,
-.radix-incoming {
-  fill: var(--muted);
-  font-family: inherit;
-  font-size: 12px;
-}
-
-.radix-work-slot rect {
-  fill: color-mix(in srgb, var(--axis) 8%, var(--surface));
-  stroke: var(--grid);
-  stroke-dasharray: 4 3;
-}
-
-.radix-work-slot.mutated rect {
-  fill: color-mix(in srgb, var(--series-1) 26%, var(--surface));
-  stroke: var(--series-1);
-  stroke-dasharray: none;
-}
-
-.radix-work-slot text {
-  fill: var(--ink-2);
-  font-family: inherit;
-  font-size: 10px;
-}
-
-.radix-work-slot text:first-of-type {
-  fill: var(--ink);
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.radix-tree .is-ghost {
-  opacity: 0.18;
 }
 
 .radix-memory-callout {
@@ -1106,6 +1055,23 @@
   stroke-dasharray: 4 3;
 }
 
+.radix-policy-tree .working-path circle {
+  fill: color-mix(in srgb, var(--series-1) 18%, var(--surface));
+  stroke: var(--series-1);
+  stroke-width: 2.5;
+}
+
+.radix-policy-tree .working-leaf circle {
+  fill: color-mix(in srgb, var(--series-1) 45%, var(--surface));
+  stroke: var(--series-1);
+  stroke-width: 3.5;
+}
+
+.radix-tree-edge.working-edge {
+  stroke: var(--series-1);
+  stroke-width: 3.5;
+}
+
 .radix-tree-edge.policy-replay-edge {
   stroke: var(--series-2);
   stroke-width: 4;
@@ -1115,19 +1081,6 @@
   stroke: var(--good);
   stroke-width: 3.5;
   stroke-dasharray: 5 4;
-}
-
-.radix-policy-badge rect {
-  fill: var(--surface);
-  stroke: var(--good);
-  stroke-width: 1.5;
-}
-
-.radix-policy-badge text {
-  fill: var(--ink-2);
-  font-family: inherit;
-  font-size: 10px;
-  font-weight: 650;
 }
 
 .radix-policy-result {
@@ -1850,9 +1803,6 @@
     transform: rotate(90deg);
   }
 
-  .radix-tree-caption {
-    display: none;
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {
