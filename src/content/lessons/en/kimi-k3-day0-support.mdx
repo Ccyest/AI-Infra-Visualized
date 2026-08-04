@@ -31,6 +31,7 @@ import KeyOverlapViz from "../../../viz/kimi-k3-day0/KeyOverlapViz";
 import KdaGateViz from "../../../viz/kimi-k3-day0/KdaGateViz";
 import AttnResViz from "../../../viz/kimi-k3-day0/AttnResViz";
 import MoeViz from "../../../viz/kimi-k3-day0/MoeViz";
+import RadixStateViz from "../../../viz/kimi-k3-day0/RadixStateViz";
 import PoolViz from "../../../viz/kimi-k3-day0/PoolViz";
 import PipelineViz from "../../../viz/kimi-k3-day0/PipelineViz";
 import DcpViz from "../../../viz/kimi-k3-day0/DcpViz";
@@ -226,6 +227,29 @@ MLA appends KV per token, while KDA reserves a fixed amount per request and
 overwrites it every step. That difference propagates into memory allocation,
 prefill parallelism, and decode scaling—the three parts of SGLang's day-0 work.
 
+### RadixAttention: prefix caching for mutable KDA state
+
+Traditional RadixAttention can share a prefix across requests because attention
+KV is append-only and never changes. KDA's recurrent state `S` is different: it
+is overwritten in place after every token. Suppose D and E both hit the prefix
+ABC. If they directly shared the same `S(ABC)`, D's next step would turn it into
+`S(ABCD)`, so E could no longer start from the state after ABC.
+
+SGLang therefore never lets a request mutate the shared state in the radix
+tree. A KDA state stored in the tree is a read-only checkpoint. After a prefix
+hit, copy-on-write restores it into the request's private working slot, and the
+forward pass mutates only that copy. The visualization first compares how KDA
+and MLA grow under two workload changes, then steps through copy-on-write,
+snapshot, donate, and checkpoint eviction:
+
+<RadixStateViz client:visible lang="en" />
+
+This does not retain one permanent copy of `S` per token. Checkpoints are placed
+only at aligned radix nodes, prefill chunk boundaries, and fixed decode
+intervals, then bounded by a per-path cap and LRU. If a request diverges in the
+middle of a radix edge, SGLang restores the nearest checkpoint above, replays a
+short suffix forward, and plants a checkpoint at the new aligned fork.
+
 ### Memory management for two state types
 
 The old approach preallocates separate KDA and MLA regions at startup. KDA
@@ -238,10 +262,6 @@ MLA pages from the right, and both share the free space in the middle:
 
 At t=14, the split layout exhausts its MLA region and evicts R2 while six KDA
 pages remain free. The unified pool continues running every request.
-
-Prefix caching also changes. KDA state is overwritten in place and cannot be
-shared like KV. SGLang uses copy-on-write, snapshot, and donate to manage KDA
-checkpoints in the radix tree without letting requests overwrite shared state.
 
 ### Chunked pipeline prefill
 

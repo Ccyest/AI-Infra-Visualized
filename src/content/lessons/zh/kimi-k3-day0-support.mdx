@@ -31,6 +31,7 @@ import KeyOverlapViz from "../../../viz/kimi-k3-day0/KeyOverlapViz";
 import KdaGateViz from "../../../viz/kimi-k3-day0/KdaGateViz";
 import AttnResViz from "../../../viz/kimi-k3-day0/AttnResViz";
 import MoeViz from "../../../viz/kimi-k3-day0/MoeViz";
+import RadixStateViz from "../../../viz/kimi-k3-day0/RadixStateViz";
 import PoolViz from "../../../viz/kimi-k3-day0/PoolViz";
 import PipelineViz from "../../../viz/kimi-k3-day0/PipelineViz";
 import DcpViz from "../../../viz/kimi-k3-day0/DcpViz";
@@ -196,6 +197,25 @@ K3 的混合架构会产生两种生命周期完全不同的推理状态：
 MLA 的 KV 随 token 追加，KDA 的状态却按请求固定占用并且每步覆写。这个差异一路
 传到显存分配、prefill 并行和 decode 扩容，也构成了 SGLang Day-0 适配的主线。
 
+### RadixAttention：给会变的 KDA 状态做前缀缓存
+
+传统 RadixAttention 能让多个请求共享前缀，是因为 attention KV 只追加、不改写。
+但 KDA 的递归状态 `S` 每读入一个 token 都会原地覆写。假设 D 和 E 都命中前缀
+ABC，如果它们直接共用同一份 `S(ABC)`，D 先跑一步就会把它变成 `S(ABCD)`，
+E 也就无法再从 ABC 的状态开始。
+
+所以 SGLang 不会让请求直接改 radix tree 上的共享状态。它把树上的 KDA 状态当作
+只读 checkpoint：命中前缀后，先 copy-on-write 到请求的私有工作槽，再让 forward
+原地改写这份副本。下图先对比 KDA 和 MLA 在两种负载下的增长方式，再逐步演示
+copy-on-write、snapshot、donate 和 checkpoint 淘汰：
+
+<RadixStateViz client:visible />
+
+这不会把每个 token 的 `S` 都永久留下。checkpoint 只放在对齐的 radix 节点、prefill
+chunk 边界和固定 decode 间隔，并且受每条路径的数量上限和 LRU 约束。如果请求在一条
+radix edge 中间分叉，SGLang 会从上方最近的 checkpoint 恢复，向前 replay 少量 suffix，
+再在对齐的新分支点留下 checkpoint。
+
 ### 双状态显存管理
 
 旧方案在启动时预先切出 KDA 区和 MLA 区。但 KDA 需求取决于并发数，MLA 需求取决于
@@ -206,10 +226,6 @@ MLA 的 KV 随 token 追加，KDA 的状态却按请求固定占用并且每步�
 
 在图中的 t=14，静态双池已经耗尽 MLA 区并驱逐 R2，KDA 区却还空着 6 页；
 统一池仍然可以继续运行所有请求。
-
-前缀缓存也要随之改变：KDA 状态会被原地覆写，无法像 KV 那样直接共享。SGLang
-用 copy-on-write、snapshot 和 donate 管理 radix tree 上的 KDA checkpoint，避免共享状态被
-请求相互覆写。
 
 ### Chunked pipeline prefill
 

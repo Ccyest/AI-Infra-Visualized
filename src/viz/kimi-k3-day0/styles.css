@@ -679,6 +679,388 @@
   color: var(--ink);
 }
 
+/* Mutable KDA state reuse: workload growth, copy-on-write, and bounded checkpoints. */
+.radix-growth,
+.radix-workbench,
+.radix-limits {
+  margin: 0 0.8rem 0.8rem;
+  padding: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+.radix-section-title {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem 0.8rem;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 0.55rem;
+}
+
+.radix-section-title b,
+.radix-limits > b {
+  color: var(--ink);
+  font-size: var(--k3-viz-font-heading);
+}
+
+.radix-section-title small {
+  color: var(--muted);
+  font-size: var(--k3-viz-font-xs);
+}
+
+.radix-growth-grid {
+  display: grid;
+  grid-template-columns: minmax(8rem, 0.7fr) repeat(2, minmax(12rem, 1fr));
+  gap: 0.35rem;
+}
+
+.radix-growth-grid > b {
+  padding: 0.35rem 0.5rem;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--axis) 8%, var(--surface));
+  color: var(--ink-2);
+  font-size: var(--k3-viz-font-sm);
+  text-align: center;
+}
+
+.radix-growth-row {
+  display: contents;
+}
+
+.radix-growth-row > strong,
+.radix-growth-row > div {
+  min-width: 0;
+  padding: 0.55rem;
+  border: 1px solid var(--grid);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--axis) 3%, var(--surface));
+}
+
+.radix-growth-row > strong {
+  display: grid;
+  place-items: center;
+  color: var(--ink);
+  font-size: var(--k3-viz-font-body);
+  line-height: 1.4;
+  text-align: center;
+}
+
+.radix-growth-row > div {
+  display: grid;
+  grid-template-columns: minmax(6rem, 0.8fr) minmax(8rem, 1.2fr);
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.radix-growth-row small {
+  color: var(--ink-2);
+  font-size: var(--k3-viz-font-xs);
+  line-height: 1.4;
+}
+
+.radix-trend {
+  display: block;
+  width: 100%;
+  min-width: 6rem;
+  height: auto;
+}
+
+.radix-trend path {
+  fill: none;
+  stroke: var(--grid);
+  stroke-width: 1.5;
+}
+
+.radix-trend polyline {
+  fill: none;
+  stroke: var(--accent);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 4;
+}
+
+.radix-trend circle {
+  fill: var(--accent);
+}
+
+.radix-workbench {
+  background: color-mix(in srgb, var(--accent) 3%, var(--surface));
+}
+
+.radix-branch-control {
+  display: grid;
+  grid-template-columns: minmax(11rem, auto) minmax(10rem, 1fr);
+  gap: 0.5rem 0.8rem;
+  align-items: center;
+  padding: 0.55rem 0.65rem;
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.radix-branch-control > span {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: space-between;
+  color: var(--ink-2);
+  font-size: var(--k3-viz-font-sm);
+}
+
+.radix-branch-control output {
+  color: var(--accent);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.radix-steps {
+  display: grid;
+  gap: 0.5rem;
+  margin-top: 0.6rem;
+}
+
+.radix-steps > div {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.35rem;
+}
+
+.radix-steps .viz-btn {
+  min-height: 2rem;
+  height: auto;
+  padding: 0.35rem 0.5rem;
+  font-size: var(--k3-viz-font-sm);
+  line-height: 1.2;
+}
+
+.radix-steps > p {
+  min-height: 2.8rem;
+  margin: 0;
+  padding: 0.55rem 0.65rem;
+  border-left: 3px solid var(--accent);
+  background: var(--surface);
+  color: var(--ink-2);
+  font-size: var(--k3-viz-font-body);
+  line-height: 1.5;
+}
+
+.radix-tree {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin-top: 0.35rem;
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.radix-tree-edge {
+  fill: none;
+  stroke: var(--grid);
+  stroke-linecap: round;
+  stroke-width: 2.5;
+  transition: stroke 180ms ease, stroke-width 180ms ease;
+}
+
+.radix-tree-edge.shared,
+.radix-tree-edge.active {
+  stroke: var(--accent);
+  stroke-width: 3.5;
+}
+
+.radix-tree-node circle {
+  fill: color-mix(in srgb, var(--axis) 14%, var(--surface));
+  stroke: var(--grid);
+  stroke-width: 1.5;
+}
+
+.radix-tree-node text {
+  fill: var(--ink);
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 750;
+}
+
+.radix-tree-node.checkpoint circle {
+  fill: color-mix(in srgb, var(--accent) 20%, var(--surface));
+  stroke: var(--accent);
+  stroke-width: 3;
+}
+
+.radix-tree-node.branch circle {
+  fill: color-mix(in srgb, var(--series-1) 65%, var(--surface));
+}
+
+.radix-tree-node.donated circle {
+  fill: color-mix(in srgb, var(--good) 22%, var(--surface));
+  stroke: var(--good);
+  stroke-width: 3;
+}
+
+.radix-tree-caption,
+.radix-incoming {
+  fill: var(--muted);
+  font-family: inherit;
+  font-size: 12px;
+}
+
+.radix-work-slot rect {
+  fill: color-mix(in srgb, var(--axis) 8%, var(--surface));
+  stroke: var(--grid);
+  stroke-dasharray: 4 3;
+}
+
+.radix-work-slot.mutated rect {
+  fill: color-mix(in srgb, var(--series-1) 26%, var(--surface));
+  stroke: var(--series-1);
+  stroke-dasharray: none;
+}
+
+.radix-work-slot.donated rect {
+  fill: color-mix(in srgb, var(--good) 16%, var(--surface));
+  stroke: var(--good);
+  stroke-width: 2;
+}
+
+.radix-work-slot text {
+  fill: var(--ink-2);
+  font-family: inherit;
+  font-size: 10px;
+}
+
+.radix-work-slot text:first-of-type {
+  fill: var(--ink);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.radix-tree .is-ghost {
+  opacity: 0.18;
+}
+
+.radix-memory-callout {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 0.25rem 0.8rem;
+  align-items: baseline;
+  padding: 0.65rem;
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.radix-memory-callout b,
+.radix-memory-callout output {
+  color: var(--ink);
+  font-size: var(--k3-viz-font-body);
+}
+
+.radix-memory-callout output {
+  color: var(--accent);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.radix-memory-callout small {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  font-size: var(--k3-viz-font-xs);
+  line-height: 1.4;
+}
+
+.radix-limits > div {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+  margin-top: 0.55rem;
+}
+
+.radix-limits article {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.6rem;
+  border: 1px solid var(--grid);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--axis) 3%, var(--surface));
+}
+
+.radix-limit-icon {
+  display: flex;
+  gap: 0.28rem;
+  align-items: center;
+  min-height: 1.35rem;
+}
+
+.radix-limit-icon i {
+  display: block;
+  width: 1rem;
+  height: 1rem;
+  border: 1px solid var(--grid);
+  border-radius: 50%;
+  background: var(--surface);
+}
+
+.radix-limit-icon.sparse i:nth-child(2),
+.radix-limit-icon.sparse i:nth-child(5) {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.radix-limit-icon.cap i {
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--series-1) 45%, var(--surface));
+}
+
+.radix-limit-icon.cap i:last-child {
+  border-style: dashed;
+  background: repeating-linear-gradient(45deg, transparent 0 3px, var(--axis) 3px 4px);
+  opacity: 0.55;
+}
+
+.radix-limit-icon.lifetime::after,
+.radix-limit-icon.transient::after {
+  color: var(--accent);
+  font-size: 1rem;
+  font-style: normal;
+  font-weight: 750;
+  content: "→";
+  order: 1;
+}
+
+.radix-limit-icon.lifetime i:first-child,
+.radix-limit-icon.transient i:first-child {
+  border-radius: 4px;
+  background: var(--series-1);
+}
+
+.radix-limit-icon.lifetime i:last-child,
+.radix-limit-icon.transient i:last-child {
+  border-style: dashed;
+  border-radius: 4px;
+  opacity: 0.35;
+  order: 2;
+}
+
+.radix-limit-icon.transient::after {
+  content: "+";
+}
+
+.radix-limits strong {
+  color: var(--ink);
+  font-size: var(--k3-viz-font-sm);
+}
+
+.radix-limits span {
+  color: var(--ink-2);
+  font-size: var(--k3-viz-font-xs);
+  line-height: 1.45;
+}
+
+.radix-state-viz > .viz-footer {
+  margin: 0 0.8rem 0.8rem;
+}
+
 /* DCP: replicated and position-sharded KV remain visible at the same time. */
 .dcp-gpu-control {
   display: flex;
@@ -1336,6 +1718,42 @@
   .dcp-gpu-control > output {
     width: 100%;
     margin-left: 0;
+  }
+
+  .radix-growth-grid {
+    grid-template-columns: minmax(7rem, 0.65fr) repeat(2, minmax(10rem, 1fr));
+    overflow-x: auto;
+  }
+
+  .radix-growth-row > div {
+    grid-template-columns: 1fr;
+  }
+
+  .radix-branch-control,
+  .radix-memory-callout {
+    grid-template-columns: 1fr;
+  }
+
+  .radix-steps > div,
+  .radix-limits > div {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 560px) {
+  .radix-steps > div,
+  .radix-limits > div {
+    grid-template-columns: 1fr;
+  }
+
+  .radix-tree-caption {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .radix-tree-edge {
+    transition: none;
   }
 }
 
