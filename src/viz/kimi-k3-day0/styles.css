@@ -867,6 +867,67 @@
   line-height: 1.5;
 }
 
+.radix-checkpoint-policy {
+  padding: 0.65rem;
+  border: 1px solid color-mix(in srgb, var(--good) 45%, var(--border));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--good) 4%, var(--surface));
+}
+
+.radix-checkpoint-policy > b {
+  display: block;
+  margin-bottom: 0.5rem;
+  color: var(--ink);
+  font-size: var(--k3-viz-font-body);
+}
+
+.radix-checkpoint-policy > div {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.3rem;
+}
+
+.radix-policy-step {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+}
+
+.radix-policy-step > span {
+  display: flex;
+  min-height: 4.2rem;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  justify-content: center;
+  padding: 0.45rem;
+  border: 1px solid var(--grid);
+  border-radius: 7px;
+  background: var(--surface);
+}
+
+.radix-policy-step strong {
+  color: var(--ink);
+  font-size: var(--k3-viz-font-sm);
+}
+
+.radix-policy-step small {
+  margin-top: 0.2rem;
+  color: var(--muted);
+  font-size: var(--k3-viz-font-xs);
+  line-height: 1.35;
+}
+
+.radix-policy-step > i {
+  width: 1rem;
+  flex: none;
+  color: var(--good);
+  font-size: 0.9rem;
+  font-style: normal;
+  font-weight: 750;
+  text-align: center;
+}
+
 .radix-tree {
   display: block;
   width: 100%;
@@ -1016,65 +1077,93 @@
   background: color-mix(in srgb, var(--axis) 3%, var(--surface));
 }
 
-.radix-limit-icon {
-  display: flex;
-  gap: 0.28rem;
-  align-items: center;
-  min-height: 1.35rem;
-}
-
-.radix-limit-icon i {
+.radix-limit-diagram {
   display: block;
-  width: 1rem;
-  height: 1rem;
-  border: 1px solid var(--grid);
-  border-radius: 50%;
+  width: 100%;
+  height: auto;
+  min-height: 5.1rem;
+  border-radius: 6px;
   background: var(--surface);
 }
 
-.radix-limit-icon.sparse i:nth-child(2),
-.radix-limit-icon.sparse i:nth-child(5) {
-  border-color: var(--accent);
-  background: var(--accent);
+.radix-limit-diagram .path,
+.radix-limit-diagram .arrow {
+  fill: none;
+  stroke: var(--grid);
+  stroke-linecap: round;
+  stroke-width: 2;
 }
 
-.radix-limit-icon.cap i {
-  border-radius: 4px;
-  background: color-mix(in srgb, var(--series-1) 45%, var(--surface));
+.radix-limit-diagram .arrow {
+  stroke: var(--accent);
 }
 
-.radix-limit-icon.cap i:last-child {
-  border-style: dashed;
-  background: repeating-linear-gradient(45deg, transparent 0 3px, var(--axis) 3px 4px);
-  opacity: 0.55;
+.radix-limit-diagram circle.plain {
+  fill: var(--surface);
+  stroke: var(--grid);
+  stroke-width: 1.5;
 }
 
-.radix-limit-icon.lifetime::after,
-.radix-limit-icon.transient::after {
-  color: var(--accent);
-  font-size: 1rem;
-  font-style: normal;
+.radix-limit-diagram circle.kept {
+  fill: color-mix(in srgb, var(--accent) 22%, var(--surface));
+  stroke: var(--accent);
+  stroke-width: 2.5;
+}
+
+.radix-limit-diagram text {
+  fill: var(--muted);
+  font-family: inherit;
+  font-size: 10px;
+}
+
+.radix-limit-diagram .kept-box,
+.radix-limit-diagram .active-box,
+.radix-limit-diagram .tree-box {
+  fill: color-mix(in srgb, var(--series-1) 30%, var(--surface));
+  stroke: var(--series-1);
+  stroke-width: 1.5;
+}
+
+.radix-limit-diagram .evicted,
+.radix-limit-diagram .free-box,
+.radix-limit-diagram .extra-box {
+  fill: var(--surface);
+  stroke: var(--grid);
+  stroke-width: 1.5;
+  stroke-dasharray: 4 3;
+}
+
+.radix-limit-diagram .cross {
+  fill: none;
+  stroke: var(--series-2);
+  stroke-linecap: round;
+  stroke-width: 2;
+}
+
+.radix-limit-diagram .event-box,
+.radix-limit-diagram .temp-box,
+.radix-limit-diagram .new-box {
+  fill: color-mix(in srgb, var(--good) 9%, var(--surface));
+  stroke: var(--good);
+  stroke-width: 1.5;
+}
+
+.radix-limit-diagram .plus,
+.radix-limit-diagram .flow-arrow {
+  fill: var(--accent);
+  font-size: 15px;
   font-weight: 750;
-  content: "→";
-  order: 1;
 }
 
-.radix-limit-icon.lifetime i:first-child,
-.radix-limit-icon.transient i:first-child {
-  border-radius: 4px;
-  background: var(--series-1);
+.radix-limit-diagram .box-text {
+  fill: var(--ink);
+  font-size: 9px;
+  font-weight: 650;
 }
 
-.radix-limit-icon.lifetime i:last-child,
-.radix-limit-icon.transient i:last-child {
-  border-style: dashed;
-  border-radius: 4px;
-  opacity: 0.35;
-  order: 2;
-}
-
-.radix-limit-icon.transient::after {
-  content: "+";
+.radix-limit-diagram .action-text {
+  fill: var(--muted);
+  font-size: 8px;
 }
 
 .radix-limits strong {
@@ -1767,6 +1856,24 @@
 
   .radix-limits > div {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .radix-checkpoint-policy > div {
+    grid-template-columns: 1fr;
+  }
+
+  .radix-policy-step {
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+
+  .radix-policy-step > span {
+    width: 100%;
+    min-height: auto;
+  }
+
+  .radix-policy-step > i {
+    transform: rotate(90deg);
   }
 }
 

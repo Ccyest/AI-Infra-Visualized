@@ -40,6 +40,15 @@ const COPY = {
     mutated: "工作槽独立推进",
     donated: "稀疏 checkpoint",
     snapshotTag: "snapshot → tree",
+    decisionTitle: "第四步：哪些位置值得变成 checkpoint？",
+    candidateTitle: "① 产生候选点",
+    candidateText: "prefill chunk / decode 固定间隔 / 对齐 fork",
+    priorityTitle: "② 优先共享点",
+    priorityText: "真实分支点优先，因为多个子分支都能复用",
+    budgetTitle: "③ 检查路径预算",
+    budgetText: "超过 per-path cap 就用 LRU 淘汰最冷 checkpoint",
+    forkTitle: "④ edge 中途分叉",
+    forkText: "最近祖先 checkpoint → replay suffix → 在新 fork 补种",
     currentMemory: "这些分支同时运行时",
     memoryFormula: "最低驻留：1 个起点 checkpoint + {n} 个活跃工作槽 ≈ {mb}MB",
     memoryCaveat: "这里未计树上额外 checkpoint；它们由下面的策略限制。关键是这不是「每个 token 复制一份」，主要随活跃分支数增长。",
@@ -52,6 +61,22 @@ const COPY = {
     lifetimeText: "请求完成、取消或在显存压力下被调度器回收时就释放，不常驻在树上。",
     transientTitle: "④ 临时槽不常驻",
     transientText: "snapshot 的第二个 ping-pong 槽只在边界按需申请，随后立即释放；donate 只转移索引。",
+    chunkBoundary: "chunk",
+    branchPoint: "分支点",
+    decodeInterval: "interval",
+    retained: "保留 3 个",
+    lruOut: "LRU 淘汰",
+    newCandidate: "新候选",
+    activeSlot: "活跃工作槽",
+    finishEvents: "完成 / 取消 / 回收",
+    freeSlotTop: "释放为",
+    freeSlotBottom: "空闲槽",
+    workingSlot: "工作槽",
+    snapshotCopy: "snapshot 复制",
+    tempSlot: "临时槽",
+    donateIndex: "donate 索引",
+    treeCheckpoint: "树 checkpoint",
+    boundaryOnly: "第二槽仅在边界存在",
     verdict: "结果：Radix tree 仍然共享前缀，只是共享对象从「可直接继续追加的 KV」变成「只读 KDA checkpoint」。代价没有消失：约 54MB 的 KDA 工作状态仍随活跃分支线性增长，因此最终会成为并发上限。",
   },
   en: {
@@ -85,6 +110,15 @@ const COPY = {
     mutated: "working slot advances",
     donated: "sparse checkpoint",
     snapshotTag: "snapshot → tree",
+    decisionTitle: "Step 4: which positions are worth turning into checkpoints?",
+    candidateTitle: "① Generate candidates",
+    candidateText: "prefill chunks / fixed decode intervals / aligned forks",
+    priorityTitle: "② Prefer shared points",
+    priorityText: "Real branch points come first because every child can reuse them",
+    budgetTitle: "③ Check the path budget",
+    budgetText: "Beyond the per-path cap, LRU evicts the coldest checkpoint",
+    forkTitle: "④ Mid-edge divergence",
+    forkText: "nearest ancestor checkpoint → replay suffix → plant at the new fork",
     currentMemory: "When these branches run concurrently",
     memoryFormula: "Minimum resident set: 1 starting checkpoint + {n} active working slots ≈ {mb}MB",
     memoryCaveat: "This excludes extra checkpoints retained in the tree; the policies below bound those. The key point is that this is not one copy per token: growth follows active branches.",
@@ -97,11 +131,28 @@ const COPY = {
     lifetimeText: "A request releases its slot when it finishes, aborts, or is retracted under pressure; the slot does not become permanent tree state.",
     transientTitle: "④ No permanent extra slot",
     transientText: "The second snapshot ping-pong slot is allocated lazily at a boundary and released immediately; donate transfers only an index.",
+    chunkBoundary: "chunk",
+    branchPoint: "branch",
+    decodeInterval: "interval",
+    retained: "keep 3",
+    lruOut: "LRU evicts",
+    newCandidate: "new",
+    activeSlot: "active working slot",
+    finishEvents: "finish / abort / retract",
+    freeSlotTop: "released",
+    freeSlotBottom: "free slot",
+    workingSlot: "working slot",
+    snapshotCopy: "snapshot copy",
+    tempSlot: "temporary slot",
+    donateIndex: "donate index",
+    treeCheckpoint: "tree checkpoint",
+    boundaryOnly: "second slot exists only at a boundary",
     verdict: "Result: the radix tree still shares prefixes, but the shared object changes from appendable KV to a read-only KDA checkpoint. The cost remains real: ~54MB of KDA working state grows linearly with active branches and eventually becomes the concurrency ceiling.",
   },
 } as const;
 
 type Step = 0 | 1 | 2 | 3;
+type GuardrailKind = "sparse" | "cap" | "lifetime" | "transient";
 
 function interpolate(template: string, values: Record<string, number>): string {
   return template.replace(/\{(\w+)\}/g, (_, key: string) => String(values[key]));
@@ -235,6 +286,29 @@ function BranchTree({
   );
 }
 
+function CheckpointDecision({ lang }: { lang: Locale }) {
+  const copy = COPY[lang];
+  const decisions = [
+    [copy.candidateTitle, copy.candidateText],
+    [copy.priorityTitle, copy.priorityText],
+    [copy.budgetTitle, copy.budgetText],
+    [copy.forkTitle, copy.forkText],
+  ];
+  return (
+    <section className="radix-checkpoint-policy">
+      <b>{copy.decisionTitle}</b>
+      <div>
+        {decisions.map(([title, body], index) => (
+          <div className="radix-policy-step" key={title}>
+            <span><strong>{title}</strong><small>{body}</small></span>
+            {index < decisions.length - 1 && <i aria-hidden="true">→</i>}
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function StepControls({
   step,
   setStep,
@@ -266,19 +340,84 @@ function StepControls({
       </div>
       <small>{copy.stepSequence}</small>
       <p>{descriptions[step]}</p>
+      {step === 3 && <CheckpointDecision lang={lang} />}
     </div>
   );
 }
 
-function GuardrailIcon({ kind }: { kind: "sparse" | "cap" | "lifetime" | "transient" }) {
+function SparseDiagram({ lang }: { lang: Locale }) {
+  const copy = COPY[lang];
+  const nodes = [24, 68, 112, 156, 200, 244, 288, 332];
   return (
-    <div className={`radix-limit-icon ${kind}`} aria-hidden="true">
-      {Array.from(
-        { length: kind === "sparse" ? 6 : kind === "cap" ? 4 : 2 },
-        (_, index) => <i key={index} />,
-      )}
-    </div>
+    <svg className="radix-limit-diagram" viewBox="0 0 360 82" aria-hidden="true">
+      <path className="path" d="M24 29H332M156 29L205 8M156 29L205 50" />
+      {nodes.map((x) => <circle className={[112, 156, 288].includes(x) ? "kept" : "plain"} cx={x} cy="29" r="8" key={x} />)}
+      <circle className="plain" cx="205" cy="8" r="7" />
+      <circle className="plain" cx="205" cy="50" r="7" />
+      <text x="112" y="72" textAnchor="middle">{copy.chunkBoundary}</text>
+      <text x="178" y="72" textAnchor="middle">{copy.branchPoint}</text>
+      <text x="288" y="72" textAnchor="middle">{copy.decodeInterval}</text>
+    </svg>
   );
+}
+
+function CapDiagram({ lang }: { lang: Locale }) {
+  const copy = COPY[lang];
+  return (
+    <svg className="radix-limit-diagram" viewBox="0 0 360 82" aria-hidden="true">
+      <rect className="evicted" x="25" y="18" width="46" height="30" rx="7" />
+      <path className="cross" d="M31 22L65 44M65 22L31 44" />
+      {[103, 169, 235].map((x) => <rect className="kept-box" x={x} y="18" width="46" height="30" rx="7" key={x} />)}
+      <text className="plus" x="286" y="39" textAnchor="middle">+</text>
+      <rect className="new-box" x="302" y="18" width="50" height="30" rx="7" />
+      <text className="box-text" x="327" y="37" textAnchor="middle">{copy.newCandidate}</text>
+      <text x="48" y="70" textAnchor="middle">{copy.lruOut}</text>
+      <text x="192" y="70" textAnchor="middle">{copy.retained}</text>
+    </svg>
+  );
+}
+
+function LifetimeDiagram({ lang }: { lang: Locale }) {
+  const copy = COPY[lang];
+  return (
+    <svg className="radix-limit-diagram" viewBox="0 0 360 82" aria-hidden="true">
+      <rect className="active-box" x="8" y="18" width="98" height="32" rx="7" />
+      <text className="box-text" x="57" y="38" textAnchor="middle">{copy.activeSlot}</text>
+      <text className="flow-arrow" x="120" y="40" textAnchor="middle">→</text>
+      <rect className="event-box" x="134" y="18" width="116" height="32" rx="7" />
+      <text className="box-text" x="192" y="38" textAnchor="middle">{copy.finishEvents}</text>
+      <text className="flow-arrow" x="265" y="40" textAnchor="middle">→</text>
+      <rect className="free-box" x="278" y="18" width="74" height="32" rx="7" />
+      <text className="box-text" x="315" y="32" textAnchor="middle"><tspan x="315">{copy.freeSlotTop}</tspan><tspan x="315" dy="12">{copy.freeSlotBottom}</tspan></text>
+    </svg>
+  );
+}
+
+function TransientDiagram({ lang }: { lang: Locale }) {
+  const copy = COPY[lang];
+  return (
+    <svg className="radix-limit-diagram" viewBox="0 0 360 94" aria-hidden="true">
+      <rect className="active-box" x="5" y="15" width="72" height="32" rx="7" />
+      <text className="box-text" x="41" y="35" textAnchor="middle">{copy.workingSlot}</text>
+      <text className="action-text" x="112" y="26" textAnchor="middle">{copy.snapshotCopy}</text>
+      <text className="flow-arrow" x="112" y="43" textAnchor="middle">→</text>
+      <rect className="temp-box" x="150" y="15" width="66" height="32" rx="7" />
+      <text className="box-text" x="183" y="35" textAnchor="middle">{copy.tempSlot}</text>
+      <text className="action-text" x="254" y="26" textAnchor="middle">{copy.donateIndex}</text>
+      <text className="flow-arrow" x="254" y="43" textAnchor="middle">→</text>
+      <rect className="tree-box" x="292" y="15" width="64" height="32" rx="7" />
+      <text className="box-text" x="324" y="29" textAnchor="middle"><tspan x="324">tree</tspan><tspan x="324" dy="12">checkpoint</tspan></text>
+      <rect className="extra-box" x="150" y="58" width="66" height="20" rx="6" />
+      <text className="action-text" x="258" y="73" textAnchor="middle">{copy.boundaryOnly}</text>
+    </svg>
+  );
+}
+
+function GuardrailDiagram({ kind, lang }: { kind: GuardrailKind; lang: Locale }) {
+  if (kind === "sparse") return <SparseDiagram lang={lang} />;
+  if (kind === "cap") return <CapDiagram lang={lang} />;
+  if (kind === "lifetime") return <LifetimeDiagram lang={lang} />;
+  return <TransientDiagram lang={lang} />;
 }
 
 function Guardrails({ lang }: { lang: Locale }) {
@@ -295,7 +434,7 @@ function Guardrails({ lang }: { lang: Locale }) {
       <div>
         {items.map(({ kind, title, body }) => (
           <article key={title}>
-            <GuardrailIcon kind={kind} />
+            <GuardrailDiagram kind={kind} lang={lang} />
             <strong>{title}</strong>
             <span>{body}</span>
           </article>
