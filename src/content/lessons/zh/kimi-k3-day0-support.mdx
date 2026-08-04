@@ -41,32 +41,32 @@ import ServingPerfViz from "../../../viz/kimi-k3-day0/ServingPerfViz";
 
 K3 是一个 2.8T 参数的 MoE 模型，每个 token 激活 104B 参数。它原生
 支持 1M 上下文，MoE expert 权重以 MXFP4 格式发布，推理激活使用 MXFP8。K3 一共有
-93 层，其中 69 层是 KDA 线性注意力，24 层是全局 MLA；每个 attention 层都配有
-Stable LatentMoE FFN，Attention Residual 则跨 block 聚合历史表示。点击下图可以先看完整结构：
+93 层，其中 69 层是 KDA 线性注意力，24 层是带门控的全局 MLA；第一层使用 dense FFN，
+其余 92 层使用 Stable LatentMoE。Attention Residual 则跨 block 聚合历史表示。点击下图可以先看完整结构：
 
 <ArchViz client:visible />
 
 ### 1M 上下文的 KV cache
 
-先从显存看。MLA 压缩后，K3 的 24 层每个 token 合计约需 27KB KV cache。
-如果 93 层全部使用 MLA，单个 1M-token 请求要占约 110GB；未压缩的 MHA
+先从显存看。在 TP=8 下，MLA 压缩后，K3 的 24 层每个 token、每张 GPU 合计约需 27KB KV cache。
+如果 93 层全部使用 MLA，单张 GPU 上的 1M-token 请求要占约 110GB；未压缩的 MHA
 还要再大一个数量级。所以 K3 不能在大部分层保留随上下文增长的 softmax
 attention。
 
-K3 采用 3 KDA + 1 MLA 的交错结构。KDA 的递归状态大小固定，整机合计每请求
-约 0.4GB，每步原地更新；MLA 保留全局 attention。全模型不使用 RoPE（NoPE），
+K3 采用 3 KDA + 1 MLA 的交错结构。KDA 的递归状态大小固定，TP=8 下每张 GPU 每请求
+约 54MB，每步原地更新；MLA 保留全局 attention。全模型不使用显式位置编码（NoPE），
 位置信息由 KDA 的递归隐式提供。下图展示了不同架构的显存使用量：
 
 <CacheViz client:visible />
 
-24 层 MLA 在 1M token 时约需 28GB，是全 MLA 假想值的 1/3.9。计算量也同样：
+24 层 MLA 在单张 GPU、1M token 时约需 28GB，是全 MLA 假想值的 1/3.9。计算量也同样：
 softmax attention 解码每个 token 都要扫遍历史（`O(N)`），KDA 只更新固定大小的
 状态（`O(1)`）。
 
 ### MHA：每步扫全部历史
 
-先看 KDA 替代了什么。在普通 MHA 中，第 `N` 个 token 会读取 cache 里前
-`N−1` 个 token，分三步计算：
+先看 KDA 替代了什么。在普通 MHA 中，第 `N` 个 token 会读取 cache 里的历史 token（下面为突出历史扫描，省略当前
+token 对自身的项），分三步计算：
 
 1. **打分**：对每个历史 token `i` 计算 `z[N,i] = dot(q[N], k[i]) / sqrt(d_k)`。
 2. **归一化**：先求 `Z = Σⱼ₌₁…N−1 exp(z[N,j])`，再得到注意力权重 `a[N,i] = exp(z[N,i]) / Z`。
@@ -144,7 +144,8 @@ KDA 因此再加入逐 channel 门控：对每个 token、每个 head，模型�
 <KdaGateViz client:visible />
 
 Kimi Linear 论文还把这种门控解释为可学习的位置编码，用它取代 RoPE 的固定旋转。
-配套 chunkwise kernel 在受约束的 DPLR 形式下比通用实现快约一倍，让 KDA 能够铺到 69 层。
+K3 进一步对衰减范围做了下界约束，并加入 full-rank output gate，使 chunkwise kernel
+可以更充分地使用 Tensor Core；这些改动共同降低了大规模采用 KDA 的计算成本。
 
 ### Attention Residual
 
@@ -152,8 +153,8 @@ Kimi Linear 论文还把这种门控解释为可学习的位置编码，用它�
 继续修改。它保证信息能够向上传递，但到了第 90 多层，浅层细节已经和几十次更新叠在一起，
 深层无法单独翻回某个较早版本。
 
-Attention Residual 相当于额外保存几份「历史版本」。K3 保留组内的普通 residual，同时每
-12 层保存一份 block 输出。后面的 block 不必只依赖当前草稿，而是用学到的 pseudo-query
+Attention Residual 相当于额外保存几份「历史版本」。K3 保留组内的普通 residual，同时把每个
+12-layer block 的层输出累加成一份 block 表示。后续层不必只依赖当前草稿，而是用学到的 pseudo-query
 给 embedding 和这些历史摘要分配权重，把此刻最有用的几份表示混合取回：
 
 <AttnResViz client:visible />
@@ -169,7 +170,7 @@ Attention Residual 相当于额外保存几份「历史版本」。K3 保留组�
 
 ### LatentMoE
 
-K3 的 FFN 全部使用 MoE：896 个 routed experts 中每个 token 选 16 个，另有 2 个
+除第一层 dense FFN 外，K3 的其余 FFN 使用 MoE：896 个 routed experts 中每个 token 选 16 个，另有 2 个
 shared experts 始终激活。因此 routed pool 的选中比例是 `16/896 ≈ 1.8%`；
 整模型每 token 激活参数的另一个口径是 `104B/2.8T ≈ 3.7%`。
 
@@ -179,11 +180,12 @@ shared experts 始终激活。因此 routed pool 的选中比例是 `16/896 ≈ 
 <MoeViz />
 
 高稀疏度会让训练更难稳定。K3 用 RMSNorm、有界 SiTU-GLU 和 Quantile Balancing 来
-稳定路由，其中 expert 配额直接由 router 分数的分位数导出。
+稳定路由；Quantile Balancing 根据 router margin 的分位数更新 expert bias，使各 expert
+的负载接近目标配额。
 
 到这里，我们已经看完 K3 如何用 KDA、MLA、Attention Residual 和 LatentMoE 组成混合架构。
 但模型结构只解决了「怎么算」；真正上线时，SGLang 还要解决「这些不同状态如何放进显存、
-如何并行 prefill、又如何扩展 decode」。这正是下一部分的主线。
+如何并行 prefill、又如何扩展 decode」。下一部分就从这些系统问题展开。
 
 ## SGLang 的 Day-0 适配
 
@@ -192,10 +194,10 @@ K3 的混合架构会产生两种生命周期完全不同的推理状态：
 | | MLA（24 层） | KDA（69 层） |
 | --- | --- | --- |
 | 状态形式 | KV cache，逐 token 追加 | 递归状态，固定大小 |
-| 增长方式 | 每 token 约 27KB，只增不减 | 每请求约 54MB（`TP=8`），每步原地覆写 |
+| 增长方式 | 每 token、每 GPU 约 27KB，只增不减 | 每请求、每 GPU 约 54MB（`TP=8`），每步原地覆写 |
 
-MLA 的 KV 随 token 追加，KDA 的状态却按请求固定占用并且每步覆写。这个差异一路
-传到显存分配、prefill 并行和 decode 扩容，也构成了 SGLang Day-0 适配的主线。
+MLA 的 KV 随 token 追加，KDA 的状态却按请求固定占用并且每步覆写。下面的适配重点，
+就是如何同时管理这两种状态，并据此选择 prefill 和 decode 的并行方式。
 
 ### RadixAttention：给会变的 KDA 状态做前缀缓存
 
@@ -218,14 +220,15 @@ radix edge 中间分叉，SGLang 会从上方最近的 checkpoint 恢复，向�
 
 ### 双状态显存管理
 
-旧方案在启动时预先切出 KDA 区和 MLA 区。但 KDA 需求取决于并发数，MLA 需求取决于
+原方案在启动时预先切出 KDA 区和 MLA 区。但 KDA 需求取决于并发数，MLA 需求取决于
 总上下文长度，一旦负载偏离预估，就会出现一边耗尽、另一边空着的情况。SGLang
-把两者放进同一个池：KDA 固定块从左边分配，MLA 页从右边分配，共用中间的空闲区：
+把两者放进同一个池：KDA 固定块从左边分配，MLA 页从右边分配，共用中间的空闲区。
+Day-0 版本通过 `--enable-unified-memory` opt-in：
 
 <PoolViz client:visible />
 
 在图中的 t=14，静态双池已经耗尽 MLA 区并驱逐 R2，KDA 区却还空着 6 页；
-统一池仍然可以继续运行所有请求。
+统一池仍然可以继续运行所有请求。这里的请求序列是手工构造的教学示例，不是线上 trace。
 
 ### Chunked pipeline prefill
 
@@ -236,7 +239,7 @@ Prefill 一次处理大量 prompt tokens，有足够工作可以切成 chunks �
 
 <PipelineViz client:visible />
 
-这套分工移除了每层 AllReduce，恢复整层宽 GEMM，并隐藏 91% 的 stage 间 P2P。
+这套分工移除了 TP prefill 中的逐层 AllReduce，恢复整层宽 GEMM，并隐藏 91% 的 stage 间 P2P。
 在 8K prefill、2×4 GB300 的同拓扑对比中，PP8×TP1 的代表点达到
 5,958 input tok/s/GPU，是 TEP8 的 1.64×；跨配置的 prefill capacity 提升为
 1.45–1.72×。
@@ -262,7 +265,7 @@ all-to-all；KDA 状态没有 token 位置轴，仍按 TP/head 切分。
 
 ### 性能数字：单请求 decode 与 serving frontier
 
-`BS=1` decode、整机 aggregate throughput 和每用户速度是三种不同口径。下图左边展示
+`BS=1` decode、按 GPU 归一化的系统吞吐和每用户速度是三种不同口径。下图左边展示
 15 轮 kernel/通信优化如何把非投机 `BS=1` 从 44.3 提到 112.5 tok/s，并单独标出
 DSpark 的约 423 tok/s；右边是 PD disaggregation 在总吞吐与每用户速度之间的
 serving frontier。
@@ -270,9 +273,6 @@ serving frontier。
 <ServingPerfViz client:visible />
 
 ## 致谢
-
-感谢你读到这里。希望这些可交互图能帮你看清 K3 的架构取舍，以及这些取舍如何一路影响
-SGLang 的显存管理和并行策略。
 
 Kimi K3 的 Day-0 支持由 RadixArk 的 SGLang & Miles 团队、Moonshot AI 团队，以及
 NVIDIA、AMD、Approaching AI、Baseten 和 Modal 共同完成。

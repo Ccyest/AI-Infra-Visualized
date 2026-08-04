@@ -239,16 +239,18 @@ export default function ArchViz({ lang = "zh" }: { lang?: Locale }) {
                       "color-mix(in srgb, var(--series-1) 40%, var(--surface))",
                     )}
                 {arrow(x + TILE_W / 2, ATTN_Y + TILE_H, x + TILE_W / 2, FFN_Y)}
-                {tile(
-                  "moe",
-                  x,
-                  FFN_Y,
-                  TILE_W,
-                  TILE_H,
-                  "LatentMoE",
-                  "FFN",
-                  "color-mix(in srgb, var(--series-2) 26%, var(--surface))",
-                )}
+                {i === 0
+                  ? tile("dense", x, FFN_Y, TILE_W, TILE_H, "Dense", "FFN")
+                  : tile(
+                      "moe",
+                      x,
+                      FFN_Y,
+                      TILE_W,
+                      TILE_H,
+                      "LatentMoE",
+                      "FFN",
+                      "color-mix(in srgb, var(--series-2) 26%, var(--surface))",
+                    )}
               </g>
             );
           })}

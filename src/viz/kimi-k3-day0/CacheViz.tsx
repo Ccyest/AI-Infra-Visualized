@@ -11,14 +11,14 @@ import "./styles.css";
  * cache 账单模型(纯算术，数字口径见文末对照)：
  * - MLA:27 KB/token(24 层合计，Day-0 博客口径)→ 每层 1.125 KB/token;
  * - 假想全 MLA:93 层 × 1.125 ≈ 104.6 KB/token;
- * - KDA:69 层递归状态固定 ≈ 0.4 GB/请求，不随上下文变化。
+ * - KDA:69 层递归状态固定 ≈ 54 MB/请求/GPU(TP=8)，不随上下文变化。
  */
 const STEPS = 16;
 const STEP_TOKENS = 65536;
 const KB_PER_LAYER_TOKEN = 27 / 24;
 const K3_MLA_LAYERS = 24;
 const HYPO_LAYERS = 93;
-const KDA_FIXED_GB = 0.4;
+const KDA_FIXED_GB = 0.054;
 const GB_PER_CELL = 2;
 
 const CELL = 9;

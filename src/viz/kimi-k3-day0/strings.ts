@@ -105,8 +105,8 @@ export const CACHE = {
     en: "MLA KV cache (grows cell by cell with context)",
   },
   legendKda: {
-    zh: "KDA 递归状态（固定约 0.4 GB，不随上下文变化）",
-    en: "KDA recurrent state (fixed at ≈0.4 GB, independent of context)",
+    zh: "KDA 递归状态（TP=8 下每 GPU 固定约 54 MB）",
+    en: "KDA recurrent state (≈54 MB per GPU at TP=8, independent of context)",
   },
   statContext: { zh: "上下文", en: "context" },
   statCache: { zh: "cache", en: "cache" },
@@ -129,8 +129,8 @@ export function cacheCellTooltip(
   const zh = locale === "zh";
   if (kind === "kda") {
     return zh
-      ? "KDA 递归状态：69 层合计约 0.4 GB，固定不涨"
-      : "KDA recurrent state: ≈0.4 GB across 69 layers, never grows";
+      ? "KDA 递归状态：TP=8 下每 GPU 约 54 MB，固定不涨"
+      : "KDA recurrent state: ≈54 MB per GPU at TP=8, never grows";
   }
   return zh
     ? `≈2 GB 的 MLA KV(${layers} 层合计，每 token 约 ${layers === 24 ? "27" : "105"} KB)`
@@ -222,8 +222,8 @@ export const MOE = {
 export const ARCH = {
   title: { zh: "K3 整体结构", en: "K3 at a glance" },
   subtitle: {
-    zh: "KDA / MLA 按 3:1 交错；每 12 层保留一份 AttnRes 摘要，每层都带 LatentMoE FFN",
-    en: "KDA and MLA interleave 3:1; AttnRes keeps one summary every 12 layers, and every layer has a LatentMoE FFN",
+    zh: "KDA / MLA 按 3:1 交错；每 12 层保留一份 AttnRes 摘要，首层 dense，其余层使用 LatentMoE",
+    en: "KDA and MLA interleave 3:1; AttnRes keeps one summary every 12 layers, with a dense first layer and LatentMoE after it",
   },
   hint: { zh: "点击图中部件", en: "Click a component" },
   vision: { zh: "视觉", en: "vision" },
@@ -303,8 +303,8 @@ export const ARCH_DETAILS: ArchDetail[] = [
     id: "moe",
     label: { zh: "LatentMoE FFN", en: "LatentMoE FFN" },
     detail: {
-      zh: "每层的 FFN：896 个 routed expert 选 16 个，另有 2 个 shared expert；路由和 expert 计算都在 3584 维隐空间进行。",
-      en: "Every layer's FFN: 16 of 896 routed experts plus 2 shared experts; routing and expert compute both run in a 3584-d latent space.",
+      zh: "除首层 dense FFN 外，其余层从 896 个 routed expert 中选 16 个，另有 2 个 shared expert；路由和 expert 计算都在 3584 维隐空间进行。",
+      en: "Except for the first dense FFN, each layer selects 16 of 896 routed experts plus 2 shared experts; routing and expert compute run in a 3584-d latent space.",
     },
   },
   {
