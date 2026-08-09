@@ -11,15 +11,15 @@ import { POOL, poolCellTooltip, poolEventText, poolVerdict } from "./strings";
 import "./styles.css";
 
 const POOL_SIZE = 44;
-const SPLIT_AT = 29;
+const SPLIT_AT = 22;
 
 /** 每个新请求同时分配 KDA state 和首个 MLA KV 页。 */
 const TRACE: PoolRequest[] = [
-  { id: 1, start: 0, tokens: 18, kdaPages: 5, growEvery: 3 },
-  { id: 2, start: 3, tokens: 18, kdaPages: 5, growEvery: 3 },
-  { id: 3, start: 6, tokens: 16, kdaPages: 5, growEvery: 3 },
-  { id: 4, start: 9, tokens: 14, kdaPages: 5, growEvery: 3 },
-  { id: 5, start: 25, tokens: 6, kdaPages: 5, growEvery: 3 },
+  { id: 1, start: 0, tokens: 18, kdaPages: 3, growEvery: 2 },
+  { id: 2, start: 3, tokens: 18, kdaPages: 3, growEvery: 2 },
+  { id: 3, start: 6, tokens: 16, kdaPages: 3, growEvery: 2 },
+  { id: 4, start: 9, tokens: 14, kdaPages: 3, growEvery: 2 },
+  { id: 5, start: 25, tokens: 6, kdaPages: 3, growEvery: 2 },
 ];
 
 const CELL = 12;

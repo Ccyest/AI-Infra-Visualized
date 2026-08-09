@@ -8,8 +8,8 @@ export const POOL = {
     en: "Two state types: static split pools vs one unified pool",
   },
   subtitle: {
-    zh: "同一批请求、两类状态同步分配：baseline 随机挑空位，统一池从两端放",
-    en: "Both states allocate together: baseline picks free slots; the unified pool packs from both ends",
+    zh: "请求准入时同时分配两类状态；之后 KDA 固定，MLA 随 token 增长",
+    en: "Both states allocate on admission; KDA then stays fixed while MLA grows with tokens",
   },
   splitLabel: { zh: "静态双池（启动时切死）", en: "Static split pools (fixed at startup)" },
   unifiedLabel: { zh: "统一池（SGLang）", en: "Unified pool (SGLang)" },
