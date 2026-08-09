@@ -7,7 +7,7 @@
  *
  * 模拟两种显存管理策略在同一负载下的表现:
  * - split:启动时把池子静态切成 KDA 区 / MLA 区(旧方案)——
- *   一侧耗尽即使另一侧有空闲也会分配失败(拒绝新请求 / 驱逐生成中的请求);
+ *   在各自区域内从空位中分配，一侧耗尽即使另一侧有空闲也会失败;
  * - unified:统一池,KDA 块从左端分配、MLA 页从右端分配,
  *   中间留一段连续空闲区,按负载自适应(SGLang 的新方案)。
  */
@@ -95,6 +95,18 @@ function findFromRight(
   return -1;
 }
 
+/** 生成稳定的伪随机顺序，让 baseline 布局随机但每次渲染可复现。 */
+function shuffledIndices(lo: number, hi: number, seed: number): number[] {
+  const indices = Array.from({ length: hi - lo }, (_, i) => lo + i);
+  let state = seed >>> 0;
+  for (let i = indices.length - 1; i > 0; i--) {
+    state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
+    const j = state % (i + 1);
+    [indices[i], indices[j]] = [indices[j], indices[i]];
+  }
+  return indices;
+}
+
 export function simulatePool(
   mode: PoolMode,
   poolSize: number,
@@ -113,13 +125,28 @@ export function simulatePool(
   let failures = 0;
   let peakUsed = 0;
 
-  // KDA 找连续段、MLA 从右往左找单页;split 模式各自限制在自己的分区里
+  // Baseline 在两个静态分区内随机挑空位；unified 把 KDA / MLA 分别从两端压紧。
   const kdaLo = 0;
   const kdaHi = mode === "split" ? splitAt : poolSize;
   const mlaLo = mode === "split" ? splitAt : 0;
   const mlaHi = poolSize;
+  const splitKdaOrder = shuffledIndices(kdaLo, kdaHi, 0x4b4441);
+  const splitMlaOrder = shuffledIndices(mlaLo, mlaHi, 0x4d4c41);
+
+  const randomFree = (order: number[]): number =>
+    order.find((i) => pages[i] === null) ?? -1;
 
   const allocKda = (req: PoolRequest, a: ActiveReq): boolean => {
+    if (mode === "split") {
+      for (let n = 0; n < req.kdaPages; n++) {
+        const at = randomFree(splitKdaOrder);
+        if (at < 0) return false;
+        pages[at] = { owner: req.id, kind: "kda" };
+        a.pages.push(at);
+      }
+      return true;
+    }
+
     const at = findRun(pages, kdaLo, kdaHi, req.kdaPages);
     if (at < 0) return false;
     for (let i = at; i < at + req.kdaPages; i++) {
@@ -129,7 +156,9 @@ export function simulatePool(
     return true;
   };
   const allocMla = (req: PoolRequest, a: ActiveReq): boolean => {
-    const at = findFromRight(pages, mlaLo, mlaHi);
+    const at = mode === "split"
+      ? randomFree(splitMlaOrder)
+      : findFromRight(pages, mlaLo, mlaHi);
     if (at < 0) return false;
     pages[at] = { owner: req.id, kind: "mla" };
     a.pages.push(at);

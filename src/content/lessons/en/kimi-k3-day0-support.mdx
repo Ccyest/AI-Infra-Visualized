@@ -260,8 +260,9 @@ MLA pages from the right, and both share the free space in the middle:
 
 <PoolViz client:visible lang="en" />
 
-At t=14, the split layout exhausts its MLA region and evicts R2 while six KDA
-pages remain free. The unified pool continues running every request.
+In the baseline, allocations pick free slots inside two statically sized regions.
+When the MLA region fills, free KDA slots cannot be borrowed. The unified layout
+instead packs KDA from the left and MLA from the right, so every request keeps running.
 
 ### Chunked pipeline prefill
 

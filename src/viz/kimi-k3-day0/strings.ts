@@ -8,8 +8,8 @@ export const POOL = {
     en: "Two state types: static split pools vs one unified pool",
   },
   subtitle: {
-    zh: "同一批请求：KDA 固定块从左入，MLA KV 逐页从右入",
-    en: "Same requests: fixed KDA blocks fill from the left, MLA KV pages from the right",
+    zh: "同一批请求、两类状态同步分配：baseline 随机挑空位，统一池从两端放",
+    en: "Both states allocate together: baseline picks free slots; the unified pool packs from both ends",
   },
   splitLabel: { zh: "静态双池（启动时切死）", en: "Static split pools (fixed at startup)" },
   unifiedLabel: { zh: "统一池（SGLang）", en: "Unified pool (SGLang)" },
@@ -61,8 +61,8 @@ export function poolCellTooltip(
       : `R${cell.owner} · KDA recurrent state (fixed size, overwritten each step)`;
   }
   return zh
-    ? `R${cell.owner} · MLA KV cache(每 2 个 token 追加一页)`
-    : `R${cell.owner} · MLA KV cache (one page per 2 tokens)`;
+    ? `R${cell.owner} · MLA KV cache(随 token 逐页追加)`
+    : `R${cell.owner} · MLA KV cache (appended page by page with tokens)`;
 }
 
 export function poolVerdict(

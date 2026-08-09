@@ -227,8 +227,9 @@ Day-0 版本通过 `--enable-unified-memory` opt-in：
 
 <PoolViz client:visible />
 
-在图中的 t=14，静态双池已经耗尽 MLA 区并驱逐 R2，KDA 区却还空着 6 页；
-统一池仍然可以继续运行所有请求。这里的请求序列是手工构造的教学示例，不是线上 trace。
+图中的 baseline 在两个静态分区内随机挑选空位；当 MLA 区耗尽时，
+KDA 区仍有空位，却无法借给 MLA。统一池把 KDA 从左端、MLA 从右端放入，
+因此仍能继续运行所有请求。这里的请求序列是手工构造的教学示例，不是线上 trace。
 
 ### Chunked pipeline prefill
 
