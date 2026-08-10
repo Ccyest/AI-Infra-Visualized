@@ -12,14 +12,15 @@ import "./styles.css";
 
 const POOL_SIZE = 44;
 const SPLIT_AT = 22;
+const KDA_PAGES_PER_REQUEST = 3;
 
 /** 每个新请求同时分配 KDA state 和首个 MLA KV 页。 */
 const TRACE: PoolRequest[] = [
-  { id: 1, start: 0, tokens: 18, kdaPages: 3, growEvery: 2 },
-  { id: 2, start: 3, tokens: 18, kdaPages: 3, growEvery: 2 },
-  { id: 3, start: 6, tokens: 16, kdaPages: 3, growEvery: 2 },
-  { id: 4, start: 9, tokens: 14, kdaPages: 3, growEvery: 2 },
-  { id: 5, start: 25, tokens: 6, kdaPages: 3, growEvery: 2 },
+  { id: 1, start: 0, tokens: 18, kdaPages: KDA_PAGES_PER_REQUEST, growEvery: 2 },
+  { id: 2, start: 3, tokens: 18, kdaPages: KDA_PAGES_PER_REQUEST, growEvery: 2 },
+  { id: 3, start: 6, tokens: 16, kdaPages: KDA_PAGES_PER_REQUEST, growEvery: 2 },
+  { id: 4, start: 9, tokens: 14, kdaPages: KDA_PAGES_PER_REQUEST, growEvery: 2 },
+  { id: 5, start: 25, tokens: 6, kdaPages: KDA_PAGES_PER_REQUEST, growEvery: 2 },
 ];
 
 const CELL = 12;
@@ -152,22 +153,60 @@ function PoolSection({
   lang: Locale;
 }) {
   const m = result.metrics[Math.min(t, result.totalIterations)];
+  const frame = result.frames[Math.min(t, result.totalIterations)];
+  const activeIds = [...new Set(frame.flatMap((cell) => cell ? [cell.owner] : []))]
+    .sort((a, b) => a - b);
   // 事件发生在第 e.t 个 iteration 期间,反映在 frames[e.t + 1],故播放头越过后才显示
   const pastEvents = result.events.filter((e) => e.t < t);
   return (
     <div className="viz-section">
-      <div className="viz-section-head">
-        <b>{label}</b>
-        <span className="viz-section-stats">
-          {POOL.statActive[lang]} {m.active} · KDA {m.kdaPages} · MLA {m.mlaPages} ·{" "}
-          {POOL.statFree[lang]} {m.freePages} {POOL.pages[lang]} ·{" "}
-          {POOL.statFailures[lang]} {m.failures}
-        </span>
-        {pastEvents.map((e) => (
-          <span key={`${e.req}-${e.t}`} className="k3-event">
-            {poolEventText(lang, e.t, e.req, e.type)}
+      <div className="viz-section-head pool-section-head">
+        <div className="pool-section-title-row">
+          <b>{label}</b>
+          {pastEvents.map((e) => (
+            <span key={`${e.req}-${e.t}`} className="k3-event">
+              {poolEventText(lang, e.t, e.req, e.type)}
+            </span>
+          ))}
+        </div>
+        <div className="pool-request-row">
+          <span className="pool-row-label">{POOL.activeRequests[lang]} {m.active}</span>
+          {activeIds.map((id) => (
+            <span key={id} className="pool-request-chip">
+              <span className="pool-request-swatch" style={{ background: seriesColor(id) }} />
+              R{id}
+            </span>
+          ))}
+          {pastEvents.map((e) => (
+            <span
+              key={`failed-${e.req}-${e.t}`}
+              className="pool-request-chip is-failed"
+              title={poolEventText(lang, e.t, e.req, e.type)}
+            >
+              <span className="pool-request-swatch" style={{ background: seriesColor(e.req) }}>
+                ×
+              </span>
+              R{e.req}
+            </span>
+          ))}
+        </div>
+        <div className="pool-metric-row">
+          <span className="pool-metric">
+            <strong>KDA {m.kdaPages}</strong>
+            <small>= {m.active} {POOL.requests[lang]} × {KDA_PAGES_PER_REQUEST} {POOL.pages[lang]}</small>
           </span>
-        ))}
+          <span className="pool-metric">
+            <strong>MLA {m.mlaPages}</strong>
+            <small>{POOL.mlaGrowth[lang]}</small>
+          </span>
+          <span className="pool-metric">
+            <strong>{POOL.statFree[lang]} {m.freePages} {POOL.pages[lang]}</strong>
+            <small>{POOL.remainingCapacity[lang]}</small>
+          </span>
+          <span className="pool-metric">
+            <strong>{POOL.statFailures[lang]} {m.failures}</strong>
+          </span>
+        </div>
       </div>
       <PoolBar result={result} t={t} lang={lang} />
     </div>
