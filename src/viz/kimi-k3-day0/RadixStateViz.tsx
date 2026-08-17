@@ -5,7 +5,6 @@ import "./styles.css";
 const MIN_BRANCHES = 2;
 const MAX_BRANCHES = 5;
 const DEFAULT_BRANCHES = 4;
-const KDA_STATE_MB = 54;
 const ACTIVE_LEAVES = ["F", "X", "I", "Q", "K"] as const;
 const PREFIX_PATHS: Record<string, readonly string[]> = {
   F: ["C", "D", "E", "F"],
@@ -59,9 +58,6 @@ const COPY = {
     hitTreeResult: "树上的 S(ABC) 是只读 checkpoint；所有活跃请求都从这个共享前缀开始。",
     copyTreeResult: "copy-on-write 把 S(ABC) 恢复到 {n} 个私有工作槽；蓝色叶子表示这些请求的工作端点。",
     advanceTreeResult: "每个请求沿自己的蓝色路径独立推进；树上的 S(ABC) 仍然不变。",
-    currentMemory: "这些分支同时运行时",
-    memoryFormula: "最低驻留：1 个起点 checkpoint + {n} 个活跃工作槽 ≈ {mb}MB",
-    memoryCaveat: "这里未计树上额外 checkpoint；它们由下面的策略限制。关键是这不是「每个 token 复制一份」，主要随活跃分支数增长。",
     verdict: "树上共享的是只读 checkpoint；每个活跃分支仍要一份约 54MB 的工作状态，分支多了就顶到并发上限。",
   },
   en: {
@@ -107,9 +103,6 @@ const COPY = {
     hitTreeResult: "S(ABC) in the tree is read-only; every active request starts from this shared checkpoint.",
     copyTreeResult: "Copy-on-write restores S(ABC) into {n} private working slots; blue leaves mark those requests' working endpoints.",
     advanceTreeResult: "Each request advances independently along its blue path while S(ABC) in the tree remains unchanged.",
-    currentMemory: "When these branches run concurrently",
-    memoryFormula: "Minimum resident set: 1 starting checkpoint + {n} active working slots ≈ {mb}MB",
-    memoryCaveat: "This excludes extra checkpoints retained in the tree; the policies below bound those. The key point is that this is not one copy per token: growth follows active branches.",
     verdict: "The tree shares read-only checkpoints; each active branch still needs its own ~54MB working state, so branches cap concurrency.",
   },
 } as const;
@@ -359,7 +352,6 @@ export default function RadixStateViz({ lang = "zh" }: { lang?: Locale }) {
   const [branches, setBranches] = useState(DEFAULT_BRANCHES);
   const [step, setStep] = useState<Step>(0);
   const [policy, setPolicy] = useState<Policy>(1);
-  const memoryMb = (branches + 1) * KDA_STATE_MB;
   return (
     <figure className="viz-stage k3-viz radix-state-viz" style={{ margin: "1.6rem 0" }}>
       <div className="viz-head">
@@ -385,11 +377,6 @@ export default function RadixStateViz({ lang = "zh" }: { lang?: Locale }) {
         </label>
         <StepControls step={step} setStep={setStep} policy={policy} setPolicy={setPolicy} lang={lang} />
         <UnifiedRadixTree step={step} policy={policy} branches={branches} lang={lang} />
-        <div className="radix-memory-callout">
-          <b>{copy.currentMemory}</b>
-          <output>{interpolate(copy.memoryFormula, { n: branches, mb: memoryMb })}</output>
-          <small>{copy.memoryCaveat}</small>
-        </div>
       </section>
       <div className="viz-footer parallel-footer">
         <div>{copy.verdict}</div>

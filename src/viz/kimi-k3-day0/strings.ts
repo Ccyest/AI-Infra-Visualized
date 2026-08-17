@@ -69,26 +69,6 @@ export function poolCellTooltip(
     : `R${cell.owner} · MLA KV cache (appended page by page with tokens)`;
 }
 
-export function poolVerdict(
-  locale: Locale,
-  evicted: string,
-  rejected: string,
-  total: number,
-  peak: number,
-  poolSize: number,
-): string {
-  if (locale === "zh") {
-    const parts: string[] = [];
-    if (evicted) parts.push(`驱逐了 ${evicted}`);
-    if (rejected) parts.push(`拒绝了 ${rejected}`);
-    return `静态双池${parts.join("、")}；统一池 ${total} 个请求全部完成（峰值 ${peak}/${poolSize} 页）。`;
-  }
-  const parts: string[] = [];
-  if (evicted) parts.push(`evicted ${evicted}`);
-  if (rejected) parts.push(`rejected ${rejected}`);
-  return `The split pools ${parts.join(" and ")}; the unified pool finished all ${total} requests (peak ${peak}/${poolSize} pages).`;
-}
-
 export const CACHE = {
   title: {
     zh: "KV cache 对比图",

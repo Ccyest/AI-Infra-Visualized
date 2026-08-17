@@ -35,7 +35,8 @@ import RadixStateViz from "../../../viz/kimi-k3-day0/RadixStateViz";
 import PoolViz from "../../../viz/kimi-k3-day0/PoolViz";
 import PipelineViz from "../../../viz/kimi-k3-day0/PipelineViz";
 import DcpViz from "../../../viz/kimi-k3-day0/DcpViz";
-import ServingPerfViz from "../../../viz/kimi-k3-day0/ServingPerfViz";
+import DecodeLadderViz from "../../../viz/kimi-k3-day0/DecodeLadderViz";
+import ServingFrontierViz from "../../../viz/kimi-k3-day0/ServingFrontierViz";
 
 ## The Kimi K3 architecture
 
@@ -102,8 +103,10 @@ writes only S.
 
 <details className="lesson-details">
   <summary>Math details: heads and channels inside the 128×128 state</summary>
-  <p>K3 has hidden size <code>7168</code>. Its Q/K/V projections produce <code>96</code> KDA heads. Fix one head and omit its index: $k_t,\, v_t \in \mathbb{R}^{128}$, with state matrix $S_t \in \mathbb{R}^{128 \times 128}$. These heads are learned feature spaces, not literal slices of the 7168 input coordinates.</p>
-  <p>Within this head, $\mathrm{ch}_j = k_t[j]$ is key-feature dimension $j$. Increasing $d_k$ adds key-feature axes; increasing $d_v$ widens the value stored along each axis. State and update cost per head grow as $d_k \times d_v$. K3 sets both to 128, giving 16,384 state scalars per head.</p>
+  <p>K3's hidden size is $d_{\text{model}} = 7168$. For head $h$ (of 96 KDA heads), three learned projections $W_q^h, W_k^h, W_v^h \in \mathbb{R}^{128 \times 7168}$ map $x_t \in \mathbb{R}^{7168}$ to $q_t^h = W_q^h x_t$, $k_t^h = W_k^h x_t$, $v_t^h = W_v^h x_t \in \mathbb{R}^{128}$. A head is a learned 128-d feature space, not a literal slice of the 7168 input coordinates; below we fix one head and drop the superscript $h$.</p>
+  <p>The naive linear-attention state is $S_t \in \mathbb{R}^{128 \times 128}$ (convention: rows = key channels, columns = value channels), with update $S_t = S_{t-1} + k_t v_t^{\top}$ and readout $o_t = S_t^{\top} q_t$. Row $j$ of the outer product $k_t v_t^{\top}$ is $k_t[j]\, v_t^{\top}$: coordinate $j$ of the key (key channel $j$) sets the coefficient with which $v_t$ is written into row $j$, so $S_t[j,:] = \sum_{s \le t} k_s[j]\, v_s^{\top}$.</p>
+  <p>Expanding the readout gives $o_t = \sum_{s \le t} (k_s^{\top} q_t)\, v_s$. The only difference from softmax attention is the weight: an unnormalized inner product $k_s^{\top} q_t$ instead of the softmax weight $a_{t,s}$ — no position axis, no normalization.</p>
+  <p>Scale: each head holds $d_k \times d_v = 128 \times 128 = 16{,}384$ state scalars, fixed across 96 heads and 69 layers; per-step update and readout both cost $O(d_k d_v)$, independent of context length. Doubling $d_k$ or $d_v$ grows state and per-step compute as $d_k \times d_v$ — the capacity/cost trade-off behind 128.</p>
 </details>
 
 <StateChannelViz client:visible lang="en" />
@@ -154,8 +157,9 @@ context, the larger that effect gets.
 
 <details className="lesson-details">
   <summary>Math details: A/B in the diagram and the crosstalk term</summary>
-  <p>A and B are full directions in key space, not token slots or individual channels. $A=1$ is shorthand for “k points along A and v represents 1.” Colors trace the contribution from each write; the real S stores only their sum.</p>
-  <p>If $q_A = k_A$ and S contains both $k_A v_A^{\top}$ and $k_B v_B^{\top}$, then $o_A = S^{\top} q_A = v_A + (k_A \cdot k_B)\, v_B$. The second term is B leaking into A, scaled by the inner product of the two keys.</p>
+  <p>A and B are two unit directions $k_A, k_B$ in key space $\mathbb{R}^{d_k}$ ($\lVert k_A \rVert = \lVert k_B \rVert = 1$), not token slots or individual channels. $A=1$ is shorthand for “the key points along $k_A$ and the value is the scalar 1.” Colors only trace where each write came from; the real S stores their sum.</p>
+  <p>Suppose S holds two associations, $S = k_A v_A^{\top} + k_B v_B^{\top}$. Reading with $q_A = k_A$ gives $o_A = S^{\top} q_A = (k_A^{\top} k_A)\, v_A + (k_B^{\top} k_A)\, v_B = v_A + \cos\theta \cdot v_B$, where $\theta$ is the angle between the two keys. The second term is B leaking into A, scaled exactly by the inner product $k_A^{\top} k_B$.</p>
+  <p>For a general set of writes $\{(k_i, v_i)\}$ the readout is $o(q) = \sum_i (k_i^{\top} q)\, v_i$, and interference between writes is governed by the Gram matrix $G_{ij} = k_i^{\top} k_j$. The readout is crosstalk-free iff all keys are pairwise orthogonal — and $\mathbb{R}^{d_k}$ admits at most $d_k$ such directions, so once more associations are stored, crosstalk in a fixed-size state cannot be eliminated, only managed.</p>
 </details>
 
 <KeyOverlapViz client:visible lang="en" />
@@ -173,8 +177,10 @@ performs the DeltaNet rewrite.
 
 <details className="lesson-details">
   <summary>Math details: how KDA gates and rewrites the same S</summary>
-  <p>The full update is $S_t = (I - \beta_t k_t k_t^{\top})\,\mathrm{Diag}(\alpha_t)\,S_{t-1} + \beta_t k_t v_t^{\top}$, where $\alpha_t \in (0,1)^{d_k}$ and each entry scales one key channel of S. It does not select A or B directly or rotate keys into orthogonal directions; every historical contribution in a row is scaled together.</p>
-  <p>The diagram reduces the real state to 2D, with $k_A = \tfrac{1}{\sqrt{2}}[1,1]^{\top}$ and $k_B = \tfrac{1}{\sqrt{2}}[1,-1]^{\top}$. Both A and B span $\mathrm{ch}_1$ and $\mathrm{ch}_2$. The gate scales both rows, then the delta rule writes the residual needed to reach target value 4 along the full $k_A$.</p>
+  <p>The full update is $S_t = \big(I - \beta_t k_t k_t^{\top}\big)\,\mathrm{Diag}(\alpha_t)\, S_{t-1} + \beta_t k_t v_t^{\top}$. Term by term: $\alpha_t \in (0,1)^{d_k}$ is a vector gate computed from the current hidden state, and $\mathrm{Diag}(\alpha_t)$ scales row $j$ of S by $\alpha_t[j]$ — every historical contribution in that row decays together; it neither picks A or B apart nor rotates keys toward orthogonality. $\beta_t \in (0,1)$ is a scalar write strength.</p>
+  <p>Read one update in two steps. Gate first: $\tilde S = \mathrm{Diag}(\alpha_t)\, S_{t-1}$. Then delta-rewrite along the current key: with $r_{\text{old}} = \tilde S^{\top} k_t$ (the decayed state's prediction for this key), $S_t = \tilde S + \beta_t k_t (v_t - r_{\text{old}})^{\top}$. For a unit $k_t$, the post-update readout along the same key is $S_t^{\top} k_t = (1-\beta_t)\, r_{\text{old}} + \beta_t v_t$: $\beta_t = 1$ replaces fully, $\beta_t = 0$ keeps everything.</p>
+  <p>Unrolling the recurrence shows where position comes from: $S_t = \sum_{s \le t} \Big[\prod_{u=s+1}^{t} \big(I - \beta_u k_u k_u^{\top}\big)\mathrm{Diag}(\alpha_u)\Big]\, \beta_s k_s v_s^{\top}$. Earlier writes pass through more gates and rewrites, so decay accumulates with distance — the mechanism that lets K3 drop RoPE. K3 additionally lower-bounds the decay and adds a full-rank output gate for numerical stability on long sequences.</p>
+  <p>The diagram compresses the real 128-d key space into a 2D teaching slice: $k_A = \tfrac{1}{\sqrt{2}}[1,1]^{\top}$ and $k_B = \tfrac{1}{\sqrt{2}}[1,-1]^{\top}$, both spanning $\mathrm{ch}_1$ and $\mathrm{ch}_2$. The gate scales both rows first, then the delta rule writes along the full $k_A$ the residual needed to reach target value 4.</p>
 </details>
 
 <KdaGateViz client:visible lang="en" />
@@ -205,8 +211,9 @@ the representations most useful at that moment:
 
 <details className="lesson-details">
   <summary>Math and cost: why K3 saves one summary every 12 layers</summary>
-  <p>For a later block ℓ, the pseudo-query produces weights $\alpha_{\ell,i}$ and retrieves $r_\ell = \sum_{i \lt \ell} \alpha_{\ell,i} v_i$. This is a softmax-weighted mixture of the embedding and earlier block summaries, not a hard choice of one layer.</p>
-  <p>Full AttnRes saves every layer output and gives the finest retrieval, but costs more memory, bandwidth, and pipeline communication. Block AttnRes saves one summary per group, reducing state from $O(Ld)$ to $O(Nd)$. K3 uses one summary every 12 layers. In the optimized implementation, typical inference-latency overhead is below 2%, while training wall-clock overhead under pipeline parallelism is below 4%.</p>
+  <p>Let $v_0$ be the embedding and $v_i$ ($i \ge 1$) the summary of block $i$ (the accumulated outputs of its 12 layers). For a later block $\ell$, a learned pseudo-query $q_\ell$ scores every saved representation, $\alpha_{\ell,i} = \mathrm{softmax}_{i \lt \ell}\big(s(q_\ell, v_i)\big)$ with a dot-product-style score $s$, and retrieves $r_\ell = \sum_{i \lt \ell} \alpha_{\ell,i}\, v_i$, which joins the block's input. This is a softmax-weighted mixture over saved representations: weight can concentrate on one summary, but the choice is never hard.</p>
+  <p>Cost: full AttnRes stores every layer output — $L$ vectors of width $d$ per token, i.e. $O(Ld)$. The block version stores $N = \lceil L/12 \rceil$ summaries plus the embedding, i.e. $O(Nd)$. With $L = 93$ and block size 12, K3 keeps $N = 8$ summaries, i.e. $9 \times 7168$ numbers per token. These summaries also travel with activations through the pipeline, so $N$ enters communication volume directly.</p>
+  <p>Granularity vs. cost: smaller blocks (one layer per block in the limit) give finer depth-wise retrieval but grow state, memory bandwidth, and pipeline traffic linearly in $N$; larger blocks are cheaper, but layers inside a block are already summed and cannot be retrieved separately. In the optimized implementation, typical inference-latency overhead is below 2%, and training wall-clock overhead under pipeline parallelism is below 4%.</p>
 </details>
 
 ### LatentMoE
@@ -324,12 +331,17 @@ with context and has no token-position axis, so it stays TP/head-sharded.
 ### Performance numbers and benchmark results
 
 BS=1 decode, aggregate system throughput, and per-user speed are three distinct
-metrics. The left side follows 15 kernel and communication optimizations that
-raise non-speculative BS=1 decode from 44.3 to 112.5 tok/s, then marks DSpark's
-separate ~423 tok/s result. The right side shows the PD-disaggregated serving
-frontier between aggregate throughput and per-user speed.
+metrics. Single-request speed first: 15 kernel and communication optimizations
+raise non-speculative BS=1 decode from 44.3 to 112.5 tok/s, and DSpark's
+speculative decoding is a separate line at ~423 tok/s:
 
-<ServingPerfViz client:visible lang="en" />
+<DecodeLadderViz client:visible lang="en" />
+
+Cluster metrics are a different question: under PD disaggregation, aggregate
+throughput trades against per-user speed, and each deployment goal maps to a
+different parallel layout:
+
+<ServingFrontierViz client:visible lang="en" />
 
 ## Acknowledgments
 

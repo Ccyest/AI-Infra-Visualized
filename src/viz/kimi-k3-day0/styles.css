@@ -1310,6 +1310,14 @@
   font-size: 0.62rem;
 }
 
+.dcp-flow-icon {
+  display: block;
+  width: 100%;
+  max-width: 150px;
+  height: auto;
+  margin: 0 auto 0.35rem;
+}
+
 .dcp-inline-legend {
   display: flex;
   flex-wrap: wrap;
@@ -1356,6 +1364,10 @@
 .serving-source-card > small {
   color: var(--muted);
   font-size: 0.6rem;
+}
+
+.serving-source-grid.serving-source-single {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .serving-kernel-chart,

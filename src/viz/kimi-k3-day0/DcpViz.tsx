@@ -1,4 +1,5 @@
 import { useState } from "react";
+import type { ReactNode } from "react";
 import type { Locale } from "../../lib/i18n";
 import { seriesColor } from "../../lib/palette";
 import "./styles.css";
@@ -36,8 +37,6 @@ const COPY = {
     step4Note: "结果与完整 softmax 一致",
     stored: "实色 = 该 GPU 保存",
     empty: "空框 = 此位置在其他 GPU",
-    why: "把 MLA 的活跃 KV 摊到多卡，长会话不用 offload 或重新 prefill。K3 实测：DCP8 逻辑容量 1.5M → 12.2M tokens，48 个 agent sessions 跑到 541 tok/s；TP8 在 16 个时已坍塌。",
-    tradeoff: "每个 MLA 层多一次 all-to-all 和 LSE merge，短上下文、低并发不划算；KDA 状态没有位置轴，仍按 TP/head 切。",
   },
   en: {
     title: "DCP diagram",
@@ -68,8 +67,6 @@ const COPY = {
     step4Note: "matches the full softmax result",
     stored: "filled = stored on this GPU",
     empty: "outline = owned by another GPU",
-    why: "Spreads MLA's active KV across GPUs so long sessions stay on device without offload or re-prefill. Measured on K3: DCP8 lifts logical capacity from 1.5M to 12.2M tokens and holds 541 tok/s at 48 agent sessions; TP8 collapses at 16.",
-    tradeoff: "Each MLA layer adds one all-to-all and an LSE merge, which does not pay off for short contexts or low concurrency; KDA state has no position axis and stays TP/head-sharded.",
   },
 } as const;
 
@@ -110,8 +107,84 @@ function KvGrid({ gpuCount, mode, lang }: { gpuCount: number; mode: "tp" | "dcp"
   );
 }
 
-function FlowStep({ title, note }: { title: string; note: string }) {
-  return <span className="dcp-flow-step"><b>{title}</b><small>{note}</small></span>;
+/* 四步流程的简笔图示：G1/G2 两卡为例 */
+function FlowIcon1() {
+  return (
+    <svg className="dcp-flow-icon" viewBox="0 0 128 56" aria-hidden="true">
+      {[0, 1].map((row) => (
+        <g key={row} transform={`translate(0 ${row * 26})`}>
+          <rect x="6" y="4" width="116" height="22" rx="4" fill="var(--surface)" stroke="var(--border)" />
+          <text x="14" y="19" fontSize="9" fill="var(--muted)">G{row + 1}</text>
+          <rect x="98" y="7" width="16" height="16" rx="3" fill="var(--accent)" />
+          <text x="106" y="19" fontSize="9" fill="var(--accent-ink)" textAnchor="middle">q</text>
+        </g>
+      ))}
+    </svg>
+  );
+}
+
+function FlowIcon2() {
+  return (
+    <svg className="dcp-flow-icon" viewBox="0 0 128 56" aria-hidden="true">
+      {[0, 1].map((row) => (
+        <g key={row} transform={`translate(0 ${row * 28})`}>
+          <rect x="6" y="8" width="14" height="14" rx="3" fill="var(--accent)" />
+          <text x="13" y="18.5" fontSize="8.5" fill="var(--accent-ink)" textAnchor="middle">q</text>
+          {[0, 1, 2, 3, 4, 5].map((c) => {
+            const mine = c % 2 === row;
+            const x = 34 + c * 15;
+            return (
+              <g key={c}>
+                {mine && <path d={`M20 11 Q ${(20 + x) / 2} 1 ${x + 6} 8`} fill="none" stroke="var(--accent)" strokeWidth="1" opacity="0.6" />}
+                <rect x={x} y="8" width="12" height="14" rx="2" fill={mine ? (row === 0 ? "var(--series-1)" : "var(--series-2)") : "none"} stroke={mine ? "none" : "var(--grid)"} opacity={mine ? 0.85 : 1} />
+              </g>
+            );
+          })}
+        </g>
+      ))}
+    </svg>
+  );
+}
+
+function FlowIcon3() {
+  return (
+    <svg className="dcp-flow-icon" viewBox="0 0 128 56" aria-hidden="true">
+      <defs><marker id="dcp-a2a-arrow" viewBox="0 0 8 8" refX="6.5" refY="4" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L8 4L0 8Z" fill="var(--accent)" /></marker></defs>
+      <rect x="6" y="6" width="38" height="18" rx="4" fill="color-mix(in srgb, var(--series-1) 30%, var(--surface))" stroke="var(--border)" />
+      <text x="25" y="18.5" fontSize="7.5" fill="var(--ink-2)" textAnchor="middle">o₁·LSE₁</text>
+      <rect x="6" y="32" width="38" height="18" rx="4" fill="color-mix(in srgb, var(--series-2) 30%, var(--surface))" stroke="var(--border)" />
+      <text x="25" y="44.5" fontSize="7.5" fill="var(--ink-2)" textAnchor="middle">o₂·LSE₂</text>
+      <rect x="84" y="6" width="38" height="18" rx="4" fill="var(--surface)" stroke="var(--border)" />
+      <text x="103" y="18.5" fontSize="8" fill="var(--muted)" textAnchor="middle">G1</text>
+      <rect x="84" y="32" width="38" height="18" rx="4" fill="var(--surface)" stroke="var(--border)" />
+      <text x="103" y="44.5" fontSize="8" fill="var(--muted)" textAnchor="middle">G2</text>
+      <line x1="46" y1="15" x2="80" y2="39" stroke="var(--accent)" strokeWidth="1.4" markerEnd="url(#dcp-a2a-arrow)" />
+      <line x1="46" y1="41" x2="80" y2="17" stroke="var(--accent)" strokeWidth="1.4" markerEnd="url(#dcp-a2a-arrow)" />
+    </svg>
+  );
+}
+
+function FlowIcon4() {
+  return (
+    <svg className="dcp-flow-icon" viewBox="0 0 128 56" aria-hidden="true">
+      <defs><marker id="dcp-merge-arrow" viewBox="0 0 8 8" refX="6.5" refY="4" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L8 4L0 8Z" fill="var(--good)" /></marker></defs>
+      <rect x="6" y="6" width="34" height="16" rx="4" fill="color-mix(in srgb, var(--series-1) 30%, var(--surface))" stroke="var(--border)" />
+      <text x="23" y="17.5" fontSize="8" fill="var(--ink-2)" textAnchor="middle">o₁</text>
+      <rect x="6" y="34" width="34" height="16" rx="4" fill="color-mix(in srgb, var(--series-2) 30%, var(--surface))" stroke="var(--border)" />
+      <text x="23" y="45.5" fontSize="8" fill="var(--ink-2)" textAnchor="middle">o₂</text>
+      <line x1="42" y1="14" x2="64" y2="25" stroke="var(--good)" strokeWidth="1.4" markerEnd="url(#dcp-merge-arrow)" />
+      <line x1="42" y1="42" x2="64" y2="31" stroke="var(--good)" strokeWidth="1.4" markerEnd="url(#dcp-merge-arrow)" />
+      <circle cx="80" cy="28" r="12" fill="color-mix(in srgb, var(--good) 18%, var(--surface))" stroke="var(--good)" strokeWidth="1.4" />
+      <text x="80" y="31.5" fontSize="7.5" fill="var(--ink)" textAnchor="middle">LSE</text>
+      <line x1="93" y1="28" x2="102" y2="28" stroke="var(--good)" strokeWidth="1.4" markerEnd="url(#dcp-merge-arrow)" />
+      <rect x="105" y="19" width="17" height="18" rx="4" fill="var(--good)" opacity="0.85" />
+      <text x="113.5" y="31.5" fontSize="9" fill="var(--accent-ink)" textAnchor="middle" fontWeight="700">o</text>
+    </svg>
+  );
+}
+
+function FlowStep({ title, note, icon }: { title: string; note: string; icon?: ReactNode }) {
+  return <span className="dcp-flow-step">{icon}<b>{title}</b><small>{note}</small></span>;
 }
 
 export default function DcpViz({ lang = "zh" }: { lang?: Locale }) {
@@ -163,21 +236,17 @@ export default function DcpViz({ lang = "zh" }: { lang?: Locale }) {
       <section className="dcp-exact-flow">
         <b className="dcp-exact-title">{copy.flowTitle}</b>
         <div className="dcp-flow-steps">
-          <FlowStep title={copy.step1} note={copy.step1Note} />
+          <FlowStep title={copy.step1} note={copy.step1Note} icon={<FlowIcon1 />} />
           <i>→</i>
-          <FlowStep title={copy.step2} note={copy.step2Note} />
+          <FlowStep title={copy.step2} note={copy.step2Note} icon={<FlowIcon2 />} />
           <i>→</i>
-          <FlowStep title={copy.step3} note={copy.step3Note} />
+          <FlowStep title={copy.step3} note={copy.step3Note} icon={<FlowIcon3 />} />
           <i>→</i>
-          <FlowStep title={copy.step4} note={copy.step4Note} />
+          <FlowStep title={copy.step4} note={copy.step4Note} icon={<FlowIcon4 />} />
         </div>
       </section>
 
       <div className="dcp-inline-legend"><span><i className="stored" />{copy.stored}</span><span><i className="empty" />{copy.empty}</span></div>
-      <div className="viz-footer parallel-footer">
-        <div>{copy.why}</div>
-        <div>{copy.tradeoff}</div>
-      </div>
     </figure>
   );
 }
