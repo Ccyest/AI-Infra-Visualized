@@ -73,14 +73,14 @@ variant.
 
 ### Attention mechanisms in detail: classic MHA
 
-In ordinary MHA, token `N` reads the cached history in three steps:
+In ordinary MHA, token $N$ reads the cached history in three steps:
 
-1. **Score:** compare against each earlier token `i` with `z[N,i] = dot(q[N], k[i]) / sqrt(d_k)`.
-2. **Normalize:** compute `Z = Σⱼ₌₁…N−1 exp(z[N,j])`, then assign attention weight `a[N,i] = exp(z[N,i]) / Z`.
-3. **Aggregate:** take the weighted sum of values, `o[N] = Σᵢ₌₁…N−1 a[N,i]v[i]`.
+1. **Score:** compare against each earlier token $i$ with $z_{N,i} = \frac{q_N \cdot k_i}{\sqrt{d_k}}$.
+2. **Normalize:** compute $Z = \sum_{j=1}^{N-1} \exp(z_{N,j})$, then assign attention weight $a_{N,i} = \exp(z_{N,i}) / Z$.
+3. **Aggregate:** take the weighted sum of values, $o_N = \sum_{i=1}^{N-1} a_{N,i} v_i$.
 
-A length-`N` sequence therefore performs about `N²/2` dot products: `O(N²)`
-compute and `O(N)` cache. In the diagram, every token has a line to each of
+A length-$N$ sequence therefore performs about $N^2/2$ dot products: $O(N^2)$
+compute and $O(N)$ cache. In the diagram, every token has a line to each of
 the tokens before it.
 
 <MhaViz client:visible lang="en" />
@@ -88,21 +88,22 @@ the tokens before it.
 Softmax attention buys per-position reads, which gives it the most complete
 global memory, but the cost is just as clear. Every new token rescans the
 whole history, so the whole history has to be stored and compute stays at
-`O(N²)`.
+$O(N^2)$.
 
 ### Attention mechanisms in detail: linear attention
 
 Linear attention no longer keeps one KV entry per token. It accumulates
-history into a fixed-size matrix, `S = Σᵢ k[i]v[i]^T`. S is a fixed-size
-memory matrix, and every new token writes into it once it is computed: k sets
-the write direction, meaning where the token points in vector space; v is the
-content written along that direction; and q reads with `o = S^Tq`. No matter
-how long the context becomes, each step reads and writes only S.
+history into a fixed-size matrix, $S = \sum_i k_i v_i^{\top}$. S is a
+fixed-size memory matrix, and every new token writes into it once it is
+computed: k sets the write direction, meaning where the token points in vector
+space; v is the content written along that direction; and q reads with
+$o = S^{\top} q$. No matter how long the context becomes, each step reads and
+writes only S.
 
 <details className="lesson-details">
   <summary>Math details: heads and channels inside the 128×128 state</summary>
-  <p>K3 has hidden size <code>7168</code>. Its Q/K/V projections produce <code>96</code> KDA heads. Fix one head and omit its index: <code>k[t], v[t] ∈ R^128</code>, with state matrix <code>S[t] ∈ R^(128×128)</code>. These heads are learned feature spaces, not literal slices of the 7168 input coordinates.</p>
-  <p>Within this head, <code>ch[j] = k[t][j]</code> is key-feature dimension <code>j</code>. Increasing <code>d_k</code> adds key-feature axes; increasing <code>d_v</code> widens the value stored along each axis. State and update cost per head grow as <code>d_k×d_v</code>. K3 sets both to 128, giving 16,384 state scalars per head.</p>
+  <p>K3 has hidden size <code>7168</code>. Its Q/K/V projections produce <code>96</code> KDA heads. Fix one head and omit its index: $k_t,\, v_t \in \mathbb{R}^{128}$, with state matrix $S_t \in \mathbb{R}^{128 \times 128}$. These heads are learned feature spaces, not literal slices of the 7168 input coordinates.</p>
+  <p>Within this head, $\mathrm{ch}_j = k_t[j]$ is key-feature dimension $j$. Increasing $d_k$ adds key-feature axes; increasing $d_v$ widens the value stored along each axis. State and update cost per head grow as $d_k \times d_v$. K3 sets both to 128, giving 16,384 state scalars per head.</p>
 </details>
 
 <StateChannelViz client:visible lang="en" />
@@ -121,7 +122,7 @@ the simplest form of naive linear attention: plain accumulation.
 
 Naive linear attention keeps adding to its state and never overwrites an old
 value. In the simplest case, if the same key direction receives 1 and then 4,
-both stay in S, and the next read returns `1+4`. Different contexts usually
+both stay in S, and the next read returns $1+4$. Different contexts usually
 give the same word different keys, but over a sequence as long as 1M tokens a
 fixed-capacity state can still fail to keep those writes apart. Say the text
 first says Zhang San lives in Beijing, so the state records Zhang San →
@@ -130,16 +131,18 @@ lives, the readout is likely a blend of Beijing and Shanghai rather than
 Shanghai cleanly overwriting Beijing.
 
 DeltaNet's answer is an error-directed edit to the state. It introduces a
-dynamically produced scalar gate `β[t]` that sets how strong the current
+dynamically produced scalar gate $\beta_t$ that sets how strong the current
 update is. Before writing, the model reads the prediction the state already
-holds along the current key, `r_old = S[t−1]^T k[t]`. It then writes the
-difference between the target value and that prediction instead of
-accumulating `v[t]`: `S[t] = S[t−1] + β[t]k[t](v[t] − r_old)^T`. For a
-normalized key, the new readout is `r_new = (1−β[t])r_old + β[t]v[t]`.
+holds along the current key, $r_{\text{old}} = S_{t-1}^{\top} k_t$. It then
+writes the difference between the target value and that prediction instead of
+accumulating $v_t$:
+$S_t = S_{t-1} + \beta_t k_t (v_t - r_{\text{old}})^{\top}$. For a normalized
+key, the new readout is
+$r_{\text{new}} = (1-\beta_t)\, r_{\text{old}} + \beta_t v_t$.
 
-The coefficient `β[t]` controls rewrite strength: `β[t]=1` fully replaces the
-old association, smaller `β[t]` retains more of the old value, and `β[t]=0`
-does not rewrite it at all.
+The coefficient $\beta_t$ controls rewrite strength: $\beta_t = 1$ fully
+replaces the old association, smaller $\beta_t$ retains more of the old value,
+and $\beta_t = 0$ does not rewrite it at all.
 
 <DeltaRuleViz client:visible lang="en" />
 
@@ -151,8 +154,8 @@ context, the larger that effect gets.
 
 <details className="lesson-details">
   <summary>Math details: A/B in the diagram and the crosstalk term</summary>
-  <p>A and B are full directions in key space, not token slots or individual channels. <code>A=1</code> is shorthand for “k points along A and v represents 1.” Colors trace the contribution from each write; the real S stores only their sum.</p>
-  <p>If <code>q[A]=k[A]</code> and S contains both <code>k[A]v[A]^T</code> and <code>k[B]v[B]^T</code>, then <code>o[A] = S^Tq[A] = v[A] + dot(k[A],k[B])v[B]</code>. The second term is B leaking into A, scaled by the inner product of the two keys.</p>
+  <p>A and B are full directions in key space, not token slots or individual channels. $A=1$ is shorthand for “k points along A and v represents 1.” Colors trace the contribution from each write; the real S stores only their sum.</p>
+  <p>If $q_A = k_A$ and S contains both $k_A v_A^{\top}$ and $k_B v_B^{\top}$, then $o_A = S^{\top} q_A = v_A + (k_A \cdot k_B)\, v_B$. The second term is B leaking into A, scaled by the inner product of the two keys.</p>
 </details>
 
 <KeyOverlapViz client:visible lang="en" />
@@ -164,14 +167,14 @@ memory; the cost is that more and more history has to share one S. The delta
 rule can rewrite the same or a nearby key direction, but it does not
 proactively clear irrelevant old signal, which is the crosstalk above. KDA
 therefore adds channel-wise gating: for every token and head, the model
-produces a vector `α[t]` from the current hidden state, applies `Diag(α[t])`
-to scale the channels of the old state, and then performs the DeltaNet
-rewrite.
+produces a vector $\alpha_t$ from the current hidden state, applies
+$\mathrm{Diag}(\alpha_t)$ to scale the channels of the old state, and then
+performs the DeltaNet rewrite.
 
 <details className="lesson-details">
   <summary>Math details: how KDA gates and rewrites the same S</summary>
-  <p>The full update is <code>S[t] = (I−β[t]k[t]k[t]^T) Diag(α[t]) S[t−1] + β[t]k[t]v[t]^T</code>, where <code>α[t] ∈ (0,1)^(d_k)</code> and each entry scales one key channel of S. It does not select A or B directly or rotate keys into orthogonal directions; every historical contribution in a row is scaled together.</p>
-  <p>The diagram reduces the real state to 2D, with <code>k[A]=(1/√2)[1,1]^T</code> and <code>k[B]=(1/√2)[1,−1]^T</code>. Both A and B span <code>ch[1]</code> and <code>ch[2]</code>. The gate scales both rows, then the delta rule writes the residual needed to reach target value 4 along the full <code>k[A]</code>.</p>
+  <p>The full update is $S_t = (I - \beta_t k_t k_t^{\top})\,\mathrm{Diag}(\alpha_t)\,S_{t-1} + \beta_t k_t v_t^{\top}$, where $\alpha_t \in (0,1)^{d_k}$ and each entry scales one key channel of S. It does not select A or B directly or rotate keys into orthogonal directions; every historical contribution in a row is scaled together.</p>
+  <p>The diagram reduces the real state to 2D, with $k_A = \tfrac{1}{\sqrt{2}}[1,1]^{\top}$ and $k_B = \tfrac{1}{\sqrt{2}}[1,-1]^{\top}$. Both A and B span $\mathrm{ch}_1$ and $\mathrm{ch}_2$. The gate scales both rows, then the delta rule writes the residual needed to reach target value 4 along the full $k_A$.</p>
 </details>
 
 <KdaGateViz client:visible lang="en" />
@@ -202,16 +205,16 @@ the representations most useful at that moment:
 
 <details className="lesson-details">
   <summary>Math and cost: why K3 saves one summary every 12 layers</summary>
-  <p>For a later block ℓ, the pseudo-query produces weights <code>α[ℓ,i]</code> and retrieves <code>r[ℓ] = Σ[i&lt;ℓ] α[ℓ,i]v[i]</code>. This is a softmax-weighted mixture of the embedding and earlier block summaries, not a hard choice of one layer.</p>
-  <p>Full AttnRes saves every layer output and gives the finest retrieval, but costs more memory, bandwidth, and pipeline communication. Block AttnRes saves one summary per group, reducing state from <code>O(Ld)</code> to <code>O(Nd)</code>. K3 uses one summary every 12 layers. In the optimized implementation, typical inference-latency overhead is below 2%, while training wall-clock overhead under pipeline parallelism is below 4%.</p>
+  <p>For a later block ℓ, the pseudo-query produces weights $\alpha_{\ell,i}$ and retrieves $r_\ell = \sum_{i \lt \ell} \alpha_{\ell,i} v_i$. This is a softmax-weighted mixture of the embedding and earlier block summaries, not a hard choice of one layer.</p>
+  <p>Full AttnRes saves every layer output and gives the finest retrieval, but costs more memory, bandwidth, and pipeline communication. Block AttnRes saves one summary per group, reducing state from $O(Ld)$ to $O(Nd)$. K3 uses one summary every 12 layers. In the optimized implementation, typical inference-latency overhead is below 2%, while training wall-clock overhead under pipeline parallelism is below 4%.</p>
 </details>
 
 ### LatentMoE
 
 Every FFN except the first uses MoE: each token selects 16 of 896 routed
 experts, while 2 shared experts are always active. The routed-pool selection
-rate is therefore `16/896 ≈ 1.8%`; the separate whole-model ratio is
-`104B/2.8T ≈ 3.7%` active parameters per token.
+rate is therefore $16/896 \approx 1.8\%$; the separate whole-model ratio is
+$104\text{B}/2.8\text{T} \approx 3.7\%$ active parameters per token.
 
 Routing and expert compute project the 7168-d hidden state down to a 3584-d
 latent space, then project back to full width. This halves both the 16-way
@@ -243,11 +246,11 @@ prefill parallelism, and decode scaling—the three parts of SGLang's day-0 work
 
 Traditional RadixAttention can share a prefix across requests because
 attention KV only appends as tokens arrive and never rewrites history. KDA's
-recurrent state `S` is different: every token it reads overwrites the state in
-place. Suppose D and E both hit the prefix ABC. If they shared one `S(ABC)`,
-D's next step would turn it into `S(ABCD)`, so E could no longer start from
-the state after ABC — the mechanism rules prefix caching out. So how do we
-keep RadixAttention's cache tree?
+recurrent state $S$ is different: every token it reads overwrites the state in
+place. Suppose D and E both hit the prefix ABC. If they shared one
+$S(\text{ABC})$, D's next step would turn it into $S(\text{ABCD})$, so E could
+no longer start from the state after ABC — the mechanism rules prefix caching
+out. So how do we keep RadixAttention's cache tree?
 
 SGLang's answer is to never let a request mutate the shared state in the radix
 tree. A KDA state stored in the tree is a read-only checkpoint: after a prefix
@@ -306,7 +309,7 @@ so unlike MHA there is no clear axis to shard when TP splits by head. Every
 TP8 rank therefore has to replicate the complete MLA KV latent. That means the
 same MLA KV latent sits on every GPU, and adding GPUs does not increase
 logical context capacity. SGLang uses DCP to shard by token position instead:
-each GPU computes partial attention over its local `1/N` KV, split as the
+each GPU computes partial attention over its local $1/N$ KV, split as the
 diagram shows, then one packed all-to-all merges the result exactly:
 
 <DcpViz client:visible lang="en" />

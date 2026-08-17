@@ -7,6 +7,7 @@ import { lessonPath, publishedLessons } from "../lib/lessons";
 import { withBase } from "../lib/paths";
 import { SITE } from "../site.config";
 import Base from "./Base.astro";
+import "katex/dist/katex.min.css";
 
 interface Props {
   entry: CollectionEntry<"lessons">;

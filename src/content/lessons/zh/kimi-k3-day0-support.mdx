@@ -67,32 +67,33 @@ KDA 的递归隐式提供。下图展示了全部使用 MLA 和 KDA+MLA 混合�
 
 ### attention 机制详解：传统 MHA
 
-在普通 MHA 中，第 `N` 个 token 会读取 cache 里的历史 token，分三步计算：
+在普通 MHA 中，第 $N$ 个 token 会读取 cache 里的历史 token，分三步计算：
 
-1. **打分**：对每个历史 token `i` 计算 `z[N,i] = dot(q[N], k[i]) / sqrt(d_k)`。
-2. **归一化**：先求 `Z = Σⱼ₌₁…N−1 exp(z[N,j])`，再得到注意力权重 `a[N,i] = exp(z[N,i]) / Z`。
-3. **汇总**：用这些权重对 value 加权求和，`o[N] = Σᵢ₌₁…N−1 a[N,i]v[i]`。
+1. **打分**：对每个历史 token $i$ 计算 $z_{N,i} = \frac{q_N \cdot k_i}{\sqrt{d_k}}$。
+2. **归一化**：先求 $Z = \sum_{j=1}^{N-1} \exp(z_{N,j})$，再得到注意力权重 $a_{N,i} = \exp(z_{N,i}) / Z$。
+3. **汇总**：用这些权重对 value 加权求和，$o_N = \sum_{i=1}^{N-1} a_{N,i} v_i$。
 
-长度为 `N` 的序列累计约有 `N²/2` 次点积，计算为 `O(N²)`，cache 为 `O(N)`。如图所示，
-每一个 token 都和之前的所有 history token 有连线。
+长度为 $N$ 的序列累计约有 $N^2/2$ 次点积，计算为 $O(N^2)$，cache 为 $O(N)$。
+如图所示，每一个 token 都和之前的所有 history token 有连线。
 
 <MhaViz client:visible />
 
 softmax attention 换来了逐位置读取能力，因此有最完整的全局记忆，但是代价也很明显。
 因为每个新 token 都要重新扫描全部历史，所以我们需要存储全部历史，并且计算量是
-`O(N²)`。
+$O(N^2)$。
 
 ### attention 机制详解：linear attention
 
 线性注意力不再保存每个 token 的 KV，而是把历史写入累加到固定大小的矩阵
-`S = Σᵢ k[i]v[i]^T` 里。S 作为固定大小的记忆矩阵，每一步新 token 算完都会重新写入
-S：k 决定写入方向，也就是这个 token 在向量空间里指向哪儿，v 是沿这个方向写入的内容，
-q 再用 `o = S^Tq` 读取。无论上下文多长，每步都只读写这个 S。
+$S = \sum_i k_i v_i^{\top}$ 里。S 作为固定大小的记忆矩阵，每一步新 token
+算完都会重新写入 S：k 决定写入方向，也就是这个 token 在向量空间里指向哪儿，v
+是沿这个方向写入的内容，q 再用 $o = S^{\top} q$ 读取。无论上下文多长，
+每步都只读写这个 S。
 
 <details className="lesson-details">
   <summary>数学细节：128×128 状态中的 head 和 channel</summary>
-  <p>K3 的 hidden size 是 <code>7168</code>。Q/K/V 投影会生成 <code>96</code> 个 KDA heads。固定其中一个 head 并省略 head 编号后，<code>k[t], v[t] ∈ R^128</code>，状态矩阵 <code>S[t] ∈ R^(128×128)</code>。这些 head 是学习到的特征空间，不是把 7168 个输入坐标原样切开。</p>
-  <p>在这个 head 内，<code>ch[j] = k[t][j]</code> 表示第 <code>j</code> 个 key 特征维度。增大 <code>d_k</code> 会增加 key 特征轴，增大 <code>d_v</code> 会增加每条轴可保存的 value 宽度；每个 head 的状态和更新开销按 <code>d_k×d_v</code> 增长。K3 取两者都为 128，即每个 head 有 16,384 个状态数。</p>
+  <p>K3 的 hidden size 是 <code>7168</code>。Q/K/V 投影会生成 <code>96</code> 个 KDA heads。固定其中一个 head 并省略 head 编号后，$k_t,\, v_t \in \mathbb{R}^{128}$，状态矩阵 $S_t \in \mathbb{R}^{128 \times 128}$。这些 head 是学习到的特征空间，不是把 7168 个输入坐标原样切开。</p>
+  <p>在这个 head 内，$\mathrm{ch}_j = k_t[j]$ 表示第 $j$ 个 key 特征维度。增大 $d_k$ 会增加 key 特征轴，增大 $d_v$ 会增加每条轴可保存的 value 宽度；每个 head 的状态和更新开销按 $d_k \times d_v$ 增长。K3 取两者都为 128，即每个 head 有 16,384 个状态数。</p>
 </details>
 
 <StateChannelViz client:visible />
@@ -110,20 +111,22 @@ naive linear attention 展示的就是最简单的累加关系。
 
 Naive linear attention 的问题是，状态只会不断累加，不会覆盖旧值。最简单的例子来说，
 同一个 key 方向先写入 1、再写入 4，两个值都会留在 S 里；在这个简化例子中，
-下次读取会得到 `1+4`。虽然上下文不同，通常会使同一个词产生不同的 key，但在 1M token
-这样的长序列下，有限容量的状态仍可能难以清晰地区分这些信息。比如，前面先读到「
-张三住在北京」，于是状态里写入「张三 → 北京」；后面又读到「张三搬到了上海」。
-那此时问到张三住在哪里，读出来的结果很可能就是北京和上海这两条信息的混合，
-而不是明确地用「上海」覆盖「北京」。
+下次读取会得到 $1+4$。虽然上下文不同，通常会使同一个词产生不同的 key，但在 1M token
+这样的长序列下，有限容量的状态仍可能难以清晰地区分这些信息。比如，
+前面先读到「张三住在北京」，于是状态里写入「张三 → 北京」；
+后面又读到「张三搬到了上海」。那此时问到张三住在哪里，
+读出来的结果很可能就是北京和上海这两条信息的混合，而不是明确地用「上海」覆盖「北京」
+。
 
-DeltaNet 的解决方案是对状态做基于误差的定向修改。它引入动态生成的标量门控 `β[t]`，
-控制当前更新的强度。写入前，模型先沿当前 key 读出状态已有的预测
-`r_old = S[t−1]^T k[t]`，随后不再累加 `v[t]`，而是写入目标值与已有预测之间的差：
-`S[t] = S[t−1] + β[t]k[t](v[t] − r_old)^T`。对已归一化的 key，更新后的读出为
-`r_new = (1−β[t])r_old + β[t]v[t]`。
+DeltaNet 的解决方案是对状态做基于误差的定向修改。它引入动态生成的标量门控
+$\beta_t$，控制当前更新的强度。写入前，模型先沿当前 key 读出状态已有的预测
+$r_{\text{old}} = S_{t-1}^{\top} k_t$，随后不再累加 $v_t$，
+而是写入目标值与已有预测之间的差：
+$S_t = S_{t-1} + \beta_t k_t (v_t - r_{\text{old}})^{\top}$。对已归一化的 key，
+更新后的读出为 $r_{\text{new}} = (1-\beta_t)\, r_{\text{old}} + \beta_t v_t$。
 
-`β[t]` 控制改写强度：`β[t]=1` 代表完全替换旧关联，`β[t]` 越小，旧值保留得越多；
-`β[t]=0` 则完全不改写。
+$\beta_t$ 控制改写强度：$\beta_t = 1$ 代表完全替换旧关联，$\beta_t$ 越小，
+旧值保留得越多；$\beta_t = 0$ 则完全不改写。
 
 <DeltaRuleViz client:visible />
 
@@ -133,8 +136,8 @@ DeltaNet 的解决方案是对状态做基于误差的定向修改。它引入�
 
 <details className="lesson-details">
   <summary>数学细节：图中的 A/B 和串扰项</summary>
-  <p>A 和 B 是 key 空间中的完整方向，不是 token 槽位或单个 channel。图中的 <code>A=1</code> 只是“k 指向 A，v 表示 1”的简写。彩色用来追踪不同写入的贡献，真实 S 只保存它们的和。</p>
-  <p>若 <code>q[A]=k[A]</code>，且 S 中同时有 <code>k[A]v[A]^T</code> 与 <code>k[B]v[B]^T</code>，则 <code>o[A] = S^Tq[A] = v[A] + dot(k[A],k[B])v[B]</code>。第二项就是 B 漏进 A 的串扰，大小取决于两个 key 的内积。</p>
+  <p>A 和 B 是 key 空间中的完整方向，不是 token 槽位或单个 channel。图中的 $A=1$ 只是“k 指向 A，v 表示 1”的简写。彩色用来追踪不同写入的贡献，真实 S 只保存它们的和。</p>
+  <p>若 $q_A = k_A$，且 S 中同时有 $k_A v_A^{\top}$ 与 $k_B v_B^{\top}$，则 $o_A = S^{\top} q_A = v_A + (k_A \cdot k_B)\, v_B$。第二项就是 B 漏进 A 的串扰，大小取决于两个 key 的内积。</p>
 </details>
 
 <KeyOverlapViz client:visible />
@@ -144,13 +147,13 @@ DeltaNet 的解决方案是对状态做基于误差的定向修改。它引入�
 固定状态的大小不会随上下文增长，这正是它省显存的原因；
 代价是越来越多的历史必须共享同一个 S。Delta rule 能改写相同或相近的 key 方向，
 却不会主动清理所有旧的无关信息，也就是上面的串扰。KDA 因此再加入逐 channel 门控：
-对每个 token、每个 head，模型根据当前 hidden state 动态算出向量 `α[t]`，先用
-`Diag(α[t])` 缩放旧状态的各条 channel，再执行 DeltaNet 改写。
+对每个 token、每个 head，模型根据当前 hidden state 动态算出向量 $\alpha_t$，先用
+$\mathrm{Diag}(\alpha_t)$ 缩放旧状态的各条 channel，再执行 DeltaNet 改写。
 
 <details className="lesson-details">
   <summary>数学细节：KDA 如何门控和改写同一个 S</summary>
-  <p>完整更新为 <code>S[t] = (I−β[t]k[t]k[t]^T) Diag(α[t]) S[t−1] + β[t]k[t]v[t]^T</code>，其中 <code>α[t] ∈ (0,1)^(d_k)</code>，每一项缩放 S 的一条 key channel。它不会直接选择 A 或 B，也不会把 key 旋转成正交；同一行里所有历史贡献都会被一起缩放。</p>
-  <p>下图把真实状态压成二维：<code>k[A]=(1/√2)[1,1]^T</code>、<code>k[B]=(1/√2)[1,−1]^T</code>。A/B 都横跨 <code>ch[1]</code> 和 <code>ch[2]</code>。门控先缩放两行，delta rule 再沿完整 <code>k[A]</code> 写入到目标值 4 所需的残差。</p>
+  <p>完整更新为 $S_t = (I - \beta_t k_t k_t^{\top})\,\mathrm{Diag}(\alpha_t)\,S_{t-1} + \beta_t k_t v_t^{\top}$，其中 $\alpha_t \in (0,1)^{d_k}$，每一项缩放 S 的一条 key channel。它不会直接选择 A 或 B，也不会把 key 旋转成正交；同一行里所有历史贡献都会被一起缩放。</p>
+  <p>下图把真实状态压成二维：$k_A = \tfrac{1}{\sqrt{2}}[1,1]^{\top}$、$k_B = \tfrac{1}{\sqrt{2}}[1,-1]^{\top}$。A/B 都横跨 $\mathrm{ch}_1$ 和 $\mathrm{ch}_2$。门控先缩放两行，delta rule 再沿完整 $k_A$ 写入到目标值 4 所需的残差。</p>
 </details>
 
 <KdaGateViz client:visible />
@@ -176,15 +179,16 @@ Attention Residual 相当于额外保存几份「历史版本」。K3 把所有 
 
 <details className="lesson-details">
   <summary>数学与成本：为什么 K3 每 12 层保存一份摘要</summary>
-  <p>对后续 block ℓ，pseudo-query 计算权重 <code>α[ℓ,i]</code>，再取回 <code>r[ℓ] = Σ[i&lt;ℓ] α[ℓ,i]v[i]</code>。这是对 embedding 和历史 block 摘要的 softmax 加权混合，不是硬选某一层。</p>
-  <p>Full AttnRes 保存每层输出，取回粒度最细，但显存、带宽和 pipeline 通信都更贵。Block AttnRes 只保存每组摘要，把状态从 <code>O(Ld)</code> 降到 <code>O(Nd)</code>。K3 每 12 层取一份摘要；优化实现的典型推理延迟开销低于 2%，pipeline parallelism 下的训练墙钟开销低于 4%。</p>
+  <p>对后续 block ℓ，pseudo-query 计算权重 $\alpha_{\ell,i}$，再取回 $r_\ell = \sum_{i \lt \ell} \alpha_{\ell,i} v_i$。这是对 embedding 和历史 block 摘要的 softmax 加权混合，不是硬选某一层。</p>
+  <p>Full AttnRes 保存每层输出，取回粒度最细，但显存、带宽和 pipeline 通信都更贵。Block AttnRes 只保存每组摘要，把状态从 $O(Ld)$ 降到 $O(Nd)$。K3 每 12 层取一份摘要；优化实现的典型推理延迟开销低于 2%，pipeline parallelism 下的训练墙钟开销低于 4%。</p>
 </details>
 
 ### LatentMoE
 
-除第一层 dense FFN 外，K3 的其余 FFN 使用 MoE：896 个 routed experts 中每个 token 选 16 个，另有 2 个
-shared experts 始终激活。因此 routed pool 的选中比例是 `16/896 ≈ 1.8%`；
-整模型每 token 激活参数的另一个口径是 `104B/2.8T ≈ 3.7%`。
+除第一层 dense FFN 外，K3 的其余 FFN 使用 MoE：896 个 routed experts 中每个 token 选
+16 个，另有 2 个 shared experts 始终激活。因此 routed pool 的选中比例是
+$16/896 \approx 1.8\%$；整模型每 token 激活参数的另一个口径是
+$104\text{B}/2.8\text{T} \approx 3.7\%$。
 
 路由和 expert 计算会先从 7168 维 hidden 降到 3584 维隐空间，最后再升回原宽度。
 这使 16 份 dispatch 的 all-to-all 流量和 expert 权重体积都减半：
@@ -192,8 +196,8 @@ shared experts 始终激活。因此 routed pool 的选中比例是 `16/896 ≈ 
 <MoeViz />
 
 到这里，我们已经看完 K3 如何用 KDA、MLA、Attention Residual 和 LatentMoE
-组成混合架构。但模型结构只解决了「怎么算」；真正上线时，SGLang 还要解决「
-这些不同状态如何放进显存、如何并行 prefill」等优化相关的问题。
+组成混合架构。但模型结构只解决了「怎么算」；真正上线时，SGLang
+还要解决「这些不同状态如何放进显存、如何并行 prefill」等优化相关的问题。
 下一部分就从这些系统问题展开。
 
 ## SGLang 的 Day-0 适配
@@ -211,10 +215,11 @@ MLA 的 KV 随 token 追加，KDA 的状态却按请求固定占用并且每步�
 ### RadixAttention：如何给 KDA 做前缀缓存
 
 传统 RadixAttention 能让多个请求共享前缀，是因为传统的 attention KV 只随 token
-增多而追加，不改写原有历史。但 KDA 的递归状态 `S` 每读入一个 token 都会原地覆写。
-假设 D 和 E 都命中前缀 ABC，如果它们直接共用同一份 `S(ABC)`，D 先跑一步就会把它变成
-`S(ABCD)`，E 也就无法再从 ABC 的状态开始，因此从机制上破坏了 prefix cache 的可能性。
-那么我们该如何维持 RadixAttention 的缓存树呢？
+增多而追加，不改写原有历史。但 KDA 的递归状态 $S$ 每读入一个 token 都会原地覆写。
+假设 D 和 E 都命中前缀 ABC，如果它们直接共用同一份 $S(\text{ABC})$，D
+先跑一步就会把它变成 $S(\text{ABCD})$，E 也就无法再从 ABC 的状态开始，
+因此从机制上破坏了 prefix cache 的可能性。那么我们该如何维持 RadixAttention
+的缓存树呢？
 
 所以，SGLang 的方法是：不让请求直接改 radix tree 上的共享状态。它把树上的 KDA
 状态当作只读 checkpoint：命中前缀后，先 copy-on-write 到请求的私有工作槽，再让
@@ -263,7 +268,7 @@ MLA 虽然有多个 attention heads，但所有 heads 共享同一份压缩 KV l
 head 分片的时候，不像 MHA，压缩后的 KV latent 没有一个清晰的轴去分片。因此，TP8
 的每张卡都必须复制完整 MLA KV latent。这意味着，每一张 GPU 上都有重复的 MLA KV
 latent，因此，就算增加 GPU 并行，也不会增加逻辑上下文容量。而 SGLang 使用 DCP，
-改为按 token 位置分片：每张卡先在本地 `1/N` KV 上计算 partial attention，
+改为按 token 位置分片：每张卡先在本地 $1/N$ KV 上计算 partial attention，
 如图所示进行分开分配，再通过一次 packed all-to-all 精确合并：
 
 <DcpViz client:visible />
