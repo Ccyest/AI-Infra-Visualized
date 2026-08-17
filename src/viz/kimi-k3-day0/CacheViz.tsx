@@ -193,7 +193,6 @@ export default function CacheViz({ lang = "zh" }: { lang?: Locale }) {
   return (
     <VizStage
       title={CACHE.title[lang]}
-      subtitle={CACHE.subtitle[lang]}
       player={player}
       lang={lang}
       footer={<Legend items={legend} />}

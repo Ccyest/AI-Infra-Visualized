@@ -12,9 +12,9 @@ const COPY = {
     subtitle: "同一段 12-token MLA context；上面是 naive TP，下面是 DCP",
     problem: "问题",
     solution: "解决",
-    tpTitle: "Naive TP：每张卡都保存完整 MLA KV latent",
+    tpTitle: "Naive TP：每张卡都存一份完整 KV",
     tpIntro: "MLA 虽然有多个 attention heads，但所有 heads 共享同一份压缩 KV latent，cache 没有可供 TP 按 head 切分的轴。TP{n} 因而在 {n} 卡上复制这份 KV latent；GPU 变多了，逻辑上下文容量却没有变大。",
-    dcpTitle: "DCP：(token position − 1) mod N 决定 KV 存在哪张 GPU",
+    dcpTitle: "DCP：KV 按 token 位置轮流分到各卡",
     dcpIntro: "Query 很小，复制给所有 GPU；长而占显存的 KV 按 token 位置轮转分片，每个位置只存一份。",
     gpu: "GPU",
     token: "T",
@@ -36,15 +36,17 @@ const COPY = {
     step4Note: "结果与完整 softmax 一致",
     stored: "实色 = 该 GPU 保存",
     empty: "空框 = 此位置在其他 GPU",
+    why: "把 MLA 的活跃 KV 摊到多卡，长会话不用 offload 或重新 prefill。K3 实测：DCP8 逻辑容量 1.5M → 12.2M tokens，48 个 agent sessions 跑到 541 tok/s；TP8 在 16 个时已坍塌。",
+    tradeoff: "每个 MLA 层多一次 all-to-all 和 LSE merge，短上下文、低并发不划算；KDA 状态没有位置轴，仍按 TP/head 切。",
   },
   en: {
     title: "DCP diagram",
     subtitle: "The same 12-token MLA context; naive TP above, DCP below",
     problem: "Problem",
     solution: "Solution",
-    tpTitle: "Naive TP: every GPU stores the complete MLA KV latent",
+    tpTitle: "Naive TP: every GPU stores the full KV",
     tpIntro: "MLA has multiple attention heads, but they all share the same compressed KV latent, leaving no cache head axis for TP to shard. TP{n} therefore replicates this KV latent on all {n} GPUs: more GPUs do not increase logical context capacity.",
-    dcpTitle: "DCP: (token position − 1) mod N decides which GPU owns each KV",
+    dcpTitle: "DCP: KV striped across GPUs by token position",
     dcpIntro: "The small query is replicated to all GPUs; the long, memory-heavy KV is striped round-robin by token position, with each position stored once.",
     gpu: "GPU",
     token: "T",
@@ -66,6 +68,8 @@ const COPY = {
     step4Note: "matches the full softmax result",
     stored: "filled = stored on this GPU",
     empty: "outline = owned by another GPU",
+    why: "Spreads MLA's active KV across GPUs so long sessions stay on device without offload or re-prefill. Measured on K3: DCP8 lifts logical capacity from 1.5M to 12.2M tokens and holds 541 tok/s at 48 agent sessions; TP8 collapses at 16.",
+    tradeoff: "Each MLA layer adds one all-to-all and an LSE merge, which does not pay off for short contexts or low concurrency; KDA state has no position axis and stays TP/head-sharded.",
   },
 } as const;
 
@@ -170,6 +174,10 @@ export default function DcpViz({ lang = "zh" }: { lang?: Locale }) {
       </section>
 
       <div className="dcp-inline-legend"><span><i className="stored" />{copy.stored}</span><span><i className="empty" />{copy.empty}</span></div>
+      <div className="viz-footer parallel-footer">
+        <div>{copy.why}</div>
+        <div>{copy.tradeoff}</div>
+      </div>
     </figure>
   );
 }

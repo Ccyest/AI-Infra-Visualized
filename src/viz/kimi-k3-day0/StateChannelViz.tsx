@@ -142,6 +142,11 @@ export default function StateChannelViz({ lang = "zh" }: { lang?: Locale }) {
         <span>{lang === "zh" ? "k[j] 更新 S 的第 j 行；KDA 会再对这些行做逐 channel 衰减。" : "k[j] updates row j of S; KDA later adds channel-wise decay over these rows."}</span>
       </div>
 
+      <div className="viz-footer">
+        <div className="viz-verdict">
+          {lang === "zh" ? <>K3 取 128×128：容量和开销的折中，每个 head 的状态按 <code>d²</code> 增长。</> : <>K3 uses 128×128, a capacity/cost trade-off; per-head state grows as <code>d²</code>.</>}
+        </div>
+      </div>
     </figure>
   );
 }

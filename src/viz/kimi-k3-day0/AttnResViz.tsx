@@ -4,30 +4,36 @@ import "./styles.css";
 
 const COPY = {
   zh: {
-    traditionalTitle: "传统 residual：一条不断累加的流",
+    traditionalTitle: "传统 residual",
     traditionalFormula: "hℓ = hℓ₋₁ + Fℓ(hℓ₋₁)",
     traditionalNote: "第 ℓ 层只直接收到上层传来的累计结果 hℓ₋₁",
     traditionalProblem: "浅层信息必须穿过沿途每次相加；深层不能单独取回某一层的原始输出。",
     stream: "同一个 residual stream：Emb + F₁ + F₂ + …",
-    attnTitle: "Attention Residual：保存 block 摘要，再按权重混合",
+    attnTitle: "Attention Residual",
     attnFormula: "rℓ = Σᵢ<ℓ αℓᵢ vᵢ",
     attnNote: "pseudo-query 学习该从 Emb / B₁ / B₂ / … 各取多少",
     attnBenefit: "深层对多个旧摘要做 softmax 加权混合，不是精确选择某一层；信息和梯度因此获得更短路径。",
     bank: "旧 block 摘要分别保留",
     target: "送入 B₈",
+    blockNote: "B₁–B₇ 各 12 层，B₈ 是 L85–93 的 9 层尾段；组内仍有普通 residual。",
+    why: "深层按内容取回早期 block 的表示，不必全部挤进一条累计流；每 12 层存一份摘要，控制开销。",
+    tradeoff: "摘要存得越多，取回越细，但状态、带宽和流水线通信也越贵。",
   },
   en: {
-    traditionalTitle: "Standard residual: one continuously accumulated stream",
+    traditionalTitle: "Standard residual",
     traditionalFormula: "hℓ = hℓ₋₁ + Fℓ(hℓ₋₁)",
     traditionalNote: "Layer ℓ directly receives only the aggregate hℓ₋₁ from the previous layer",
     traditionalProblem: "Shallow information must survive every intervening addition; a deep layer cannot retrieve one earlier output on its own.",
     stream: "One residual stream: Emb + F₁ + F₂ + …",
-    attnTitle: "Attention Residual: save block summaries, then mix by weight",
+    attnTitle: "Attention Residual",
     attnFormula: "rℓ = Σᵢ<ℓ αℓᵢ vᵢ",
     attnNote: "A learned pseudo-query decides how much to retrieve from Emb / B₁ / B₂ / …",
     attnBenefit: "A deep block forms a softmax-weighted mixture of saved summaries rather than selecting one exact layer, creating shorter paths for information and gradients.",
     bank: "Prior block summaries remain separate",
     target: "input to B₈",
+    blockNote: "B₁–B₇ hold 12 layers each; B₈ is the 9-layer L85–93 tail. Ordinary residuals still run inside each block.",
+    why: "Deep blocks retrieve earlier representations by content instead of squeezing everything into one accumulated stream; one summary per 12 layers keeps the cost down.",
+    tradeoff: "More summaries mean finer retrieval but more state, bandwidth, and pipeline traffic.",
   },
 } as const;
 
@@ -105,7 +111,6 @@ export default function AttnResViz({ lang = "zh" }: { lang?: Locale }) {
     <figure className="viz-stage attnres-explainer" style={{ margin: "1.6rem 0" }}>
       <div className="viz-head">
         <span className="viz-title">{ATTN.title[lang]}</span>
-        <span className="viz-subtitle">{ATTN.subtitle[lang]}</span>
       </div>
 
       <div className="attnres-compare">
@@ -126,6 +131,12 @@ export default function AttnResViz({ lang = "zh" }: { lang?: Locale }) {
           <AttentionResidualDiagram lang={lang} />
           <p>{copy.attnBenefit}</p>
         </section>
+      </div>
+
+      <div className="viz-footer attnres-footer">
+        <div>{copy.blockNote}</div>
+        <div>{copy.why}</div>
+        <div>{copy.tradeoff}</div>
       </div>
     </figure>
   );

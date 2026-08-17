@@ -102,7 +102,6 @@ export default function LinearFlowViz({ lang = "zh" }: { lang?: Locale }) {
   return (
     <VizStage
       title={LINFLOW.title[lang]}
-      subtitle={mode === "sentence" ? LINFLOW.subtitle[lang] : (lang === "zh" ? "A=1 → B=2 → A=4 → A?；同 key 方向的贡献在固定状态中直接相加" : "A=1 → B=2 → A=4 → A?; contributions along the same key direction add inside the fixed state")}
       player={player}
       lang={lang}
       headExtra={

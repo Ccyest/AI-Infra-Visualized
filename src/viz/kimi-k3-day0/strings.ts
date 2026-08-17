@@ -69,14 +69,30 @@ export function poolCellTooltip(
     : `R${cell.owner} · MLA KV cache (appended page by page with tokens)`;
 }
 
+export function poolVerdict(
+  locale: Locale,
+  evicted: string,
+  rejected: string,
+  total: number,
+  peak: number,
+  poolSize: number,
+): string {
+  if (locale === "zh") {
+    const parts: string[] = [];
+    if (evicted) parts.push(`驱逐了 ${evicted}`);
+    if (rejected) parts.push(`拒绝了 ${rejected}`);
+    return `静态双池${parts.join("、")}；统一池 ${total} 个请求全部完成（峰值 ${peak}/${poolSize} 页）。`;
+  }
+  const parts: string[] = [];
+  if (evicted) parts.push(`evicted ${evicted}`);
+  if (rejected) parts.push(`rejected ${rejected}`);
+  return `The split pools ${parts.join(" and ")}; the unified pool finished all ${total} requests (peak ${peak}/${poolSize} pages).`;
+}
+
 export const CACHE = {
   title: {
     zh: "KV cache 对比图",
     en: "KV cache comparison",
-  },
-  subtitle: {
-    zh: "同一个请求，上下文从 0 涨到 1M token；一格 = 2 GB",
-    en: "One request, context growing from 0 to 1M tokens; one cell = 2 GB",
   },
   hypoLabel: { zh: "假想：93 层全 MLA", en: "Hypothetical: all 93 layers MLA" },
   k3Label: { zh: "K3：24 层 MLA + 69 层 KDA", en: "K3: 24 MLA + 69 KDA layers" },
@@ -125,10 +141,6 @@ export const ATTN = {
   title: {
     zh: "Attention Residual 图示",
     en: "Attention Residual diagram",
-  },
-  subtitle: {
-    zh: "传统 residual 只有一条累计流；AttnRes 把旧 block 输出分别保留，再按 α 选择",
-    en: "A standard residual has one accumulated stream; AttnRes keeps prior block outputs separate and selects them with α",
   },
   modeChain: { zh: "单一残差流", en: "One residual stream" },
   modeRes: { zh: "AttnRes", en: "AttnRes" },
@@ -188,10 +200,6 @@ export const MOE = {
 
 export const ARCH = {
   title: { zh: "K3 整体结构", en: "K3 at a glance" },
-  subtitle: {
-    zh: "3 层 KDA + 1 层 Gated MLA 组成一个 unit，每层 attention 各配一个 Stable LatentMoE；每 12 层一个 block，AttnRes 按 α 跨 block 取回（全模型第 1 层的 FFN 是 dense）",
-    en: "One unit is 3 KDA layers plus 1 Gated MLA layer, each paired with a Stable LatentMoE; 12 layers form a block, and AttnRes retrieves across blocks by α (the model's first FFN is dense)",
-  },
   hint: { zh: "点击图中部件看说明", en: "Click a component for detail" },
   pathLabel: { zh: "高亮某条通路", en: "Highlight a pathway" },
   showAttnres: { zh: "AttnRes 取回", en: "AttnRes retrieval" },
@@ -340,10 +348,6 @@ export const MHA = {
     zh: "MHA 图示",
     en: "MHA diagram",
   },
-  subtitle: {
-    zh: "同一句话逐 token 解码；q 对每个历史位置分别点积，线宽 = softmax 权重（示意值）",
-    en: "The same sentence decoded token by token; q dots with every past position, line width = softmax weight (illustrative)",
-  },
   statCache: { zh: "cache", en: "cache" },
   cells: { zh: "格", en: "cells" },
   statDot: { zh: "本步点积", en: "dot products this step" },
@@ -410,10 +414,6 @@ export const LINFLOW = {
   title: {
     zh: "Naive linear attention 图示",
     en: "Naive linear attention diagram",
-  },
-  subtitle: {
-    zh: "同一句话逐 token 解码；每步写入 k·vᵀ，再用 q 从固定大小的 S 读出",
-    en: "The same sentence decoded token by token; each step writes k·vᵀ, then q reads from fixed-size S",
   },
   statState: { zh: "状态大小 常数", en: "state size constant" },
   statStep: { zh: "本步计算 常数", en: "per-step compute constant" },

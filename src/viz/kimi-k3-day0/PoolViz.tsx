@@ -7,7 +7,7 @@ import type { Locale } from "../../lib/i18n";
 import { seriesColor } from "../../lib/palette";
 import { simulatePool } from "./poolEngine";
 import type { PoolRequest, PoolResult } from "./poolEngine";
-import { POOL, poolCellTooltip, poolEventText } from "./strings";
+import { POOL, poolCellTooltip, poolEventText, poolVerdict } from "./strings";
 import "./styles.css";
 
 const POOL_SIZE = 44;
@@ -221,6 +221,14 @@ export default function PoolViz({ lang = "zh" }: { lang?: Locale }) {
     [],
   );
   const player = useSimPlayer(rSplit.totalIterations, 2);
+  const evicted = rSplit.events
+    .filter((e) => e.type === "evict")
+    .map((e) => `R${e.req}`)
+    .join(", ");
+  const rejected = rSplit.events
+    .filter((e) => e.type === "reject")
+    .map((e) => `R${e.req}`)
+    .join(", ");
 
   const legend = [
     {
@@ -243,7 +251,14 @@ export default function PoolViz({ lang = "zh" }: { lang?: Locale }) {
       subtitle={POOL.subtitle[lang]}
       player={player}
       lang={lang}
-      footer={<Legend items={legend} />}
+      footer={
+        <>
+          <Legend items={legend} />
+          <div className="viz-verdict">
+            {poolVerdict(lang, evicted, rejected, TRACE.length, rUnified.peakUsed, POOL_SIZE)}
+          </div>
+        </>
+      }
     >
       <PoolSection label={POOL.splitLabel[lang]} result={rSplit} t={player.t} lang={lang} />
       <PoolSection

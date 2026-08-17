@@ -62,6 +62,7 @@ const COPY = {
     currentMemory: "这些分支同时运行时",
     memoryFormula: "最低驻留：1 个起点 checkpoint + {n} 个活跃工作槽 ≈ {mb}MB",
     memoryCaveat: "这里未计树上额外 checkpoint；它们由下面的策略限制。关键是这不是「每个 token 复制一份」，主要随活跃分支数增长。",
+    verdict: "树上共享的是只读 checkpoint；每个活跃分支仍要一份约 54MB 的工作状态，分支多了就顶到并发上限。",
   },
   en: {
     title: "KDA prefix cache diagram",
@@ -109,6 +110,7 @@ const COPY = {
     currentMemory: "When these branches run concurrently",
     memoryFormula: "Minimum resident set: 1 starting checkpoint + {n} active working slots ≈ {mb}MB",
     memoryCaveat: "This excludes extra checkpoints retained in the tree; the policies below bound those. The key point is that this is not one copy per token: growth follows active branches.",
+    verdict: "The tree shares read-only checkpoints; each active branch still needs its own ~54MB working state, so branches cap concurrency.",
   },
 } as const;
 
@@ -389,6 +391,9 @@ export default function RadixStateViz({ lang = "zh" }: { lang?: Locale }) {
           <small>{copy.memoryCaveat}</small>
         </div>
       </section>
+      <div className="viz-footer parallel-footer">
+        <div>{copy.verdict}</div>
+      </div>
     </figure>
   );
 }

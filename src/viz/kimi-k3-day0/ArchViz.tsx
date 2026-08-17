@@ -197,7 +197,6 @@ export default function ArchViz({ lang = "zh" }: { lang?: Locale }) {
     <figure className="viz-stage" style={{ margin: "1.6rem 0" }}>
       <div className="viz-head">
         <span className="viz-title">{ARCH.title[lang]}</span>
-        <span className="viz-subtitle">{ARCH.subtitle[lang]}</span>
       </div>
 
       <div className="viz-controls">

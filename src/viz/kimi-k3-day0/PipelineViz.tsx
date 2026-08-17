@@ -12,17 +12,17 @@ const LAYER_RANGES = ["L1–12", "L13–24", "L25–36", "L37–48", "L49–60",
 const COPY = {
   zh: {
     title: "Chunked pipeline prefill 图示",
-    subtitle: "同样 8 张 GPU；prefill 从逐层同步的 TP8，切换为按层流水的 PP8",
+    subtitle: "同样 8 张 GPU；上面 TP8，下面 chunked PP8",
     problem: "问题",
     solution: "解决",
-    tpTitle: "Naive TP8：8 卡锁步计算同一层",
+    tpTitle: "TP8：每层之后 8 卡同步一次",
     tpIntro: "每层都把矩阵切成 8 份；算完必须 AllReduce，最慢的卡没到齐，所有卡都不能进入下一层。",
     compute: "计算",
     allReduce: "AllReduce",
     tpFact1: "93 层反复同步",
     tpFact2: "通信处在关键路径",
     tpFact3: "GEMM 被切窄，效率下降",
-    ppTitle: "Chunked PP8：模型按层切 8 段，prompt 再切成 chunks",
+    ppTitle: "Chunked PP8：层切 8 段，prompt 切成 chunks",
     ppIntro: "G1–G8 各自执行一段完整层；长 prompt 切成多个 chunks，前一张 GPU 算完一个 chunk 后，把 activation 直接交给下一张。",
     chunkControl: "Prompt chunks",
     chunkUnit: "块",
@@ -46,20 +46,22 @@ const COPY = {
     tp8Comm: "TP8 · 9.38 ms",
     pp8Comm: "PP8 · 0.88 ms",
     hidden: "约减少 91%",
+    why: "PP8 只在 stage 边界传一次激活，还能和下一个 chunk 的计算重叠；灌满后 8 张卡各推进各的 chunk。实测 prefill capacity 是 TEP8 的 1.45–1.72×。",
+    tradeoff: "灌入和排空的气泡要靠足够多的 chunks 摊薄；请求少或 prompt 短时 PP8 反而更慢。",
   },
   en: {
     title: "Chunked pipeline prefill diagram",
-    subtitle: "The same 8 GPUs; prefill switches from layer-synchronous TP8 to layer-pipelined PP8",
+    subtitle: "The same 8 GPUs; TP8 above, chunked PP8 below",
     problem: "Problem",
     solution: "Solution",
-    tpTitle: "Naive TP8: all 8 GPUs advance through the same layer in lockstep",
+    tpTitle: "TP8: all 8 GPUs sync after every layer",
     tpIntro: "Every layer is split eight ways. After compute, every rank must finish an AllReduce before any rank can enter the next layer.",
     compute: "compute",
     allReduce: "AllReduce",
     tpFact1: "A barrier after each of 93 layers",
     tpFact2: "Communication stays on the critical path",
     tpFact3: "Eight-way slicing makes GEMMs narrower",
-    ppTitle: "Chunked PP8: split layers into 8 stages and the prompt into chunks",
+    ppTitle: "Chunked PP8: 8 layer stages, prompt in chunks",
     ppIntro: "G1–G8 each execute a run of complete layers. The long prompt becomes multiple chunks; after one chunk, a GPU sends its activation directly to the next GPU.",
     chunkControl: "Prompt chunks",
     chunkUnit: "chunks",
@@ -83,6 +85,8 @@ const COPY = {
     tp8Comm: "TP8 · 9.38 ms",
     pp8Comm: "PP8 · 0.88 ms",
     hidden: "about 91% lower",
+    why: "PP8 hands activations over only at stage boundaries, and the transfer overlaps the next chunk's compute; once full, the 8 GPUs each advance a different chunk. Measured prefill capacity is 1.45–1.72× TEP8.",
+    tradeoff: "Fill and drain bubbles need enough chunks to amortize; with few requests or short prompts PP8 can be slower.",
   },
 } as const;
 
@@ -219,6 +223,11 @@ export default function PipelineViz({ lang = "zh" }: { lang?: Locale }) {
           <Facts items={[copy.ppFact1, copy.ppFact2, copy.ppFact3]} />
           <GainChart lang={lang} />
         </section>
+      </div>
+
+      <div className="viz-footer parallel-footer">
+        <div>{copy.why}</div>
+        <div>{copy.tradeoff}</div>
       </div>
     </figure>
   );

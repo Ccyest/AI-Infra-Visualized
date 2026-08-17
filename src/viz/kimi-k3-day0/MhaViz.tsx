@@ -105,7 +105,6 @@ export default function MhaViz({ lang = "zh" }: { lang?: Locale }) {
   return (
     <VizStage
       title={MHA.title[lang]}
-      subtitle={mode === "sentence" ? MHA.subtitle[lang] : (lang === "zh" ? "A=1 → B=2 → A=4 → A?；KV 逐格保留，A? 对全部 key 打分后做 softmax" : "A=1 → B=2 → A=4 → A?; KV entries stay separate, then A? scores every key and applies softmax")}
       player={player}
       lang={lang}
       headExtra={
