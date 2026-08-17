@@ -103,6 +103,7 @@ export default function ArchViz({ lang = "zh" }: { lang?: Locale }) {
   );
 
   const blockRight = BLOCK_X + 4 * (TILE_W + GAP_X) - GAP_X;
+  const EMB_SOURCE_X = 158;
   const groupStartX = 174;
   const groupStep = 72;
   const groupWidth = 62;
@@ -209,13 +210,15 @@ export default function ArchViz({ lang = "zh" }: { lang?: Locale }) {
           {tile("scale", WIDTH - 246, 10, 140, 26, "2.8T / 104B")}
           {tile("mxfp4", WIDTH - 96, 10, 86, 26, "MXFP4")}
 
-          {/* 输入侧 */}
-          {tile("vision", 10, 58, 96, 40, "MoonViT-V2", ARCH.vision[lang])}
-          {tile("text", 10, 132, 96, 40, ARCH.text[lang], undefined, "var(--surface)", "var(--ink-2)")}
-          {arrow(106, 78, 138, 104)}
-          {arrow(106, 152, 138, 126)}
-          {tile("embed", 140, 92, 104, 46, "Embedding", "NoPE")}
-          {arrow(244, 115, 296, 115)}
+          {/* 输入侧：视觉塔经轻量 projector 进入共享 embedding(技术报告 Figure 2 的 vision pathway) */}
+          {tile("vision", 6, 56, 86, 40, "MoonViT-V2", ARCH.vision[lang])}
+          {tile("text", 6, 132, 86, 40, ARCH.text[lang], undefined, "var(--surface)", "var(--ink-2)")}
+          {arrow(92, 76, 100, 76)}
+          {tile("projector", 102, 62, 44, 28, "MLP", undefined, "var(--surface)", "var(--ink-2)")}
+          {arrow(146, 76, 168, 100)}
+          {arrow(92, 152, 168, 130)}
+          {tile("embed", 170, 92, 96, 46, "Embedding", "NoPE")}
+          {arrow(266, 115, 296, 115)}
 
           {/* 上图：一个独立的 4-layer unit */}
           <rect x="286" y="46" width="438" height="142" rx="12" fill="none" stroke="var(--border)" strokeWidth="1.4" />
@@ -234,23 +237,22 @@ export default function ArchViz({ lang = "zh" }: { lang?: Locale }) {
                       ATTN_Y,
                       TILE_W,
                       TILE_H,
-                      "MLA",
+                      "Gated MLA",
                       "attention",
                       "color-mix(in srgb, var(--series-1) 40%, var(--surface))",
                     )}
                 {arrow(x + TILE_W / 2, ATTN_Y + TILE_H, x + TILE_W / 2, FFN_Y)}
-                {i === 0
-                  ? tile("dense", x, FFN_Y, TILE_W, TILE_H, "Dense", "FFN")
-                  : tile(
-                      "moe",
-                      x,
-                      FFN_Y,
-                      TILE_W,
-                      TILE_H,
-                      "LatentMoE",
-                      "FFN",
-                      "color-mix(in srgb, var(--series-2) 26%, var(--surface))",
-                    )}
+                {/* 每层 attention 都配一个 Stable LatentMoE;dense 只出现在全模型第 1 层,不属于这个重复单元 */}
+                {tile(
+                  "moe",
+                  x,
+                  FFN_Y,
+                  TILE_W,
+                  TILE_H,
+                  "LatentMoE",
+                  "FFN",
+                  "color-mix(in srgb, var(--series-2) 26%, var(--surface))",
+                )}
               </g>
             );
           })}
@@ -282,7 +284,7 @@ export default function ArchViz({ lang = "zh" }: { lang?: Locale }) {
               {ARCH.attnresArc[lang]}
             </text>
             <line
-              x1={groupStartX + groupWidth / 2}
+              x1={EMB_SOURCE_X}
               y1={summaryY}
               x2={groupStartX + 7 * groupStep + groupWidth / 2}
               y2={summaryY}
@@ -290,8 +292,24 @@ export default function ArchViz({ lang = "zh" }: { lang?: Locale }) {
               strokeWidth={active?.key === "attnres-rail" ? 3 : 1.6}
               strokeLinecap="round"
             />
-            <line x1={groupStartX} y1={summaryY} x2={groupStartX + 7 * groupStep + groupWidth} y2={summaryY} stroke="transparent" strokeWidth="28" />
+            <line x1={EMB_SOURCE_X} y1={summaryY} x2={groupStartX + 7 * groupStep + groupWidth} y2={summaryY} stroke="transparent" strokeWidth="28" />
+            {/* embedding 也是取回来源之一(技术报告 Figure 2:α over the embedding and preceding block outputs) */}
+            <circle cx={EMB_SOURCE_X} cy={summaryY} r="3.2" fill="var(--surface)" stroke="var(--axis)" strokeWidth="1.4" />
+            <text x={EMB_SOURCE_X} y={summaryY + 16} textAnchor="middle" fontSize="8.5" fill="var(--muted)">
+              {ARCH.attnresSource[lang]}
+            </text>
           </g>
+          <line
+            x1="450"
+            y1="210"
+            x2="450"
+            y2="192"
+            stroke="var(--axis)"
+            strokeWidth="1.4"
+            strokeDasharray="4 3"
+            markerEnd="url(#arch-arrow)"
+          />
+          <text x="458" y="204" fontSize="9" fill="var(--muted)">{ARCH.attnresFeed[lang]}</text>
           {Array.from({ length: 8 }, (_, index) => attnBlock(index))}
           <text x={(groupStartX + groupStartX + 7 * groupStep + groupWidth) / 2} y="359" textAnchor="middle" fontSize="9.5" fill="var(--muted)">
             {ARCH.blockCount[lang]}

@@ -226,11 +226,12 @@ export const MOE = {
 export const ARCH = {
   title: { zh: "K3 整体结构", en: "K3 at a glance" },
   subtitle: {
-    zh: "KDA / MLA 按 3:1 交错；每 12 层保留一份 AttnRes 摘要，首层 dense，其余层使用 LatentMoE",
-    en: "KDA and MLA interleave 3:1; AttnRes keeps one summary every 12 layers, with a dense first layer and LatentMoE after it",
+    zh: "3 层 KDA + 1 层 Gated MLA 组成一个 unit，每层 attention 各配一个 Stable LatentMoE；每 12 层一个 block，AttnRes 按 α 跨 block 取回（全模型第 1 层的 FFN 是 dense）",
+    en: "One unit is 3 KDA layers plus 1 Gated MLA layer, each paired with a Stable LatentMoE; 12 layers form a block, and AttnRes retrieves across blocks by α (the model's first FFN is dense)",
   },
   hint: { zh: "点击图中部件", en: "Click a component" },
   vision: { zh: "视觉", en: "vision" },
+  projector: { zh: "投影", en: "projector" },
   text: { zh: "文本 token", en: "text tokens" },
   unitLabel: { zh: "4-layer unit（共四层）", en: "4-layer unit (4 layers total)" },
   repeat: {
@@ -238,8 +239,13 @@ export const ARCH = {
     en: "3 × 4-layer units = one 12-layer block",
   },
   attnresArc: {
-    zh: "AttnRes 保留每个 block 的摘要",
-    en: "AttnRes keeps each block summary",
+    zh: "AttnRes：pseudo-query 算出 α，跨 block 取回 embedding 与之前各 block 的输出",
+    en: "AttnRes: a pseudo-query derives α over the embedding and preceding block outputs",
+  },
+  attnresSource: { zh: "Emb", en: "Emb" },
+  attnresFeed: {
+    zh: "α 送回 unit 内每个子层",
+    en: "α feeds every sublayer in the unit",
   },
   blockCount: {
     zh: "B1–B7：各 12 层 · B8：末尾 9 层 · 共 93 层",

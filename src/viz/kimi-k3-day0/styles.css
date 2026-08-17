@@ -257,13 +257,13 @@
 /* LatentMoE：只保留 routed pool 的一张饼图 */
 .moe-pie-only {
   display: grid;
+  padding: 0.35rem 0 0.15rem;
   place-items: center;
-  min-height: clamp(250px, 34vw, 360px);
 }
 
 .moe-pie {
   display: grid;
-  width: clamp(176px, 23vw, 230px);
+  width: clamp(112px, 13vw, 138px);
   aspect-ratio: 1;
   place-items: center;
   border: 1px solid var(--border);
@@ -291,18 +291,18 @@
 
 .moe-pie-center b {
   color: var(--series-2);
-  font-size: clamp(1.7rem, 4vw, 2.5rem);
+  font-size: clamp(1.1rem, 2.2vw, 1.4rem);
 }
 
 .moe-pie-center span {
-  font-size: 0.82rem;
+  font-size: 0.68rem;
   font-variant-numeric: tabular-nums;
 }
 
 .moe-pie-center small {
-  margin-top: 0.18rem;
+  margin-top: 0.1rem;
   color: var(--ink);
-  font-size: 0.78rem;
+  font-size: 0.66rem;
   font-variant-numeric: tabular-nums;
 }
 
