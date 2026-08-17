@@ -4,8 +4,8 @@ import type { Locale, Localized } from "../../lib/i18n";
 
 export const POOL = {
   title: {
-    zh: "双状态显存：静态双池 vs 统一池",
-    en: "Two state types: static split pools vs one unified pool",
+    zh: "显存池对比图",
+    en: "Memory pool comparison",
   },
   subtitle: {
     zh: "请求准入时同时分配两类状态；之后 KDA 固定，MLA 随 token 增长",
@@ -69,30 +69,10 @@ export function poolCellTooltip(
     : `R${cell.owner} · MLA KV cache (appended page by page with tokens)`;
 }
 
-export function poolVerdict(
-  locale: Locale,
-  evicted: string,
-  rejected: string,
-  total: number,
-  peak: number,
-  poolSize: number,
-): string {
-  if (locale === "zh") {
-    const parts: string[] = [];
-    if (evicted) parts.push(`在 MLA 区耗尽时驱逐了 ${evicted}(此刻 KDA 区仍有空页)`);
-    if (rejected) parts.push(`拒绝了 ${rejected}`);
-    return `同一负载：静态双池${parts.join("，还")}；统一池 ${total} 个请求全部完成，峰值占用 ${peak}/${poolSize} 页，零失败。`;
-  }
-  const parts: string[] = [];
-  if (evicted) parts.push(`evicted ${evicted} when the MLA side ran dry (while KDA pages sat free)`);
-  if (rejected) parts.push(`rejected ${rejected}`);
-  return `Same workload: the split pools ${parts.join(" and ")}; the unified pool completed all ${total} requests at a peak of ${peak}/${poolSize} pages with zero failures.`;
-}
-
 export const CACHE = {
   title: {
-    zh: "1M 上下文的 KV cache：93 层全 MLA vs 3:1 混排",
-    en: "KV cache at 1M context: 93 all-MLA layers vs the 3:1 mix",
+    zh: "KV cache 对比图",
+    en: "KV cache comparison",
   },
   subtitle: {
     zh: "同一个请求，上下文从 0 涨到 1M token；一格 = 2 GB",
@@ -141,27 +121,10 @@ export function cacheCellTooltip(
     : `≈2 GB of MLA KV (${layers} layers, ≈${layers === 24 ? "27" : "105"} KB per token)`;
 }
 
-export function cacheVerdict(
-  locale: Locale,
-  hypoGb: number,
-  k3Gb: number,
-): string {
-  const ratio = (hypoGb / k3Gb).toFixed(1);
-  return locale === "zh"
-    ? `1M token 时：全 MLA 假想值约 ${Math.round(hypoGb)} GB，K3 混排约 ${Math.round(
-        k3Gb,
-      )} GB(${ratio}× 之差)，而且这还只是显存；计算上 softmax attention 每步要扫全部历史(O(N))，KDA 每步只碰固定状态(O(1))。`
-    : `At 1M tokens: the all-MLA hypothetical needs ≈${Math.round(
-        hypoGb,
-      )} GB, the K3 mix ≈${Math.round(
-        k3Gb,
-      )} GB (a ${ratio}× gap), and that is memory alone; compute-wise softmax attention scans the whole history every step (O(N)) while KDA touches a fixed state (O(1)).`;
-}
-
 export const ATTN = {
   title: {
-    zh: "Attention Residual：让深层直接取回指定的浅层表示",
-    en: "Attention Residual: let deep blocks retrieve selected shallow representations",
+    zh: "Attention Residual 图示",
+    en: "Attention Residual diagram",
   },
   subtitle: {
     zh: "传统 residual 只有一条累计流；AttnRes 把旧 block 输出分别保留，再按 α 选择",
@@ -198,8 +161,8 @@ export function attnBlockTooltip(locale: Locale, block: number): string {
 
 export const MOE = {
   title: {
-    zh: "LatentMoE：896 个 routed expert 只激活 16 个",
-    en: "LatentMoE: only 16 of 896 routed experts are active",
+    zh: "LatentMoE 图示",
+    en: "LatentMoE diagram",
   },
   subtitle: {
     zh: "饼图只统计 routed pool；2 个 shared expert 不在这个分母里",
@@ -374,8 +337,8 @@ export const ARCH_CALLOUTS = {
 
 export const MHA = {
   title: {
-    zh: "MHA：读取随历史增长的 KV cache",
-    en: "MHA: read from a KV cache that grows with history",
+    zh: "MHA 图示",
+    en: "MHA diagram",
   },
   subtitle: {
     zh: "同一句话逐 token 解码；q 对每个历史位置分别点积，线宽 = softmax 权重（示意值）",
@@ -392,10 +355,6 @@ export const MHA = {
   },
   legendLine: { zh: "连线 = 一次点积（线宽 = softmax 权重）", en: "line = one dot product (width = softmax weight)" },
   legendCurrent: { zh: "描边 = 当前 token", en: "outline = current token" },
-  verdict: {
-    zh: "第 N 步和之前 N−1 个 token 各点乘一次，整句累计 ≈ N²/2 次：计算 O(N²)，cache O(N)。换来的是逐位置打分：「它」那一步，权重可以跨过 5 个 token 聚在「猫」上，不会因递归距离自动衰减。",
-    en: "Step N dots against all N−1 earlier tokens, ≈N²/2 dot products over the sentence: O(N²) compute, O(N) cache. In exchange, every position is scored independently: on \"it\", the weight can reach five positions back to \"cat\" without recurrent distance decay.",
-  },
 } satisfies Record<string, Localized>;
 
 export interface MhaToken {
@@ -449,8 +408,8 @@ export function mhaChip(locale: Locale, word: string): string {
 
 export const LINFLOW = {
   title: {
-    zh: "Naive linear attention：把历史压进固定状态",
-    en: "Naive linear attention: fold history into a fixed state",
+    zh: "Naive linear attention 图示",
+    en: "Naive linear attention diagram",
   },
   subtitle: {
     zh: "同一句话逐 token 解码；每步写入 k·vᵀ，再用 q 从固定大小的 S 读出",
@@ -469,10 +428,6 @@ export const LINFLOW = {
   legendStripe: { zh: "S 的条纹 = 已叠加的历史", en: "stripes in S = superimposed history" },
   legendWrite: { zh: "实线 = 写入 S", en: "solid = write into S" },
   legendRead: { zh: "虚线 = 从 S 读出", en: "dashed = read from S" },
-  verdict: {
-    zh: "计算 O(N)、显存 O(1)，1M 上下文也不涨。但 S 里没有位置轴：「它」这一步画不出上一节那条指向「猫」的线，q 只能从叠加后的固定状态中读出。下一节的 delta rule 解决其中的同键改写问题。",
-    en: "O(N) compute and O(1) memory stay flat even at 1M context. But S has no position axis: on \"it\" there is no line back to \"cat\" like in MHA; q can only read from the superimposed fixed state. The next section's delta rule addresses same-key rebinding within that state.",
-  },
 } satisfies Record<string, Localized>;
 
 export function linflowBoxTooltip(locale: Locale, count: number): string {

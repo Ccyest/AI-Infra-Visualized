@@ -6,7 +6,7 @@ const KERNEL_STEPS = [44.3, 53.2, 61.9, 62.4, 64.2, 65.3, 71.0, 72.0, 74.5, 84.3
 
 const COPY = {
   zh: {
-    title: "K3 serving：decode 单步与部署取舍",
+    title: "Serving 性能图",
     subtitle: "BS=1 优化 + PD 部署实测",
     kernelTitle: "BS=1 非投机 decode",
     kernelContext: "8×GB300 · TP8 · BF16 KV cache",
@@ -49,7 +49,7 @@ const COPY = {
     goalInteractiveDetail: "增加独立 TP8 decode instances，达到 116+ tok/s/user。",
   },
   en: {
-    title: "K3 serving: decode step and deployment trade-offs",
+    title: "Serving performance",
     subtitle: "BS=1 optimization + PD deployment measurements",
     kernelTitle: "BS=1 non-speculative decode",
     kernelContext: "8×GB300 · TP8 · BF16 KV cache",

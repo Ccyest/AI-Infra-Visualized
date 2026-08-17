@@ -4,7 +4,7 @@ import Legend from "../../components/core/Legend";
 import VizStage from "../../components/core/VizStage";
 import { useSimPlayer } from "../../components/core/useSimPlayer";
 import type { Locale } from "../../lib/i18n";
-import { CACHE, cacheCellTooltip, cacheVerdict } from "./strings";
+import { CACHE, cacheCellTooltip } from "./strings";
 import "./styles.css";
 
 /**
@@ -196,18 +196,7 @@ export default function CacheViz({ lang = "zh" }: { lang?: Locale }) {
       subtitle={CACHE.subtitle[lang]}
       player={player}
       lang={lang}
-      footer={
-        <>
-          <Legend items={legend} />
-          <div className="viz-verdict">
-            {cacheVerdict(
-              lang,
-              mlaGb(STEPS, HYPO_LAYERS),
-              mlaGb(STEPS, K3_MLA_LAYERS) + KDA_FIXED_GB,
-            )}
-          </div>
-        </>
-      }
+      footer={<Legend items={legend} />}
     >
       {/* 3:1 交错排布示意 */}
       <div className="k3a-strip">

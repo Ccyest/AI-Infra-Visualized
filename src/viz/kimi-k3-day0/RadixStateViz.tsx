@@ -17,7 +17,7 @@ const PREFIX_PATHS: Record<string, readonly string[]> = {
 
 const COPY = {
   zh: {
-    title: "RadixAttention 遇到可变的 KDA 状态",
+    title: "KDA 前缀缓存图示",
     subtitle: "KV 可以共享同一份前缀；KDA 要把共享 checkpoint 恢复到私有工作槽后再改写",
     growthTitle: "负载变化时，两种状态跟着什么增长？",
     trendNote: "只对比增长方向，四张图不共用纵轴。",
@@ -62,10 +62,9 @@ const COPY = {
     currentMemory: "这些分支同时运行时",
     memoryFormula: "最低驻留：1 个起点 checkpoint + {n} 个活跃工作槽 ≈ {mb}MB",
     memoryCaveat: "这里未计树上额外 checkpoint；它们由下面的策略限制。关键是这不是「每个 token 复制一份」，主要随活跃分支数增长。",
-    verdict: "结果：Radix tree 仍然共享前缀，只是共享对象从「可直接继续追加的 KV」变成「只读 KDA checkpoint」。代价没有消失：约 54MB 的 KDA 工作状态仍随活跃分支线性增长，因此最终会成为并发上限。",
   },
   en: {
-    title: "RadixAttention meets mutable KDA state",
+    title: "KDA prefix cache diagram",
     subtitle: "KV can share one prefix in place; KDA must restore a shared checkpoint into a private working slot before mutation",
     growthTitle: "Which workload dimension makes each state grow?",
     trendNote: "The four plots compare growth direction only; they do not share a y-axis.",
@@ -110,7 +109,6 @@ const COPY = {
     currentMemory: "When these branches run concurrently",
     memoryFormula: "Minimum resident set: 1 starting checkpoint + {n} active working slots ≈ {mb}MB",
     memoryCaveat: "This excludes extra checkpoints retained in the tree; the policies below bound those. The key point is that this is not one copy per token: growth follows active branches.",
-    verdict: "Result: the radix tree still shares prefixes, but the shared object changes from appendable KV to a read-only KDA checkpoint. The cost remains real: ~54MB of KDA working state grows linearly with active branches and eventually becomes the concurrency ceiling.",
   },
 } as const;
 
@@ -391,9 +389,6 @@ export default function RadixStateViz({ lang = "zh" }: { lang?: Locale }) {
           <small>{copy.memoryCaveat}</small>
         </div>
       </section>
-      <div className="viz-footer parallel-footer">
-        <div>{copy.verdict}</div>
-      </div>
     </figure>
   );
 }

@@ -12,7 +12,7 @@ const R = 92;
 const PRESETS = [90, 60, 30, 0] as const;
 
 const COPY = {
-  title: { zh: "串扰从哪里来：不正交的 key 方向会互相投影", en: "Where crosstalk comes from: non-orthogonal key directions project onto each other" },
+  title: { zh: "串扰图示", en: "Crosstalk diagram" },
   subtitle: { zh: "固定 kₐ，拖动 kᵦ；示例取 qₐ=kₐ、vₐ=vᵦ=1", en: "Keep kₐ fixed and drag kᵦ; the example uses qₐ=kₐ and vₐ=vᵦ=1" },
   drag: { zh: "拖动 B", en: "drag B" },
   target: { zh: "A 的目标信号", en: "A target signal" },
@@ -119,7 +119,6 @@ export default function KeyOverlapViz({ lang = "zh" }: { lang?: Locale }) {
           { label: lang === "zh" ? "橙色 = B 及其在 A 上的投影" : "orange = B and its projection onto A", swatch: { background: "var(--series-2)" } },
           { label: lang === "zh" ? "绿色虚线 = 合成状态 S" : "green dashed = combined state S", swatch: { background: "var(--good)" } },
         ]} />
-        <div className="viz-verdict">{lang === "zh" ? <>当 qₐ 读取 S 时，B 的贡献不会自动消失；它按 <b>kₐᵀkᵦ = cos θ</b> 漏进输出。这就是图中“串扰”的精确定义。</> : <>When qₐ reads S, B does not disappear; it leaks into the output by <b>kₐᵀkᵦ = cos θ</b>. That is the precise meaning of crosstalk in this diagram.</>}</div>
       </div>
     </figure>
   );

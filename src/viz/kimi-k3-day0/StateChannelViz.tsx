@@ -8,8 +8,8 @@ const VALUE_VALUES = [0.6, -0.3, 0.8, 0.1];
 
 const COPY = {
   title: {
-    zh: "Linear attention：一个 head 如何写入固定状态 S",
-    en: "Linear attention: how one head writes into the fixed state S",
+    zh: "状态矩阵 S 图示",
+    en: "State matrix S diagram",
   },
   subtitle: {
     zh: "选择一个 key channel，观察外积如何更新 S 的对应行",
@@ -142,11 +142,6 @@ export default function StateChannelViz({ lang = "zh" }: { lang?: Locale }) {
         <span>{lang === "zh" ? "k[j] 更新 S 的第 j 行；KDA 会再对这些行做逐 channel 衰减。" : "k[j] updates row j of S; KDA later adds channel-wise decay over these rows."}</span>
       </div>
 
-      <div className="viz-footer">
-        <div className="viz-verdict">
-          {lang === "zh" ? <><b>为什么是 128？</b> 这是容量与开销的折中；两条轴一起增大时，每个 head 的状态按 <code>d²</code> 增长。</> : <><b>Why 128?</b> It balances capacity and cost; when both axes grow, per-head state grows as <code>d²</code>.</>}
-        </div>
-      </div>
     </figure>
   );
 }

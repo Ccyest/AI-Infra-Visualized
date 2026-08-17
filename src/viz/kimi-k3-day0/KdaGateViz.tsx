@@ -26,7 +26,7 @@ const TOKENS: TimelineItem[] = [
 ];
 
 const COPY = {
-  title: { zh: "KDA：先按 channel 衰减，再做 delta update", en: "KDA: decay by channel, then apply the delta update" },
+  title: { zh: "KDA 图示", en: "KDA diagram" },
   subtitle: { zh: "调整 α₁、α₂ 和 β，观察状态如何变化", en: "Adjust α₁, α₂, and β to see how the state changes" },
   entering: { zh: "① A=4 进入前的 S", en: "① S before A=4" },
   gated: { zh: "② Diag(α) 后的 S", en: "② S after Diag(α)" },
@@ -115,15 +115,6 @@ export default function KdaGateViz({ lang = "zh" }: { lang?: Locale }) {
           <ParameterRow label="α₂" value={alpha2} onChange={setAlpha2} />
           <ParameterRow label="β" value={beta} options={WRITE_STRENGTHS} onChange={setBeta} />
         </span>
-      }
-      footer={
-        <div className="viz-verdict">
-          {lang === "zh" ? <>
-            <code>Diag(α)</code> 先缩放 S 的行，delta update 再写入 <code>β(4−{format(oldReadA)})={format(deltaWrite)}</code>。当前设置下，<code>qₐ→{format(readA)}</code>，<code>qᵦ→{format(readB)}</code>。
-          </> : <>
-            <code>Diag(α)</code> first scales the rows of S; the delta update then writes <code>β(4−{format(oldReadA)})={format(deltaWrite)}</code>. With the current settings, <code>qₐ→{format(readA)}</code> and <code>qᵦ→{format(readB)}</code>.
-          </>}
-        </div>
       }
     >
       <TokenTimeline items={TOKENS} t={t} />

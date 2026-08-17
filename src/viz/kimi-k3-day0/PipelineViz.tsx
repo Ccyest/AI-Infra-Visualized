@@ -11,7 +11,7 @@ const LAYER_RANGES = ["L1–12", "L13–24", "L25–36", "L37–48", "L49–60",
 
 const COPY = {
   zh: {
-    title: "Chunked pipeline prefill：先消掉每层同步，再把长 prompt 灌进流水线",
+    title: "Chunked pipeline prefill 图示",
     subtitle: "同样 8 张 GPU；prefill 从逐层同步的 TP8，切换为按层流水的 PP8",
     problem: "问题",
     solution: "解决",
@@ -46,13 +46,9 @@ const COPY = {
     tp8Comm: "TP8 · 9.38 ms",
     pp8Comm: "PP8 · 0.88 ms",
     hidden: "约减少 91%",
-    whyTitle: "为什么吞吐提高",
-    why: "TP8 每层都停下来同步；PP8 只在 stage 边界传一次激活，而且传输可与下一块计算重叠。流水线灌满后，8 张卡不再合算同一个 chunk，而是同时推进 8 个不同 chunks。真机 prefill capacity 是 TEP8 的 1.45–1.72×。",
-    tradeoffTitle: "Tradeoff",
-    tradeoff: "流水线开始和结束都有气泡，单个请求或 chunks 太少时 PP8 反而可能更慢；必须有足够长的 prompt 或并发 chunks 才能摊薄气泡。浅层 PP4×TP2 还保留 TP AllReduce，也无法充分隐藏 P2P。",
   },
   en: {
-    title: "Chunked pipeline prefill: remove per-layer sync, then stream a long prompt",
+    title: "Chunked pipeline prefill diagram",
     subtitle: "The same 8 GPUs; prefill switches from layer-synchronous TP8 to layer-pipelined PP8",
     problem: "Problem",
     solution: "Solution",
@@ -87,10 +83,6 @@ const COPY = {
     tp8Comm: "TP8 · 9.38 ms",
     pp8Comm: "PP8 · 0.88 ms",
     hidden: "about 91% lower",
-    whyTitle: "Why throughput improves",
-    why: "TP8 stops for a collective after every layer. PP8 transfers activations only at stage boundaries, and that transfer overlaps the next chunk's compute. Once full, the eight GPUs advance eight different chunks instead of co-computing one. Measured prefill capacity is 1.45–1.72× TEP8.",
-    tradeoffTitle: "Tradeoff",
-    tradeoff: "The pipeline has fill and drain bubbles. With one request or too few chunks, PP8 can be slower; long prompts or enough concurrent chunks are needed to amortize the bubbles. A shallow PP4×TP2 still pays TP AllReduce and cannot hide P2P well.",
   },
 } as const;
 
@@ -227,11 +219,6 @@ export default function PipelineViz({ lang = "zh" }: { lang?: Locale }) {
           <Facts items={[copy.ppFact1, copy.ppFact2, copy.ppFact3]} />
           <GainChart lang={lang} />
         </section>
-      </div>
-
-      <div className="viz-footer parallel-footer">
-        <div><b>{copy.whyTitle}：</b>{copy.why}</div>
-        <div><b>{copy.tradeoffTitle}：</b>{copy.tradeoff}</div>
       </div>
     </figure>
   );

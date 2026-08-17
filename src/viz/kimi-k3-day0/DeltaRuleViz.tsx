@@ -26,7 +26,7 @@ const TOKENS: TimelineItem[] = [
 const BETAS = [1, 0.8, 0.5, 0.3, 0] as const;
 
 const COPY = {
-  title: { zh: "DeltaNet：沿完整 key 方向先读、再擦、后写", en: "DeltaNet: read, erase, and write along a full key direction" },
+  title: { zh: "DeltaNet 图示", en: "DeltaNet diagram" },
   subtitle: { zh: "调整 β，观察 A=4 如何改写 A=1", en: "Adjust β and see how A=4 rewrites A=1" },
   before: { zh: "本步进入的 S", en: "S entering this step" },
   after: { zh: "本步结束后的 S", en: "S after this step" },
@@ -83,15 +83,6 @@ export default function DeltaRuleViz({ lang = "zh" }: { lang?: Locale }) {
             <button key={option} type="button" className={`viz-btn${beta === option ? " primary" : ""}`} onClick={() => setBeta(option)}>β={option}</button>
           ))}
         </span>
-      }
-      footer={
-        <div className="viz-verdict">
-          {lang === "zh" ? <>
-            DeltaNet 用完整 <code>kₐ</code> 读出旧值 1，再沿同一方向写入 <code>β(4−1)</code>。颜色只追踪贡献来源；真实 S 保存它们的和。
-          </> : <>
-            DeltaNet reads the old value 1 with the full <code>kₐ</code>, then writes <code>β(4−1)</code> along the same direction. Colors trace provenance; the real S stores their sum.
-          </>}
-        </div>
       }
     >
       <TokenTimeline items={TOKENS} t={t} />

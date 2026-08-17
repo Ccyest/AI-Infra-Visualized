@@ -8,7 +8,7 @@ const GPU_OPTIONS = [2, 4, 8] as const;
 
 const COPY = {
   zh: {
-    title: "Decode Context Parallelism：不再复制整份 KV，改按 token 位置分片",
+    title: "DCP 图示",
     subtitle: "同一段 12-token MLA context；上面是 naive TP，下面是 DCP",
     problem: "问题",
     solution: "解决",
@@ -34,15 +34,11 @@ const COPY = {
     step3Note: "交换 partial output + LSE",
     step4: "④ LSE 精确合并",
     step4Note: "结果与完整 softmax 一致",
-    whyTitle: "为什么吞吐提高",
-    why: "DCP 的主要收益不是让一条短请求的 attention 算得更快，而是把 MLA 的活跃 KV 工作集分散到多卡。更多长会话能留在 GPU 上，避免 host offload、重新 prefill 和并发坍塌。K3 上 DCP8 把逻辑容量从 1.5M 提到 12.2M tokens（7.9×），48 个 agent sessions 达到 541 tok/s；TP8 在 16 个时已崩塌。",
-    tradeoffTitle: "Tradeoff",
-    tradeoff: "每个 MLA 层增加一次 all-to-all 和 LSE merge；短上下文、低并发时，这笔通信可能不值得。KDA 状态是每请求一个固定矩阵，没有 token-position 轴，不能用 DCP 分片，仍按 TP/head 处理。",
     stored: "实色 = 该 GPU 保存",
     empty: "空框 = 此位置在其他 GPU",
   },
   en: {
-    title: "Decode Context Parallelism: shard KV by token position instead of replicating it",
+    title: "DCP diagram",
     subtitle: "The same 12-token MLA context; naive TP above, DCP below",
     problem: "Problem",
     solution: "Solution",
@@ -68,10 +64,6 @@ const COPY = {
     step3Note: "exchange partial output + LSE",
     step4: "④ Exact LSE merge",
     step4Note: "matches the full softmax result",
-    whyTitle: "Why throughput improves",
-    why: "DCP's main win is not lower latency for one short request. It spreads MLA's active KV working set across GPUs, keeping more long sessions on device and avoiding host offload, re-prefill, and concurrency collapse. On K3, DCP8 raises logical capacity from 1.5M to 12.2M tokens (7.9×) and reaches 541 tok/s at 48 agent sessions; TP8 has already collapsed at 16.",
-    tradeoffTitle: "Tradeoff",
-    tradeoff: "Every MLA layer adds one all-to-all and an LSE merge, which may not pay off for short contexts or low concurrency. KDA state is one fixed matrix per request with no token-position axis, so it cannot use DCP and remains TP/head-sharded.",
     stored: "filled = stored on this GPU",
     empty: "outline = owned by another GPU",
   },
@@ -178,10 +170,6 @@ export default function DcpViz({ lang = "zh" }: { lang?: Locale }) {
       </section>
 
       <div className="dcp-inline-legend"><span><i className="stored" />{copy.stored}</span><span><i className="empty" />{copy.empty}</span></div>
-      <div className="viz-footer parallel-footer">
-        <div><b>{copy.whyTitle}：</b>{copy.why}</div>
-        <div><b>{copy.tradeoffTitle}：</b>{copy.tradeoff}</div>
-      </div>
     </figure>
   );
 }

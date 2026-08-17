@@ -111,16 +111,13 @@ export default function LinearFlowViz({ lang = "zh" }: { lang?: Locale }) {
           <button type="button" className={`viz-btn${mode === "math" ? " primary" : ""}`} onClick={() => switchMode("math")}>{lang === "zh" ? "数学解释" : "Math"}</button>
         </span>
       }
-      footer={
-        <>
-          {mode === "sentence" && <Legend items={[
-              { label: lang === "zh" ? "颜色 = 同一个 token 及其状态贡献" : "color = the same token and its state contribution", swatch: { background: "linear-gradient(90deg, var(--series-1) 0 50%, var(--series-2) 50%)" } },
-              { label: LINFLOW.legendWrite[lang], swatch: { background: "color-mix(in srgb, var(--accent) 60%, transparent)" } },
-              { label: LINFLOW.legendRead[lang], swatch: { background: "repeating-linear-gradient(90deg, var(--accent) 0 3px, transparent 3px 6px)" } },
-            ]} />}
-          <div className="viz-verdict">{mode === "sentence" ? LINFLOW.verdict[lang] : (lang === "zh" ? <>Naive linear attention 直接累加 <code>kvᵀ</code>。因此 <code>A=1</code> 和 <code>A=4</code> 都写进同一个 A 方向；到 <code>A?</code> 时，<code>qₐ</code> 从 S 读到的是 <code>1+4=5</code> 的叠加，而不是可寻址的最新值 4。</> : <>Naive linear attention directly accumulates <code>kvᵀ</code>. Both <code>A=1</code> and <code>A=4</code> therefore write along the same A direction; on <code>A?</code>, <code>qₐ</code> reads the superposition <code>1+4=5</code> from S rather than an addressable latest value of 4.</>)}</div>
-        </>
-      }
+      footer={mode === "sentence" ? (
+        <Legend items={[
+          { label: lang === "zh" ? "颜色 = 同一个 token 及其状态贡献" : "color = the same token and its state contribution", swatch: { background: "linear-gradient(90deg, var(--series-1) 0 50%, var(--series-2) 50%)" } },
+          { label: LINFLOW.legendWrite[lang], swatch: { background: "color-mix(in srgb, var(--accent) 60%, transparent)" } },
+          { label: LINFLOW.legendRead[lang], swatch: { background: "repeating-linear-gradient(90deg, var(--accent) 0 3px, transparent 3px 6px)" } },
+        ]} />
+      ) : undefined}
     >
       {mode === "math" ? <div className="viz-section">
         <div className="viz-section-head">

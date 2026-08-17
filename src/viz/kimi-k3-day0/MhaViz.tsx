@@ -115,14 +115,11 @@ export default function MhaViz({ lang = "zh" }: { lang?: Locale }) {
         </span>
       }
       footer={
-        <>
-          <Legend items={[
-            { label: lang === "zh" ? "颜色 = 同一个 token 及其 KV" : "color = the same token and its KV", swatch: { background: "linear-gradient(90deg, var(--series-1) 0 50%, var(--series-2) 50%)" } },
-            { label: MHA.legendLine[lang], swatch: { background: "color-mix(in srgb, var(--accent) 55%, transparent)" } },
-            { label: MHA.legendCurrent[lang], swatch: { background: "transparent", border: "2px solid var(--accent)" } },
-          ]} />
-          <div className="viz-verdict">{mode === "sentence" ? MHA.verdict[lang] : (lang === "zh" ? <>KV cache 把 <code>A=1</code> 和 <code>A=4</code> 保存在两个独立位置。到 <code>A?</code> 时，先计算 <code>qᵀkᵢ</code>，再经 softmax 得到归一化权重，最后对 value 加权求和。图中示意权重读出 <code>0.05×1 + 0.05×2 + 0.90×4 = 3.75</code>，不是把 1 和 4 先合并成一格。</> : <>The KV cache keeps <code>A=1</code> and <code>A=4</code> at separate positions. On <code>A?</code>, it first computes <code>qᵀkᵢ</code>, softmax-normalizes those scores, then takes a weighted sum of the values. The illustrative weights produce <code>0.05×1 + 0.05×2 + 0.90×4 = 3.75</code>; 1 and 4 are never merged into one cache entry first.</>)}</div>
-        </>
+        <Legend items={[
+          { label: lang === "zh" ? "颜色 = 同一个 token 及其 KV" : "color = the same token and its KV", swatch: { background: "linear-gradient(90deg, var(--series-1) 0 50%, var(--series-2) 50%)" } },
+          { label: MHA.legendLine[lang], swatch: { background: "color-mix(in srgb, var(--accent) 55%, transparent)" } },
+          { label: MHA.legendCurrent[lang], swatch: { background: "transparent", border: "2px solid var(--accent)" } },
+        ]} />
       }
     >
       <div className="viz-section">
