@@ -6,16 +6,27 @@ import "./styles.css";
 
 /** K3 整体结构图：3:1 KDA/MLA 混排 + 8 个 AttnRes 深度分组。 */
 
-const TILE_W = 96;
-const GAP_X = 8;
+// 一个 unit 按技术报告 Figure 2 的子层链画:每个子层后面接一个残差 ⊕,
+// 每个子层各自有一条 α 取回;(KDA + LatentMoE) 重复 3 次,(Gated MLA + LatentMoE) 1 次。
+const TILE_W = 80;
+const PLUS_SLOT = 22;
 const BLOCK_X = 300;
-const ATTN_Y = 72;
-const FFN_Y = 130;
-const TILE_H = 48;
+const ROW_Y = 86;
+const TILE_H = 44;
+const ALPHA_Y = 146;
+const ALPHA_RAIL_Y = 162;
 const WIDTH = 900;
-const HEIGHT = 372;
+const HEIGHT = 366;
 
-const LAYERS = ["kda", "kda", "kda", "mla"] as const;
+const SUBLAYERS = [
+  { id: "kda", label: "KDA", sub: "attention" },
+  { id: "moe", label: "LatentMoE", sub: "FFN" },
+  { id: "mla", label: "Gated MLA", sub: "attention" },
+  { id: "moe", label: "LatentMoE", sub: "FFN" },
+] as const;
+
+const subX = (i: number) => BLOCK_X + i * (TILE_W + PLUS_SLOT);
+const plusX = (i: number) => subX(i) + TILE_W + PLUS_SLOT / 2;
 
 interface ArchSelection {
   id: keyof typeof ARCH_CALLOUTS;
@@ -102,14 +113,14 @@ export default function ArchViz({ lang = "zh" }: { lang?: Locale }) {
     />
   );
 
-  const blockRight = BLOCK_X + 4 * (TILE_W + GAP_X) - GAP_X;
+  const blockRight = plusX(3) + 11;
   const EMB_SOURCE_X = 158;
   const groupStartX = 174;
   const groupStep = 72;
   const groupWidth = 62;
   const groupHeight = 52;
-  const groupY = 292;
-  const summaryY = 280;
+  const groupY = 286;
+  const summaryY = 274;
 
   const attnBlock = (index: number) => {
     const isTail = index === 7;
@@ -215,51 +226,78 @@ export default function ArchViz({ lang = "zh" }: { lang?: Locale }) {
           {tile("text", 6, 132, 86, 40, ARCH.text[lang], undefined, "var(--surface)", "var(--ink-2)")}
           {arrow(92, 76, 100, 76)}
           {tile("projector", 102, 62, 44, 28, "MLP", undefined, "var(--surface)", "var(--ink-2)")}
-          {arrow(146, 76, 168, 100)}
-          {arrow(92, 152, 168, 130)}
-          {tile("embed", 170, 92, 96, 46, "Embedding", "NoPE")}
-          {arrow(266, 115, 296, 115)}
+          {arrow(146, 76, 168, 96)}
+          {arrow(92, 152, 168, 122)}
+          {tile("embed", 170, 85, 96, 46, "Embedding", "NoPE")}
+          {arrow(266, 108, 296, 108)}
 
-          {/* 上图：一个独立的 4-layer unit */}
-          <rect x="286" y="46" width="438" height="142" rx="12" fill="none" stroke="var(--border)" strokeWidth="1.4" />
-          <rect x="300" y="40" width={lang === "zh" ? 136 : 150} height="20" rx="6" fill="var(--surface)" />
-          <text x="308" y="55" fontSize="10" fontWeight="650" fill="var(--ink)">{ARCH.unitLabel[lang]}</text>
+          {/* 上图：一个 unit 的子层链，每个子层后接残差 ⊕ */}
+          <rect x="286" y="52" width="438" height="132" rx="12" fill="none" stroke="var(--border)" strokeWidth="1.4" />
+          <rect x="300" y="174" width={lang === "zh" ? 136 : 150} height="20" rx="6" fill="var(--surface)" />
+          <text x="308" y="189" fontSize="10" fontWeight="650" fill="var(--ink)">{ARCH.unitLabel[lang]}</text>
 
-          {LAYERS.map((kind, i) => {
-            const x = BLOCK_X + i * (TILE_W + GAP_X);
+          {/* ×3 / ×1：报告里 KDA+LatentMoE 重复 3 次，Gated MLA+LatentMoE 1 次 */}
+          {[
+            { from: 0, to: 1, times: "×3" },
+            { from: 2, to: 3, times: "×1" },
+          ].map(({ from, to, times }) => {
+            const x1 = subX(from);
+            const x2 = plusX(to) + 10;
             return (
-              <g key={i}>
-                {kind === "kda"
-                  ? tile("kda", x, ATTN_Y, TILE_W, TILE_H, "KDA", "attention", "var(--series-1)", "var(--accent-ink)")
-                  : tile(
-                      "mla",
-                      x,
-                      ATTN_Y,
-                      TILE_W,
-                      TILE_H,
-                      "Gated MLA",
-                      "attention",
-                      "color-mix(in srgb, var(--series-1) 40%, var(--surface))",
-                    )}
-                {arrow(x + TILE_W / 2, ATTN_Y + TILE_H, x + TILE_W / 2, FFN_Y)}
-                {/* 每层 attention 都配一个 Stable LatentMoE;dense 只出现在全模型第 1 层,不属于这个重复单元 */}
-                {tile(
-                  "moe",
-                  x,
-                  FFN_Y,
-                  TILE_W,
-                  TILE_H,
-                  "LatentMoE",
-                  "FFN",
-                  "color-mix(in srgb, var(--series-2) 26%, var(--surface))",
-                )}
+              <g key={times}>
+                <path
+                  d={`M ${x1} ${ROW_Y - 12} L ${x1} ${ROW_Y - 18} L ${x2} ${ROW_Y - 18} L ${x2} ${ROW_Y - 12}`}
+                  fill="none"
+                  stroke="var(--axis)"
+                  strokeWidth="1"
+                />
+                <text x={(x1 + x2) / 2} y={ROW_Y - 22} textAnchor="middle" fontSize="10" fontWeight={650} fill="var(--ink-2)">
+                  {times}
+                </text>
               </g>
             );
           })}
 
-          {/* 下图：3 个 4-layer unit 组成一个 12-layer block，AttnRes 保留各 block 摘要 */}
-          <rect x="140" y="210" width="620" height="156" rx="12" fill="color-mix(in srgb, var(--accent) 2%, var(--surface))" stroke="var(--border)" strokeWidth="1.4" />
-          <text x="160" y="233" fontSize="11" fontWeight="650" fill="var(--ink)">{ARCH.repeat[lang]}</text>
+          {SUBLAYERS.map((layer, i) => {
+            const x = subX(i);
+            const cx = plusX(i);
+            const midY = ROW_Y + TILE_H / 2;
+            const isAttn = layer.sub === "attention";
+            const fill =
+              layer.id === "kda"
+                ? "var(--series-1)"
+                : layer.id === "mla"
+                  ? "color-mix(in srgb, var(--series-1) 40%, var(--surface))"
+                  : "color-mix(in srgb, var(--series-2) 26%, var(--surface))";
+            return (
+              <g key={`${layer.id}-${i}`}>
+                {tile(layer.id, x, ROW_Y, TILE_W, TILE_H, layer.label, layer.sub, fill, layer.id === "kda" && isAttn ? "var(--accent-ink)" : "var(--ink)")}
+                {/* residual：从子层输入绕到它后面的 ⊕ */}
+                <path
+                  d={`M ${x - 6} ${midY} L ${x - 6} ${ROW_Y - 6} L ${cx} ${ROW_Y - 6} L ${cx} ${midY - 9}`}
+                  fill="none"
+                  stroke="var(--axis)"
+                  strokeWidth="1"
+                  opacity="0.55"
+                />
+                {arrow(x + TILE_W, midY, cx - 9, midY)}
+                <circle cx={cx} cy={midY} r="9" fill="var(--surface)" stroke="var(--axis)" strokeWidth="1.2" />
+                <text x={cx} y={midY + 4} textAnchor="middle" fontSize="11" fill="var(--ink-2)">+</text>
+                {i < SUBLAYERS.length - 1 && arrow(cx + 9, midY, subX(i + 1), midY)}
+                {/* AttnRes：每个子层各有一条 α 取回 */}
+                <line x1={x + TILE_W / 2} y1={ROW_Y + TILE_H} x2={x + TILE_W / 2} y2={ALPHA_Y - 8} stroke="var(--axis)" strokeWidth="1" strokeDasharray="3 3" markerEnd="url(#arch-arrow)" />
+                <circle cx={x + TILE_W / 2} cy={ALPHA_Y} r="8" fill="var(--surface)" stroke="var(--axis)" strokeWidth="1.2" />
+                <text x={x + TILE_W / 2} y={ALPHA_Y + 4} textAnchor="middle" fontSize="10" fill="var(--ink-2)">α</text>
+                <line x1={x + TILE_W / 2} y1={ALPHA_Y + 8} x2={x + TILE_W / 2} y2={ALPHA_RAIL_Y} stroke="var(--axis)" strokeWidth="1" />
+              </g>
+            );
+          })}
+          <line x1={subX(0) + TILE_W / 2} y1={ALPHA_RAIL_Y} x2={subX(3) + TILE_W / 2} y2={ALPHA_RAIL_Y} stroke="var(--axis)" strokeWidth="1.4" strokeLinecap="round" />
+          <text x={subX(3) + TILE_W + 4} y={ALPHA_RAIL_Y + 4} fontSize="9" fill="var(--muted)">α</text>
+
+          {/* 下图：3 个 unit 组成一个 12-layer block，AttnRes 保留各 block 摘要 */}
+          <rect x="140" y="204" width="620" height="156" rx="12" fill="color-mix(in srgb, var(--accent) 2%, var(--surface))" stroke="var(--border)" strokeWidth="1.4" />
+          <text x="160" y="227" fontSize="11" fontWeight="650" fill="var(--ink)">{ARCH.repeat[lang]}</text>
           <g
             className="arch-clickable"
             onClick={() => setActive({
@@ -275,7 +313,7 @@ export default function ArchViz({ lang = "zh" }: { lang?: Locale }) {
             <title>{ARCH_DETAILS.find((d) => d.id === "attnres")?.detail[lang]}</title>
             <text
               x="450"
-              y="271"
+              y="265"
               textAnchor="middle"
               fontSize="10"
               fontWeight={active?.key === "attnres-rail" ? 700 : 400}
@@ -299,25 +337,26 @@ export default function ArchViz({ lang = "zh" }: { lang?: Locale }) {
               {ARCH.attnresSource[lang]}
             </text>
           </g>
+          {/* 上面每个子层的 α 都从这些 block 摘要里取回 */}
           <line
-            x1="450"
-            y1="210"
-            x2="450"
-            y2="192"
+            x1={subX(1) + TILE_W / 2}
+            y1="204"
+            x2={subX(1) + TILE_W / 2}
+            y2={ALPHA_RAIL_Y + 4}
             stroke="var(--axis)"
             strokeWidth="1.4"
             strokeDasharray="4 3"
             markerEnd="url(#arch-arrow)"
           />
-          <text x="458" y="204" fontSize="9" fill="var(--muted)">{ARCH.attnresFeed[lang]}</text>
+          <text x={subX(1) + TILE_W / 2 + 8} y="196" fontSize="9" fill="var(--muted)">{ARCH.attnresFeed[lang]}</text>
           {Array.from({ length: 8 }, (_, index) => attnBlock(index))}
-          <text x={(groupStartX + groupStartX + 7 * groupStep + groupWidth) / 2} y="359" textAnchor="middle" fontSize="9.5" fill="var(--muted)">
+          <text x={(groupStartX + groupStartX + 7 * groupStep + groupWidth) / 2} y="353" textAnchor="middle" fontSize="9.5" fill="var(--muted)">
             {ARCH.blockCount[lang]}
           </text>
 
           {/* 输出侧 */}
-          {arrow(blockRight + 4, 115, blockRight + 40, 115)}
-          {tile("out", blockRight + 42, 92, 82, 46, ARCH.outLabel[lang], undefined, "var(--surface)", "var(--ink-2)")}
+          {arrow(blockRight + 4, ROW_Y + TILE_H / 2, blockRight + 34, ROW_Y + TILE_H / 2)}
+          {tile("out", blockRight + 36, 85, 82, 46, ARCH.outLabel[lang], undefined, "var(--surface)", "var(--ink-2)")}
           {selectionCallout()}
         </svg>
       </div>
