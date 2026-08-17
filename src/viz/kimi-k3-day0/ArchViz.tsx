@@ -165,9 +165,15 @@ export default function ArchViz({ lang = "zh" }: { lang?: Locale }) {
     if (!active) return null;
     const w = lang === "zh" ? 210 : 264;
     const h = 34;
-    const fitsLeft = active.x - 12 - w >= 8;
-    const x = fitsLeft ? active.x - 12 - w : Math.min(WIDTH - w - 8, active.x + active.width + 12);
-    const y = Math.max(6, Math.min(HEIGHT - h - 6, active.y + active.height / 2 - h / 2));
+    // 顶部那排规格胶囊的气泡固定放在它们右边的空白里，否则会压到相邻胶囊
+    const topStrip = active.y < 40;
+    const fitsLeft = !topStrip && active.x - 12 - w >= 8;
+    const x = topStrip
+      ? 290
+      : fitsLeft
+        ? active.x - 12 - w
+        : Math.min(WIDTH - w - 8, active.x + active.width + 12);
+    const y = topStrip ? 6 : Math.max(6, Math.min(HEIGHT - h - 6, active.y + active.height / 2 - h / 2));
     return (
       <g aria-live="polite">
         <line
@@ -254,7 +260,7 @@ export default function ArchViz({ lang = "zh" }: { lang?: Locale }) {
                 {/* 子层后的残差加法 */}
                 {node(COL_X, plusY, "+")}
                 {/* residual：绕过子层，从它的输入接到 ⊕ */}
-                {plain(`M ${COL_X} ${layer.y + TILE_H + 10} L ${COL_X - 84} ${layer.y + TILE_H + 10} L ${COL_X - 84} ${plusY} L ${COL_X - 9} ${plusY}`, {
+                {plain(`M ${COL_X} ${layer.y + TILE_H + 10} L ${COL_X - 92} ${layer.y + TILE_H + 10} L ${COL_X - 92} ${plusY} L ${COL_X - 9} ${plusY}`, {
                   stroke: residualStroke,
                   width: residualWidth,
                 })}
@@ -274,8 +280,8 @@ export default function ArchViz({ lang = "zh" }: { lang?: Locale }) {
 
           {/* 1× / 3×：报告的重复标记 */}
           {[
-            { label: "1×", top: 76, bottom: 190 },
-            { label: "3×", top: 212, bottom: 326 },
+            { label: "1×", top: 90, bottom: 196 },
+            { label: "3×", top: 226, bottom: 332 },
           ].map(({ label, top, bottom }) => (
             <g key={label}>
               {plain(`M 536 ${top} L 528 ${top} L 528 ${bottom} L 536 ${bottom}`)}
@@ -314,12 +320,12 @@ export default function ArchViz({ lang = "zh" }: { lang?: Locale }) {
           {/* ───────── 左上：Stable LatentMoE 模块 ───────── */}
           <rect x="20" y="60" width="470" height="240" rx="12" fill="none" stroke="var(--border)" strokeWidth="1.2" strokeDasharray="6 4" />
           <text x="32" y="78" fontSize="9.5" fill="var(--muted)">{ARCH.moduleMoe[lang]}</text>
-          {plain(`M 470 118 L 578 100`, { dash: "3 3" })}
+          {plain(`M 470 108 L 556 64`, { dash: "3 3" })}
 
-          <rect x="34" y="88" width="12" height="12" rx="3" fill="color-mix(in srgb, var(--good) 26%, var(--surface))" stroke="var(--border)" strokeWidth="1" />
-          <text x="52" y="98" fontSize="9" fill="var(--ink-2)">{ARCH.sharedExpert[lang]}</text>
-          <rect x="34" y="106" width="12" height="12" rx="3" fill="color-mix(in srgb, var(--series-1) 22%, var(--surface))" stroke="var(--border)" strokeWidth="1" />
-          <text x="52" y="116" fontSize="9" fill="var(--ink-2)">{ARCH.routedExpert[lang]}</text>
+          <rect x="352" y="96" width="12" height="12" rx="3" fill="color-mix(in srgb, var(--good) 26%, var(--surface))" stroke="var(--border)" strokeWidth="1" />
+          <text x="370" y="106" fontSize="9" fill="var(--ink-2)">{ARCH.sharedExpert[lang]}</text>
+          <rect x="352" y="116" width="12" height="12" rx="3" fill="color-mix(in srgb, var(--series-1) 22%, var(--surface))" stroke="var(--border)" strokeWidth="1" />
+          <text x="370" y="126" fontSize="9" fill="var(--ink-2)">{ARCH.routedExpert[lang]}</text>
 
           {/* 输入 → router / 降维投影 */}
           {plain(`M 250 292 L 250 268`, { width: 1.4 })}
@@ -361,7 +367,7 @@ export default function ArchViz({ lang = "zh" }: { lang?: Locale }) {
           {/* ───────── 左下：KDA 模块 ───────── */}
           <rect x="20" y="330" width="470" height="330" rx="12" fill="none" stroke="var(--border)" strokeWidth="1.2" strokeDasharray="6 4" />
           <text x="32" y="348" fontSize="9.5" fill="var(--muted)">{ARCH.moduleKda[lang]}</text>
-          {plain(`M 470 452 L 578 320`, { dash: "3 3" })}
+          {plain(`M 470 452 L 556 352`, { dash: "3 3" })}
 
           {/* 输入分发到 q k / v / α / β / output gate */}
           {plain(`M 250 652 L 250 634`, { width: 1.4 })}
@@ -425,9 +431,9 @@ export default function ArchViz({ lang = "zh" }: { lang?: Locale }) {
           {arrow(180, 371, 180, 366)}
           {arrow(180, 344, 180, 334)}
 
-          {/* 规格胶囊 */}
-          {box(WIDTH - 250, 8, 132, 22, "2.8T / 104B", { id: "scale", size: 10 })}
-          {box(WIDTH - 106, 8, 96, 22, "MXFP4", { id: "mxfp4", size: 10 })}
+          {/* 规格胶囊：放左上空白处，说明气泡才不会压住 Output 和顶部的 w */}
+          {box(20, 8, 132, 22, "2.8T / 104B", { id: "scale", size: 10 })}
+          {box(164, 8, 96, 22, "MXFP4", { id: "mxfp4", size: 10 })}
 
           {selectionCallout()}
         </svg>
