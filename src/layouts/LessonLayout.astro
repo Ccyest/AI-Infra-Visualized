@@ -22,11 +22,17 @@ const idx = all.findIndex((l) => l.entry.id === entry.id);
 const prev = idx > 0 ? all[idx - 1] : null;
 const next = idx >= 0 && idx < all.length - 1 ? all[idx + 1] : null;
 
-// 语言切换目标:找另一语言的同 slug 课程;没写对应译文时退回该语言首页(避免 404)
+// 语言切换目标:找另一语言的同 slug 课程;没写对应译文时退回该语言的第一篇课程
+// (主界面已下线,不能再退回首页;该语言一篇课程都没有时留在本页)
 const slug = entry.id.slice(locale.length + 1);
 const other: Locale = locale === "zh" ? "en" : "zh";
-const twin = (await publishedLessons(other)).find((l) => l.slug === slug);
-const altPath = twin ? lessonPath(other, twin.slug) : other === "zh" ? "/" : "/en/";
+const others = await publishedLessons(other);
+const twin = others.find((l) => l.slug === slug);
+const altPath = twin
+  ? lessonPath(other, twin.slug)
+  : others[0]
+    ? lessonPath(other, others[0].slug)
+    : lessonPath(locale, slug);
 ---
 
 <Base

@@ -50,7 +50,6 @@ const otherLang = locale === "en" ? "zh-CN" : "en";
         <>
           <link rel="alternate" hreflang={otherLang} href={new URL(altHref, Astro.site).href} />
           <link rel="alternate" hreflang={HTML_LANG[locale]} href={new URL(Astro.url.pathname, Astro.site).href} />
-          <link rel="alternate" hreflang="x-default" href={new URL(withBase("/"), Astro.site).href} />
         </>
       )
     }
@@ -68,7 +67,7 @@ const otherLang = locale === "en" ? "zh-CN" : "en";
   <body>
     <header class="site-header">
       <div class="site-header-inner">
-        <a class="site-brand" href={withBase(locale === "en" ? "/en/" : "/")}>
+        <a class="site-brand" href={SITE.homeUrl}>
           {SITE.title}
         </a>
         <nav class="site-nav">
