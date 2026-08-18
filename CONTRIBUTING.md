@@ -31,7 +31,7 @@
 | `title` | string | 文章标题 |
 | `description` | string | 一句话简介(首页卡片与 `<meta>` 均用它) |
 | `order` | number | 排序与上一篇/下一篇导航用,新文章递增(首页按新→旧展示) |
-| `concepts` | string[] | 涉及的概念标签,显示为章节 chips(可省略) |
+| `concepts` | string[] | 已弃用:文章不加概念标签,留空即可 |
 | `tryOnSglang` | url | SGLang cookbook 对应章节,渲染为文末引流按钮(可省略) |
 | `references` | {label, url}[] | 延伸阅读,自动渲染在文末(可省略;**不得引用 vLLM**) |
 | `draft` | boolean | `true` 时不构建发布,仅本地 `npm run dev` 可预览(可省略,默认 false) |

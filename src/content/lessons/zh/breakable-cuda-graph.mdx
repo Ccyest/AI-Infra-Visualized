@@ -2,13 +2,6 @@
 title: "Breakable CUDA Graph:SGLang 的 CUDA Graph 进阶"
 description: "SGLang 围绕 Runner/Backend 接口重构了 CUDA Graph 支持:BCG 在 capture 过程中插入 eager 断点,full CUDA Graph 通过 token bucket 和 request padding 覆盖 prefill,graph 显存则依靠复用与合适的 capture 上限来控制。"
 order: 4
-concepts:
-  - Kernel launch 开销
-  - Runner/Backend 解耦
-  - "@eager_on_graph"
-  - Persistent boundary buffer
-  - Token bucket 与 zero-length sentinel
-  - Capture ceiling
 tryOnSglang: "https://github.com/sgl-project/sglang"
 references:
   - label: "LMSYS Blog:Advanced CUDA Graph Techniques in SGLang"

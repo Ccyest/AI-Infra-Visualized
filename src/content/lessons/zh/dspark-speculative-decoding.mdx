@@ -3,11 +3,6 @@ title: "DSpark：大 batch 下的投机解码"
 description: "小模型整块起草、大模型整块验证是投机解码的常规部分；DSpark 的增量在于按置信度裁剪验证窗口和 ragged 打包。batch 256 下相对 verify-all 吞吐 +68%，K3 的 BS=1 解码从 113 提到 423 tok/s。"
 order: 3
 draft: true
-concepts:
-  - speculative decoding
-  - semi-autoregressive block drafter
-  - confidence-scheduled verification
-  - ragged verification / CUDA graph
 tryOnSglang: "https://github.com/sgl-project/sglang"
 references:
   - label: "LMSYS Blog：DSpark in SGLang(本文的第一手来源)"
