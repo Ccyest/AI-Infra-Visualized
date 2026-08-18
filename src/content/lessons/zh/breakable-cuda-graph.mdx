@@ -41,12 +41,12 @@ eager 模式执行：
 
 <LaunchRaceViz client:visible />
 
-但在维护 SGLang 的过程中，我们发现把 CUDA Graph 用好远不止「录一遍」。attention
-backend 要按活的 sequence length 做 planning，collective
-涉及运行时协调，LoRA、MoE、PD disaggregation
-各带动态逻辑——只要出现一个不兼容算子，一大段 forward
-就无图可用。我们最初的答案是借助 torch.compile：先让编译器 trace 完整
-forward，再在注册的切分点把图拆开。它能工作，但编译时间随模型复杂度增长，每个自定义
+但在维护 SGLang 的过程中，我们发现把 CUDA Graph
+用好远不止「全部操作录一遍」。attention backend 要按活的 sequence length 做
+planning，collective 涉及运行时协调，LoRA、MoE、PD disaggregation
+各带动态逻辑——只要出现一个不兼容算子破坏，一大段 forward 就会没办法使用 CUDA
+Graph。我们最初的答案是借助 torch.compile：先让编译器 trace 完整
+forward，再在注册的切分点把图拆开。它能达成目标，但编译时间随模型复杂度增长，每个自定义
 kernel 都要为 tracing 写适配，图的边界也要迁就编译器能表示的类型。这条路线的流程如下：
 
 <TcPiecewiseViz client:visible />
@@ -134,57 +134,56 @@ region，普通 Python 代码在每次 replay 时仍能执行。SGLang 还通过
 metadata 准备流程。这形成了一个很有用的调试边界：如果问题依然存在，原因很可能在模型或
 runner 路径中；如果问题消失，则应优先怀疑 capture 本身。
 
-BCG 也已用于 SGLang 的 diffusion stack（#27436）。diffusion 会在 denoising
-过程中反复执行同一套 DiT forward，当这些 forward 包含大量受 launch 开销限制的小
-kernel 时，CUDA Graph 尤其有效：warmup 之后，单张 B200 上 512×512 的 Qwen-Image
-端到端延迟从 6.48 秒降至 2.45 秒，Z-Image 从 1.231 秒降至 0.662 秒。BCG
-消除的是 launch 开销，不会减少模型 FLOPs，也不会降低 compute-bound kernel
-的计算成本；当暴露出来的 launch gap 在总执行时间中占比较高时，它的优势最大。
+> BCG 也已用于 SGLang 的 diffusion stack（#27436）。diffusion 会在 denoising
+> 过程中反复执行同一套 DiT forward，当这些 forward 包含大量受 launch 开销限制的小
+> kernel 时，CUDA Graph 尤其有效：warmup 之后，单张 B200 上 512×512 的 Qwen-Image
+> 端到端延迟从 6.48 秒降至 2.45 秒，Z-Image 从 1.231 秒降至 0.662 秒。BCG
+> 消除的是 launch 开销，不会减少模型 FLOPs，也不会降低 compute-bound kernel
+> 的计算成本；当暴露出来的 launch gap 在总执行时间中占比较高时，它的优势最大。
 
-## Prefill 的 full CUDA Graph
+## 基于 BCG 进一步优化：Prefill 的 full CUDA Graph
 
-前面的 BCG 靠断开换来兼容性：不兼容算子留在图外，代价是每个断点处保留一小段
-eager 执行。full CUDA Graph 是三种 backend 里最彻底的一种：整个 forward
-捕成一张图，没有任何 eager region，replay 时的发射次数也最少。decode
-一直是这样跑的——每个 request 只贡献一个 token，唯一变化的维度是 batch
-size，捕一组 batch size bucket 就能覆盖。这一节要把同样的捕法推到 prefill 上。
+前面提到，BCG 靠断开 CUDA Graph
+换来兼容性：不兼容算子留在图外，代价是每个断点处保留一小段 eager
+执行。而相对应的，full CUDA Graph 把整个 forward 捕成一张图，没有任何 eager
+region，replay 时的发射次数也最少。这一节要把同样的捕法推到 prefill 上。
 
 ### 让 prefill 静态化
 
-prefill 难捕，是因为一个
-batch 会同时在两个维度上变化——总 token 数，以及这些 token 所属的 request
-数量——而被捕获的 graph 要求这两个维度都保持固定。再加上部分 attention backend
-依赖运行时 metadata，full CUDA Graph 一度很难应用于 prefill，这也是 prefill
-路径采用 BCG 的主要原因之一。最近，#27988 重新设计了 request slot 和 attention
-metadata 的表示方式，让受支持的 attention backend 不必再放到 graph 外执行。
+相比于 decode AR step 固定的大小，prefill 的捕捉难度在于：一个 prefill batch
+的总 token 数，以及这些 token 所属的 request 数是变化的。而 CUDA Graph
+要求这两个维度都保持固定。加之，部分 attention backend 依赖运行时
+metadata。因此，full CUDA Graph 一度很难应用于 prefill，这也是 prefill 路径采用
+BCG 的主要原因之一。最近，#27988 重新设计了 request slot 和 attention metadata
+的表示方式，让受支持的 attention backend 不必再放到 graph 外执行。
 
 SGLang 通过 token bucket 固定 token 维度：实时 batch 会 pad
 到最近的已捕获 token 数，与 decode 把 batch size pad 到已捕获 bucket
 的做法类似。request 维度单独处理：每张捕获的 graph 预留固定数量的 request
 slot，真实 request 占用前几个，未使用的 slot 被重写为长度为 0 的
-sentinel——sequence length 和 extend length 都设为 0，offset 放到真实 token
-之后。如果 batch 中的 request 数量超过 graph 预留的 slot 数，就回退到 eager
-执行。由于捕获的 graph 仍会读取完整的 request table，sentinel metadata
-必须在每次 replay 时重写；attention metadata 同样需要在 graph 外根据 pad 后的
-batch 重建。因此，目前只有按这种方式准备 extend-mode metadata 的 attention
-backend 才能使用 prefill full capture，包括 FlashAttention（fa4）和 FlashInfer：
+sentinel——sequence length 和 extend length 都设为 0，offset
+放到末尾的最后一个真实 token（非 padding）。如果 batch 中的 request
+数量超过 graph 预留的 slot 数，就回退到 eager 执行。由于捕获的 graph
+仍会读取完整的 request table，sentinel metadata 必须在每次 replay
+时重写；attention metadata 同样需要在 graph 外根据 pad 后的 batch
+重建。因此，目前只有按这种方式准备 extend-mode metadata 的 attention backend
+才能使用 prefill full capture，包括 FlashAttention（fa4）和 FlashInfer。
+
+如图所示，一共展示两个维度：token 维和 request 维：
 
 <PrefillPadViz client:visible />
 
 ### Padding 的代价
 
-两种 padding 的成本差异很大。padding token
-会产生真实计算：它们会成为捕获 batch 中的实际行，并作为同一批 GEMM 的一部分经过
-dense projection。SGLang 会单独传递真实 token 数，使 MoE routing、attention 和
-linear attention kernel 能够跳过 padding 区域的大部分计算，但 dense computation
-仍然需要处理这些额外的行。空 request slot 的成本要低得多：FlashAttention
-的变长调度根据每条 sequence 的真实长度决定工作量，不会为每个 slot
-分配固定计算，长度为 0 的 request 基本不会产生 attention 计算，只会增加
-metadata 和少量调度开销。这种不对称性很重要：token padding 是昂贵的维度，request
-slot padding 则相对便宜。
+两种 padding 的成本差异很大。padding token 会产生真实计算，而空 request slot
+的成本要低得多：FlashAttention 的变长调度根据每条 sequence
+的真实长度决定工作量，不会为每个 slot 分配固定计算，长度为 0 的 request
+基本不会产生 attention 计算，只会增加 metadata
+和少量调度开销。这种不对称性很重要：token padding 是昂贵的维度，request slot
+padding 则相对便宜。
 
 prefill full capture 目前仍是实验性功能，必须显式开启；engine 会提示 full
-处于实验阶段，并建议生产 workload 使用 breakable 或 tc_piecewise。扩大 backend
+处于实验阶段，并建议生产 workload 使用 BCG 或 tc_piecewise。扩大 backend
 支持范围、继续调整 bucket 和 slot 的选择，仍是后续工作。
 
 ### Prefill benchmark

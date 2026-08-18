@@ -44,14 +44,15 @@ operations running eagerly between them:
 <LaunchRaceViz client:visible lang="en" />
 
 While maintaining SGLang, though, we found that using CUDA Graph well takes
-far more than recording once. Attention backends plan from live sequence
-lengths, collectives coordinate at runtime, and LoRA, MoE, and PD
-disaggregation each bring dynamic logic — one incompatible operation can leave
-a much larger part of the forward uncaptured. Our first answer went through
-torch.compile: trace the full forward, then split the graph at registered
-points. It worked, but compilation time grew with model complexity, every
-custom kernel needed scaffolding just to be traceable, and graph boundaries
-had to bend to what the compiler could represent. Here is that route in full:
+far more than recording every operation once. Attention backends plan from
+live sequence lengths, collectives coordinate at runtime, and LoRA, MoE, and
+PD disaggregation each bring dynamic logic — a single incompatible operation
+breaking the graph leaves a large stretch of the forward unable to use CUDA
+Graph at all. Our first answer went through torch.compile: trace the full
+forward, then split the graph at registered points. It got the job done, but
+compilation time grew with model complexity, every custom kernel needed
+scaffolding just to be traceable, and graph boundaries had to bend to what the
+compiler could represent. Here is that route in full:
 
 <TcPiecewiseViz client:visible lang="en" />
 
@@ -156,71 +157,69 @@ provides a useful debugging boundary: if the problem remains, it is likely in
 the model or runner path; if it disappears, capture itself becomes the primary
 suspect.
 
-BCG has also been adopted by SGLang's diffusion stack (#27436). Diffusion
-repeatedly executes the same DiT forward during denoising, making CUDA Graph
-especially useful when those forwards contain many small, launch-bound
-kernels: after warmup, Qwen-Image at 512×512 on a single B200 improves from
-6.48 s to 2.45 s end-to-end latency, and Z-Image improves from 1.231 s to
-0.662 s. BCG removes launch overhead; it does not reduce model FLOPs or make
-compute-bound kernels cheaper. Its advantage is largest when exposed launch
-gaps are a meaningful fraction of execution time.
+> BCG has also been adopted by SGLang's diffusion stack (#27436). Diffusion
+> repeatedly executes the same DiT forward during denoising, making CUDA Graph
+> especially useful when those forwards contain many small, launch-bound
+> kernels: after warmup, Qwen-Image at 512×512 on a single B200 improves from
+> 6.48 s to 2.45 s end-to-end latency, and Z-Image improves from 1.231 s to
+> 0.662 s. BCG removes launch overhead; it does not reduce model FLOPs or make
+> compute-bound kernels cheaper. Its advantage is largest when exposed launch
+> gaps are a meaningful fraction of execution time.
 
-## Full CUDA Graph for prefill
+## Building on BCG: full CUDA Graph for prefill
 
-BCG buys compatibility by breaking: incompatible operations stay outside the
-graphs, at the cost of a short eager stretch at every break. Full CUDA Graph
-is the most complete of the three backends: the whole forward is captured as
-one graph, with no eager regions and the fewest replay-time launches. Decode
-has always run this way — each request contributes one token, the only varying
-dimension is batch size, and a set of captured batch-size buckets covers it.
-This section pushes the same capture onto prefill.
+As covered earlier, BCG buys compatibility by breaking the CUDA Graph:
+incompatible operations stay outside the graphs, at the cost of a short eager
+stretch at every break. Full CUDA Graph, by contrast, captures the whole
+forward as one graph, with no eager regions and the fewest replay-time
+launches. This section pushes the same capture onto prefill.
 
 ### Making prefill static
 
-Prefill is hard to capture because a batch varies
-in two dimensions at once — the total number of tokens and the number of
-requests those tokens belong to — while a captured graph requires both to
-remain fixed. Together with attention backends that depend on runtime
-metadata, this made full CUDA Graph difficult to apply to prefill and was one
-of the main reasons we adopted Breakable CUDA Graph there. More recently,
-#27988 restructured how request slots and attention metadata are represented,
-so that supported attention backends no longer have to remain outside the
-graph.
+Unlike a decode AR step, whose size stays fixed, prefill is hard to capture
+because a prefill batch varies in two dimensions: the total number of tokens,
+and the number of requests those tokens belong to. CUDA Graph requires both
+dimensions to remain fixed. On top of that, some attention backends depend on
+runtime metadata. Full CUDA Graph was therefore long difficult to apply to
+prefill, which was one of the main reasons the prefill path adopted BCG. More
+recently, #27988 redesigned how request slots and attention metadata are
+represented, so that supported attention backends no longer have to run
+outside the graph.
 
 SGLang fixes the token dimension with token buckets: a live batch is padded to
 the nearest captured token count, much like decode pads batch size to a
 captured bucket. The request dimension is handled separately. Each captured
 graph reserves a fixed number of request slots; live requests occupy the first
-slots, and unused ones are rewritten as zero-length sentinels, with zero
-sequence and extend lengths and offsets parked after the real tokens. If a
-batch contains more requests than the graph has slots, it falls back to eager
-execution. The sentinel metadata must be rewritten on every replay because the
-captured graph still reads the entire request table, and attention metadata is
-likewise rebuilt outside the graph for the padded batch. Full prefill capture
-therefore currently requires attention backends that prepare extend-mode
-metadata this way, including FlashAttention (fa4) and FlashInfer:
+slots, and unused ones are rewritten as zero-length sentinels — sequence
+length and extend length both set to zero, with the offset parked at the last
+real (non-padding) token at the end. If a batch contains more requests than
+the graph has slots, it falls back to eager execution. The sentinel metadata
+must be rewritten on every replay because the captured graph still reads the
+entire request table, and attention metadata is likewise rebuilt outside the
+graph for the padded batch. Full prefill capture therefore currently requires
+attention backends that prepare extend-mode metadata this way, including
+FlashAttention (fa4) and FlashInfer.
+
+As shown below, the diagram covers both dimensions — the token dimension and
+the request dimension:
 
 <PrefillPadViz client:visible lang="en" />
 
 ### What does the padding cost?
 
 The two forms of padding have very different costs. Padded tokens are real
-work: they become actual rows in the captured batch and therefore pass through
-dense projections as part of the same GEMMs. SGLang carries the true token
-count separately, allowing MoE routing, attention, and linear-attention
-kernels to skip much of the padded region, but dense computation still pays
-for those extra rows. Empty request slots are much cheaper: in
-FlashAttention's variable-length scheduler, work is derived from each
-sequence's actual length rather than assigning a fixed amount of computation
-to every request slot, so a zero-length request contributes essentially no
-attention work — it mainly adds metadata and a small amount of scheduling
-overhead. This asymmetry is important: token padding is the expensive
-dimension, while request-slot padding is comparatively cheap.
+work, while empty request slots are much cheaper: in FlashAttention's
+variable-length scheduler, work is derived from each sequence's actual length
+rather than assigning a fixed amount of computation to every request slot, so
+a zero-length request contributes essentially no attention work — it mainly
+adds metadata and a small amount of scheduling overhead. This asymmetry is
+important: token padding is the expensive dimension, while request-slot
+padding is comparatively cheap.
 
 Full prefill capture is still an experimental feature. It has to be enabled
-explicitly — the engine warns that full is experimental and points to
-breakable or tc_piecewise for production workloads. Broadening backend support
-and tuning the bucket and slot choices is still ahead of us.
+explicitly — the engine warns that full is experimental and points to BCG or
+tc_piecewise for production workloads. Broadening backend support and tuning
+the bucket and slot choices is still ahead of us.
 
 ### Prefill benchmark
 
