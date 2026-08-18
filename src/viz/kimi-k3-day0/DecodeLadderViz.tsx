@@ -18,8 +18,6 @@ const COPY = {
     dsparkTitle: "加上 DSpark",
     dsparkFrom: "112.5 tok/s",
     dsparkTo: "约 423 tok/s",
-    dsparkGain: "约 3.7× non-speculative",
-    dsparkNote: "一次验证并接收多个 draft tokens",
   },
   en: {
     title: "BS=1 decode optimization",
@@ -34,8 +32,6 @@ const COPY = {
     dsparkTitle: "Add DSpark",
     dsparkFrom: "112.5 tok/s",
     dsparkTo: "~423 tok/s",
-    dsparkGain: "~3.7× non-speculative",
-    dsparkNote: "Verify and accept several draft tokens per step",
   },
 } as const;
 
@@ -102,8 +98,8 @@ export default function DecodeLadderViz({ lang = "zh" }: { lang?: Locale }) {
             </span>
           </label>
           <div className="serving-dspark-jump">
-            <span><b>{copy.dsparkTitle}</b><small>{copy.dsparkNote}</small></span>
-            <strong>{copy.dsparkFrom}</strong><i>→</i><strong>{copy.dsparkTo}</strong><em>{copy.dsparkGain}</em>
+            <span><b>{copy.dsparkTitle}</b></span>
+            <strong>{copy.dsparkFrom}</strong><i>→</i><strong>{copy.dsparkTo}</strong>
           </div>
         </section>
       </div>
