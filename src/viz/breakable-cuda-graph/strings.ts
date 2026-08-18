@@ -323,44 +323,58 @@ export const REUSE = {
 export const MEM = {
   title: { zh: "Capture 天花板图示", en: "Capture-ceiling diagram" },
   subtitle: {
-    zh: "拖动 capture 上限；点按钮切换模型",
-    en: "Drag the capture ceiling; pick a model",
+    zh: "prefill 显存对 no-graph baseline 的增量；点按钮切换模型",
+    en: "Prefill memory vs the no-graph baseline; pick a model",
   },
   modelsAria: { zh: "切换模型", en: "Switch model" },
-  sliderLabel: { zh: "capture 上限", en: "capture ceiling" },
-  atChunkMark: { zh: "= chunk size", en: "= chunk size" },
-  xAxis: { zh: "capture 上限", en: "capture ceiling" },
-  xEnd: { zh: "chunk size", en: "chunk size" },
-  legendPeak: { zh: "eager activation 峰值（瞬时）", en: "eager activation peak (transient)" },
+  colBaseline: { zh: "无 graph", en: "no graphs" },
+  colBelow: { zh: "天花板 < chunk", en: "ceiling < chunk" },
+  colAt: { zh: "捕到 chunk size", en: "through chunk size" },
+  legendPeak: { zh: "eager activation 峰值（瞬态）", en: "eager activation peak (transient)" },
   legendResident: { zh: "graph 常驻显存", en: "resident graph memory" },
   baselineMark: { zh: "no-graph baseline", en: "no-graph baseline" },
-  readResident: { zh: "常驻", en: "resident" },
-  readPeak: { zh: "eager 峰值", en: "eager peak" },
-  readTotal: { zh: "合计", en: "total" },
   schematicNote: {
-    zh: "端点为实测，中间为示意插值",
-    en: "endpoints measured; interpolation schematic",
+    zh: "峰值与差值为实测，常驻切分为示意",
+    en: "peaks and deltas measured; resident split schematic",
   },
 } satisfies Record<string, Localized>;
 
 export interface MemModel {
   id: string;
   label: string;
-  /** GB;无 graph 时的 eager activation 峰值 */
+  /** GB */
   basePeak: number;
-  /** GB;捕到 chunk size 后残留的 eager 峰值 */
+  belowResident: number;
   atPeak: number;
-  /** GB;捕到 chunk size 后的常驻 graph 显存 */
   atResident: number;
+  /** 捕到 chunk size 后,总量低于 baseline 的差值(GB) */
+  saving: number;
 }
 
 export const MEM_MODELS: MemModel[] = [
-  { id: "gpt-oss-120b", label: "gpt-oss-120b", basePeak: 0.56, atPeak: 0.001, atResident: 0.05 },
-  { id: "glm-5.2", label: "GLM-5.2", basePeak: 1.55, atPeak: 0.35, atResident: 0.1 },
+  {
+    id: "gpt-oss-120b",
+    label: "gpt-oss-120b",
+    basePeak: 0.56,
+    belowResident: 0.04,
+    atPeak: 0.001,
+    atResident: 0.05,
+    saving: 0.51,
+  },
+  {
+    id: "glm-5.2",
+    label: "GLM-5.2",
+    basePeak: 1.55,
+    belowResident: 0.08,
+    atPeak: 0.35,
+    atResident: 0.1,
+    saving: 1.1,
+  },
 ];
 
-export function memGb(gb: number): string {
-  return `${gb < 0.01 ? gb.toFixed(3) : gb.toFixed(2)} GB`;
+export function memPeak(locale: Locale, gb: number): string {
+  const v = gb < 0.01 ? gb.toFixed(3) : gb.toFixed(2);
+  return locale === "zh" ? `峰值 ${v} GB` : `peak ${v} GB`;
 }
 
 export function memDelta(locale: Locale, delta: number): string {

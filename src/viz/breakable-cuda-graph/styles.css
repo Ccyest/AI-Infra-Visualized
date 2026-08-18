@@ -518,58 +518,94 @@
   gap: 0.35rem;
 }
 
-.bcg-ceil-chart {
-  max-width: 30rem;
-  margin: 0.5rem auto 0;
-}
-
-.bcg-ceil-chart svg {
-  width: 100%;
-  height: auto;
-  display: block;
-}
-
-.bcg-ceil-control {
+.bcg-mem-chart {
+  position: relative;
   display: grid;
-  gap: 0.3rem;
-  max-width: 30rem;
-  margin: 0.4rem auto 0;
-  width: 100%;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1.4rem;
+  align-items: end;
+  height: 190px;
+  margin: 1.6rem 0.2rem 0.4rem;
+  padding: 0 0.6rem;
 }
 
-.bcg-ceil-top {
+.bcg-mem-col {
   display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  font-size: var(--bcg-font-sm);
-  color: var(--ink-2);
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: center;
+  height: 100%;
+  position: relative;
 }
 
-.bcg-ceil-top output {
-  font-variant-numeric: tabular-nums;
-  color: var(--ink);
+.bcg-mem-stack {
+  width: min(64px, 70%);
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+}
+
+.bcg-mem-slice {
+  border-radius: 3px 3px 0 0;
+  flex: none;
+}
+
+.bcg-mem-slice.peak {
+  background: color-mix(in srgb, var(--series-2) 75%, var(--surface));
+}
+
+.bcg-mem-slice.resident {
+  background: var(--series-1);
+  border-radius: 0 0 3px 3px;
+}
+
+.bcg-mem-slice.peak + .bcg-mem-slice.resident {
+  border-radius: 0 0 3px 3px;
+}
+
+.bcg-mem-delta {
+  position: absolute;
+  top: -1.35rem;
+  font-size: var(--bcg-font-xs);
   font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-2);
+  white-space: nowrap;
 }
 
-.bcg-ceil-reads {
-  display: flex;
-  gap: 1.1rem;
-  flex-wrap: wrap;
-  justify-content: center;
-  margin-top: 0.5rem;
+.bcg-mem-delta.saving {
+  color: var(--series-3);
+}
+
+.bcg-mem-peaklabel {
+  position: absolute;
   font-size: var(--bcg-font-xs);
   color: var(--muted);
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
-.bcg-ceil-reads b {
-  color: var(--ink);
-  font-weight: 650;
+.bcg-mem-baseline {
+  position: absolute;
+  left: 0;
+  right: 0;
+  border-top: 1.5px dashed var(--axis);
+  pointer-events: none;
 }
 
-.bcg-ceil-reads output.saving {
-  color: var(--series-3);
-  font-weight: 650;
+.bcg-mem-baseline small {
+  position: absolute;
+  right: 0;
+  top: -1.1rem;
+  font-size: var(--bcg-font-xs);
+  color: var(--muted);
+}
+
+.bcg-mem-colname {
+  font-size: var(--bcg-font-sm);
+  color: var(--ink-2);
+  text-align: center;
+  margin-top: 0.45rem;
 }
 
 /* ---------------- TimelineViz ---------------- */

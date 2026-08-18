@@ -254,7 +254,7 @@ sparse-attention indexer 仍然需要在断点处以 eager
 带来的是节省，而不是额外成本。另一项收益是显存使用可预测：依赖 workload 的
 activation 瞬时峰值，变成了在 capture 阶段确定的固定分配，engine
 可以提前计入这部分显存，不必再为只在大规模 prefill
-时出现的瞬时峰值预留空间。下图可以拖动 capture 上限，观察三部分显存的变化：
+时出现的瞬时峰值预留空间：
 
 <MemoryCeilingViz client:visible />
 
