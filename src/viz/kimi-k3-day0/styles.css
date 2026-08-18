@@ -2579,3 +2579,41 @@
     overflow-x: auto;
   }
 }
+
+/* Channel 图示(简化版 StateChannelViz)的 128 维向量条 */
+.state-channel-kvec {
+  display: flex;
+  gap: 3px;
+  align-items: center;
+}
+
+.state-channel-kvec span {
+  width: 15px;
+  height: 22px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--series-1) 28%, transparent);
+  position: relative;
+  flex: none;
+}
+
+.state-channel-kvec span.selected {
+  background: var(--series-1);
+}
+
+.state-channel-kvec span.selected em {
+  position: absolute;
+  top: -1.25rem;
+  left: 50%;
+  transform: translateX(-50%);
+  font-style: normal;
+  font-size: 0.7rem;
+  font-weight: 650;
+  color: var(--series-1);
+  white-space: nowrap;
+}
+
+.state-channel-kvec i {
+  font-style: normal;
+  color: var(--muted);
+  font-size: 0.75rem;
+}

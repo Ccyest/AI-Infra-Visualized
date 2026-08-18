@@ -94,16 +94,6 @@ space; v is the content written along that direction; and q reads with
 $o = S^{\top} q$. No matter how long the context becomes, each step reads and
 writes only S.
 
-<details className="lesson-details">
-  <summary>Math details: heads and channels inside the 128×128 state</summary>
-  <p>K3's hidden size is $d_{\text{model}} = 7168$. For head $h$ (of 96 KDA heads), three learned projections $W_q^h, W_k^h, W_v^h \in \mathbb{R}^{128 \times 7168}$ map $x_t \in \mathbb{R}^{7168}$ to $q_t^h = W_q^h x_t$, $k_t^h = W_k^h x_t$, $v_t^h = W_v^h x_t \in \mathbb{R}^{128}$. A head is a learned 128-d feature space, not a literal slice of the 7168 input coordinates; below we fix one head and drop the superscript $h$.</p>
-  <p>The naive linear-attention state is $S_t \in \mathbb{R}^{128 \times 128}$ (convention: rows = key channels, columns = value channels), with update $S_t = S_{t-1} + k_t v_t^{\top}$ and readout $o_t = S_t^{\top} q_t$. Row $j$ of the outer product $k_t v_t^{\top}$ is $k_t[j]\, v_t^{\top}$: coordinate $j$ of the key (key channel $j$) sets the coefficient with which $v_t$ is written into row $j$, so $S_t[j,:] = \sum_{s \le t} k_s[j]\, v_s^{\top}$.</p>
-  <p>Expanding the readout gives $o_t = \sum_{s \le t} (k_s^{\top} q_t)\, v_s$. The only difference from softmax attention is the weight: an unnormalized inner product $k_s^{\top} q_t$ instead of the softmax weight $a_{t,s}$ — no position axis, no normalization.</p>
-  <p>Scale: each head holds $d_k \times d_v = 128 \times 128 = 16{,}384$ state scalars, fixed across 96 heads and 69 layers; per-step update and readout both cost $O(d_k d_v)$, independent of context length. Doubling $d_k$ or $d_v$ grows state and per-step compute as $d_k \times d_v$ — the capacity/cost trade-off behind 128.</p>
-</details>
-
-<StateChannelViz client:visible lang="en" />
-
 The diagram below gives both a math view and the same sentence used earlier,
 so the difference is visible directly:
 
@@ -158,6 +148,14 @@ context, the larger that effect gets.
 <KeyOverlapViz client:visible lang="en" />
 
 ### Attention mechanisms in detail: KDA
+
+KDA's gating works per channel, so first, what a channel is. K3's hidden size
+is 7168; each KDA head uses a learned projection to compress the 7168-d hidden
+state down to 128 dimensions, and a channel is one dimension of that projected
+128-d space. Key channel $j$ sets the coefficient with which content is
+written into row $j$ of S:
+
+<StateChannelViz client:visible lang="en" />
 
 A fixed state does not grow with context, which is exactly why it saves
 memory; the cost is that more and more history has to share one S. The delta

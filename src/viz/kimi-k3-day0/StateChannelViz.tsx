@@ -1,151 +1,61 @@
-import { useState } from "react";
 import type { Locale } from "../../lib/i18n";
 import "./styles.css";
 
-const DIMS = [64, 128, 256] as const;
-const KEY_VALUES = [0.2, 0.7, -0.1, 0.4];
-const VALUE_VALUES = [0.6, -0.3, 0.8, 0.1];
+/* 只表达一件事:7168 维 hidden state 经学习投影压到 128 维,
+   channel 就是这 128 维投影空间里的一维。 */
 
 const COPY = {
-  title: {
-    zh: "状态矩阵 S 图示",
-    en: "State matrix S diagram",
-  },
-  subtitle: {
-    zh: "选择一个 key channel，观察外积如何更新 S 的对应行",
-    en: "Select a key channel and see how the outer product updates its row in S",
-  },
-};
+  title: { zh: "Channel 图示", en: "Channel diagram" },
+  hiddenLabel: { zh: "hidden state", en: "hidden state" },
+  hiddenNote: { zh: "整模型共享的 hidden embedding", en: "the model-wide hidden embedding" },
+  arrow: { zh: "学习投影", en: "learned projection" },
+  headLabel: { zh: "一个 head 的 k", en: "k for one head" },
+  channelNote: { zh: "高亮的一维 = 一条 channel", en: "the highlighted dim = one channel" },
+  headsNote: { zh: "每个 head 一份投影，共 96 个", en: "one projection per head, 96 heads" },
+} as const;
 
-function format(value: number) {
-  return value.toFixed(2).replace("-0.00", "0.00");
-}
-
-function subscript(value: number) {
-  const digits: Record<string, string> = { "0": "₀", "1": "₁", "2": "₂", "3": "₃", "4": "₄", "5": "₅", "6": "₆", "7": "₇", "8": "₈", "9": "₉" };
-  return String(value).split("").map((digit) => digits[digit]).join("");
-}
+const KVEC_CELLS = 9;
+const SELECTED = 2;
 
 export default function StateChannelViz({ lang = "zh" }: { lang?: Locale }) {
-  const [dimension, setDimension] = useState<number>(128);
-  const [selectedRow, setSelectedRow] = useState(1);
-  const rowIndices = [1, 2, 3, dimension];
-  const rowLabels = ["ch₁", "ch₂", "ch₃", `ch${subscript(dimension)}`];
-  const columnLabels = ["v₁", "v₂", "v₃", "⋯", `v${subscript(dimension)}`];
-  const selectedKey = KEY_VALUES[selectedRow];
-  const selectedIndex = rowIndices[selectedRow];
-  const stateScalars = dimension * dimension;
-
   return (
     <figure className="viz-stage" style={{ margin: "1.6rem 0" }}>
       <div className="viz-head">
         <span className="viz-title">{COPY.title[lang]}</span>
-        <span className="viz-subtitle">{COPY.subtitle[lang]}</span>
-        <span className="viz-head-extra">
-          <span className="viz-presets" role="group" aria-label={lang === "zh" ? "每个 head 的维度" : "dimension per head"}>
-            {DIMS.map((option) => (
-              <button key={option} type="button" className={`viz-btn${dimension === option ? " primary" : ""}`} onClick={() => setDimension(option)}>
-                {option}{option === 128 ? (lang === "zh" ? "（K3）" : " (K3)") : ""}
-              </button>
-            ))}
-          </span>
-        </span>
       </div>
 
       <div className="state-channel-flow">
-        <section className="state-channel-step" aria-label={lang === "zh" ? "token hidden state" : "token hidden state"}>
-          <b>{lang === "zh" ? "① 一个 token" : "① one token"}</b>
+        <section className="state-channel-step">
+          <b>{COPY.hiddenLabel[lang]}</b>
           <div className="state-channel-hidden" aria-hidden="true">
-            {Array.from({ length: 9 }, (_, i) => <span key={i} />)}
+            {Array.from({ length: 9 }, (_, i) => (
+              <span key={i} />
+            ))}
           </div>
           <code>xₜ ∈ ℝ⁷¹⁶⁸</code>
-          <small>{lang === "zh" ? "整模型的 hidden embedding" : "full-model hidden embedding"}</small>
+          <small>{COPY.hiddenNote[lang]}</small>
         </section>
 
         <div className="state-channel-arrow" aria-hidden="true">
-          <span>{lang === "zh" ? "学习投影" : "learned projection"}</span>
+          <span>{COPY.arrow[lang]}</span>
           <b>→</b>
+          <code>Wₖ ∈ ℝ¹²⁸ˣ⁷¹⁶⁸</code>
         </div>
 
-        <section className="state-channel-step state-channel-head" aria-label={lang === "zh" ? "固定一个 attention head h" : "fix one attention head h"}>
-          <b>{lang === "zh" ? "② 固定一个 head h" : "② fix one head h"}</b>
-          <code>kₜʰ, vₜʰ ∈ ℝ<sup>{dimension}</sup></code>
-          <div className="state-channel-vector-wrap">
-            <code>kₜʰ =</code>
-            <span className="state-channel-vector-brace" aria-hidden="true">
-              {["⎧", "⎪", "⎨", "⎪", "⎩"].map((part, index) => <span key={index}>{part}</span>)}
-            </span>
-            <div className="state-channel-vector" role="group" aria-label={lang === "zh" ? "kₜʰ 列向量；选择一个 key 坐标" : "kₜʰ column vector; select one key coordinate"}>
-              {KEY_VALUES.slice(0, 3).map((value, index) => (
-                <button key={index} type="button" className={selectedRow === index ? "selected" : ""} onClick={() => setSelectedRow(index)} aria-pressed={selectedRow === index}>
-                  <span>{rowLabels[index]}</span>
-                  <b>{value}</b>
-                </button>
-              ))}
-              <span className="state-channel-vector-gap" aria-hidden="true">⋮</span>
-              <button type="button" className={selectedRow === 3 ? "selected" : ""} onClick={() => setSelectedRow(3)} aria-pressed={selectedRow === 3}>
-                <span>{rowLabels[3]}</span>
-                <b>{KEY_VALUES[3]}</b>
-              </button>
-            </div>
-            <span className="state-channel-vector-brace" aria-hidden="true">
-              {["⎫", "⎪", "⎬", "⎪", "⎭"].map((part, index) => <span key={index}>{part}</span>)}
-            </span>
-          </div>
-          <small>{lang === "zh" ? `kₜʰ 有 ${dimension} 个坐标 = ${dimension} 条 key channels` : `the ${dimension} coordinates of kₜʰ are ${dimension} key channels`}</small>
-          <small className="state-channel-index-note">{lang === "zh" ? "h = head 编号；chⱼ = 这个 head 内的第 j 个坐标，不是第 j 个 head" : "h = head index; chⱼ = coordinate j inside this head, not head j"}</small>
-        </section>
-
-        <div className="state-channel-arrow" aria-hidden="true">
-          <span>{lang === "zh" ? "外积写入" : "outer-product write"}</span>
-          <b>→</b>
-          <code>kₜʰ(vₜʰ)ᵀ</code>
-        </div>
-
-        <section className="state-channel-step state-channel-state" aria-label={lang === "zh" ? "head h 的状态矩阵" : "state matrix for head h"}>
-          <b>{lang === "zh" ? "③ head h 的状态" : "③ state for head h"}</b>
-          <code>Sₜʰ ∈ ℝ<sup>{dimension}×{dimension}</sup></code>
-          <div className="state-channel-matrix" role="img" aria-label={lang === "zh" ? `S 有 ${dimension} 行 key channels，每行有 ${dimension} 个 value 维度` : `S has ${dimension} key-channel rows and ${dimension} value dimensions per row`}>
-            <span className="corner" />
-            {columnLabels.map((label) => <b key={label}>{label}</b>)}
-            {KEY_VALUES.slice(0, 3).map((keyValue, row) => (
-              <div className={`state-channel-matrix-row${row === selectedRow ? " selected" : ""}`} key={row}>
-                <b>{rowLabels[row]}</b>
-                {VALUE_VALUES.slice(0, 3).map((value, column) => {
-                  const product = keyValue * value;
-                  return <span key={column} className={product < 0 ? "negative" : "positive"}>{format(product)}</span>;
-                })}
-                <span className="state-channel-gap-cell" aria-hidden="true">…</span>
-                <span className={keyValue * VALUE_VALUES[3] < 0 ? "negative" : "positive"}>{format(keyValue * VALUE_VALUES[3])}</span>
-              </div>
+        <section className="state-channel-step">
+          <b>{COPY.headLabel[lang]}</b>
+          <div className="state-channel-kvec" role="img" aria-label={COPY.channelNote[lang]}>
+            {Array.from({ length: KVEC_CELLS }, (_, i) => (
+              <span key={i} className={i === SELECTED ? "selected" : ""}>
+                {i === SELECTED && <em>chⱼ</em>}
+              </span>
             ))}
-            <div className="state-channel-matrix-row state-channel-matrix-ellipsis" aria-hidden="true">
-              <b>⋮</b>
-              {Array.from({ length: 5 }, (_, index) => <span key={index}>{index === 3 ? "⋱" : "⋮"}</span>)}
-            </div>
-            <div className={`state-channel-matrix-row${selectedRow === 3 ? " selected" : ""}`}>
-              <b>{rowLabels[3]}</b>
-              {VALUE_VALUES.slice(0, 3).map((value, column) => {
-                const product = KEY_VALUES[3] * value;
-                return <span key={column} className={product < 0 ? "negative" : "positive"}>{format(product)}</span>;
-              })}
-              <span className="state-channel-gap-cell" aria-hidden="true">…</span>
-              <span className={KEY_VALUES[3] * VALUE_VALUES[3] < 0 ? "negative" : "positive"}>{format(KEY_VALUES[3] * VALUE_VALUES[3])}</span>
-            </div>
+            <i>…</i>
           </div>
-          <small>{lang === "zh" ? `${stateScalars.toLocaleString()} 个状态数 / head，不随 token 数增长` : `${stateScalars.toLocaleString()} state scalars per head, independent of token count`}</small>
+          <code>kₜ ∈ ℝ¹²⁸</code>
+          <small>{COPY.channelNote[lang]}</small>
+          <small>{COPY.headsNote[lang]}</small>
         </section>
-      </div>
-
-      <div className="state-channel-equation">
-        <code>j={selectedIndex}: ΔSₜʰ[j, :] = kₜʰ[j]·(vₜʰ)ᵀ = {selectedKey}·(vₜʰ)ᵀ</code>
-        <span>{lang === "zh" ? "k[j] 更新 S 的第 j 行；KDA 会再对这些行做逐 channel 衰减。" : "k[j] updates row j of S; KDA later adds channel-wise decay over these rows."}</span>
-      </div>
-
-      <div className="viz-footer">
-        <div className="viz-verdict">
-          {lang === "zh" ? <>K3 取 128×128：容量和开销的折中，每个 head 的状态按 <code>d²</code> 增长。</> : <>K3 uses 128×128, a capacity/cost trade-off; per-head state grows as <code>d²</code>.</>}
-        </div>
       </div>
     </figure>
   );

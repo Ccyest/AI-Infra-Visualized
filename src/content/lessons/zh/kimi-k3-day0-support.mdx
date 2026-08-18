@@ -84,16 +84,6 @@ $S = \sum_i k_i v_i^{\top}$ 里。S 作为固定大小的记忆矩阵，每一�
 是沿这个方向写入的内容，q 再用 $o = S^{\top} q$ 读取。无论上下文多长，
 每步都只读写这个 S。
 
-<details className="lesson-details">
-  <summary>数学细节：128×128 状态中的 head 和 channel</summary>
-  <p>K3 的 hidden size 为 $d_{\text{model}} = 7168$。对第 $h$ 个 KDA head（共 96 个），三个学习投影 $W_q^h, W_k^h, W_v^h \in \mathbb{R}^{128 \times 7168}$ 把 $x_t \in \mathbb{R}^{7168}$ 映射为 $q_t^h = W_q^h x_t$、$k_t^h = W_k^h x_t$、$v_t^h = W_v^h x_t \in \mathbb{R}^{128}$。head 是学习出的 128 维特征空间，不是把 7168 个输入坐标原样切开；下文固定一个 head 并省略上标 $h$。</p>
-  <p>Naive linear attention 的状态是 $S_t \in \mathbb{R}^{128 \times 128}$（约定：行 = key 通道，列 = value 通道），更新与读出为 $S_t = S_{t-1} + k_t v_t^{\top}$、$o_t = S_t^{\top} q_t$。外积 $k_t v_t^{\top}$ 的第 $j$ 行是 $k_t[j]\, v_t^{\top}$：key 的第 $j$ 个坐标（第 $j$ 条 key channel）决定 $v_t$ 以多大的系数写进 S 的第 $j$ 行，因此 $S_t[j,:] = \sum_{s \le t} k_s[j]\, v_s^{\top}$。</p>
-  <p>把读出展开：$o_t = \sum_{s \le t} (k_s^{\top} q_t)\, v_s$。它和 softmax attention 的差别只在权重：这里是未归一化的内积 $k_s^{\top} q_t$，而不是 softmax 之后的 $a_{t,s}$——没有位置轴，也没有归一化。</p>
-  <p>规模：每个 head 有 $d_k \times d_v = 128 \times 128 = 16{,}384$ 个状态标量，96 个 head、69 层合计固定不变；每步更新和读出的计算量都是 $O(d_k d_v)$，与上下文长度无关。把 $d_k$ 或 $d_v$ 加倍，状态与每步计算都按 $d_k \times d_v$ 增长——这就是取 128 的容量/开销折中。</p>
-</details>
-
-<StateChannelViz client:visible />
-
 下图中，分别有数学角度的解释，也有和刚才例子中相同的句子的可视化，
 可以直接看到两者的差别：
 
@@ -140,6 +130,13 @@ $\beta_t$ 控制改写强度：$\beta_t = 1$ 代表完全替换旧关联，$\bet
 <KeyOverlapViz client:visible />
 
 ### attention 机制详解：KDA
+
+KDA 的门控是逐 channel 进行的，所以先说明 channel 是什么。K3 的 hidden size 是
+7168；每个 KDA head 用学习出的投影把 7168 维的 hidden state 压到 128 维，
+channel 就是这 128 维投影空间里的一维。key 的第 $j$ 条 channel
+决定内容以多大的系数写进 S 的第 $j$ 行：
+
+<StateChannelViz client:visible />
 
 固定状态的大小不会随上下文增长，这正是它省显存的原因；
 代价是越来越多的历史必须共享同一个 S。Delta rule 能改写相同或相近的 key 方向，
