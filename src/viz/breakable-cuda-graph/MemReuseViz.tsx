@@ -3,48 +3,117 @@ import type { Locale } from "../../lib/i18n";
 import { REUSE } from "./strings";
 import "./styles.css";
 
-/* 地址 × 时间视图,教学示例:一个 shape 3 个 segment。
-   左 = 每段中间量各锁一份(常驻叠三层);右 = BCG 段间同址复用 + boundary 例外。
-   下方单独画输出 buffer 的跨 size 共享。高度为教学比例,不代表真实字节数。 */
+/* 优化前 / 优化后 对照,教学示例:一个 shape 3 个 segment、3 个 capture size。
+   纵轴为显存地址,横轴为一次 replay 的时间;两栏共用同一套坐标,高度可直接比较。
+   优化前:每段中间结果、每个 size 的输出各占一块并长期保留;
+   优化后:三段共用一个 pool(块在时间上依次移动)、输出 buffer 一块、boundary 例外。 */
 
 const W = 300;
-const H = 172;
-const X0 = 14;
-const X1 = 288;
-const SEG_W = 82;
-const GAP = 14;
-const BAND_H = 34;
-const BAND_GAP = 4;
-const AXIS_Y = 150;
+const H = 215;
+const GUT_X = 58;
+const BX0 = 62;
+const BX1 = 292;
+const AXIS_Y = 190;
+const SEG_W = (BX1 - BX0 - 16) / 3;
 
-/* 三个 segment 的时间窗口 */
-const SEGS = [1, 2, 3].map((i) => {
-  const x = X0 + (i - 1) * (SEG_W + GAP);
-  return { i, x, cx: x + SEG_W / 2 };
+const SEGS = [0, 1, 2].map((i) => {
+  const x = BX0 + i * (SEG_W + 8);
+  return { i: i + 1, x, cx: x + SEG_W / 2 };
 });
-const BREAKS = [X0 + SEG_W + GAP / 2, X0 + 2 * SEG_W + 1.5 * GAP];
+const BREAKS = [BX0 + SEG_W + 4, BX0 + 2 * SEG_W + 12];
 
-/* 自下而上的三层 band(左图);右图只用最下面一层 */
-const bandY = (level: number) => AXIS_Y - 4 - (level + 1) * BAND_H - level * BAND_GAP;
-const NAIVE_TOP = bandY(2);
+const TOP_BEFORE = 30;
+const TOP_AFTER = 128;
 
-const LIGHT = "color-mix(in srgb, var(--series-1) 14%, var(--surface))";
-const LIGHT_EDGE = "color-mix(in srgb, var(--series-1) 35%, var(--grid))";
-const DARK = "color-mix(in srgb, var(--series-1) 45%, var(--surface))";
-const DARK_EDGE = "color-mix(in srgb, var(--series-1) 65%, var(--grid))";
-const BOUNDARY = "color-mix(in srgb, var(--series-7) 30%, var(--surface))";
+const INT_FILL = "color-mix(in srgb, var(--series-1) 14%, var(--surface))";
+const INT_EDGE = "color-mix(in srgb, var(--series-1) 35%, var(--grid))";
+const ACT_FILL = "color-mix(in srgb, var(--series-1) 45%, var(--surface))";
+const ACT_EDGE = "color-mix(in srgb, var(--series-1) 65%, var(--grid))";
+const OUT_FILL = "color-mix(in srgb, var(--series-4) 30%, var(--surface))";
+const OUT_EDGE = "color-mix(in srgb, var(--series-4) 55%, var(--grid))";
+const BND_FILL = "color-mix(in srgb, var(--series-7) 30%, var(--surface))";
 
-function Axis({ lang }: { lang: Locale }) {
+interface Row {
+  y: number;
+  h: number;
+  label: string;
+  fill: string;
+  edge: string;
+  /** 该行在哪些 segment 时间窗内被使用中 */
+  active?: number[];
+  /** 在 active 块内标注 seg 编号 */
+  numbered?: boolean;
+  /** 断点处画原地更新的标记 */
+  marks?: boolean;
+}
+
+function Band({ row }: { row: Row }) {
   return (
     <g>
-      <line x1={X0} y1={AXIS_Y} x2={X1} y2={AXIS_Y} stroke="var(--axis)" strokeWidth="1" />
+      <rect
+        x={BX0}
+        y={row.y}
+        width={BX1 - BX0}
+        height={row.h}
+        rx="3"
+        fill={row.fill}
+        stroke={row.edge}
+      />
+      {row.active?.map((n) => {
+        const s = SEGS[n - 1];
+        return (
+          <g key={n}>
+            <rect
+              x={s.x}
+              y={row.y}
+              width={SEG_W}
+              height={row.h}
+              rx="3"
+              fill={ACT_FILL}
+              stroke={ACT_EDGE}
+            />
+            {row.numbered && (
+              <text
+                x={s.cx}
+                y={row.y + row.h / 2 + 3}
+                textAnchor="middle"
+                fontSize="8.5"
+                fill="var(--ink-2)"
+              >
+                seg{s.i}
+              </text>
+            )}
+          </g>
+        );
+      })}
+      {row.marks &&
+        BREAKS.map((bx) => (
+          <circle key={bx} cx={bx} cy={row.y + row.h / 2} r="2.6" fill="var(--series-7)" />
+        ))}
+      <text
+        x={GUT_X}
+        y={row.y + row.h / 2 + 3}
+        textAnchor="end"
+        fontSize={row.h > 14 ? "8" : "7"}
+        fill="var(--muted)"
+      >
+        {row.label}
+      </text>
+    </g>
+  );
+}
+
+function TimeAxis({ lang }: { lang: Locale }) {
+  return (
+    <g>
+      <line x1={BX0} y1={AXIS_Y} x2={BX1} y2={AXIS_Y} stroke="var(--axis)" strokeWidth="1" />
       {SEGS.map((s) => (
-        <text key={s.i} x={s.cx} y={AXIS_Y + 14} textAnchor="middle" fontSize="9" fill="var(--muted)">
+        <text key={s.i} x={s.cx} y={AXIS_Y + 12} textAnchor="middle" fontSize="8" fill="var(--muted)">
           seg{s.i}
         </text>
       ))}
       {BREAKS.map((bx) => (
-        <text key={bx} x={bx} y={AXIS_Y + 14} textAnchor="middle" fontSize="7.5" fill="var(--muted)">
+        <text key={bx} x={bx} y={AXIS_Y + 12} textAnchor="middle" fontSize="7" fill="var(--muted)">
           {REUSE.breakLabel[lang]}
         </text>
       ))}
@@ -53,6 +122,56 @@ function Axis({ lang }: { lang: Locale }) {
 }
 
 export default function MemReuseViz({ lang = "zh" }: { lang?: Locale }) {
+  const before: Row[] = [
+    ...SEGS.map((s, idx) => ({
+      y: 156 - idx * 28,
+      h: 24,
+      label: `seg${s.i} ${REUSE.segInt[lang]}`,
+      fill: INT_FILL,
+      edge: INT_EDGE,
+      active: [s.i],
+    })),
+    { y: 86, h: 10, label: REUSE.breakTensor[lang], fill: INT_FILL, edge: INT_EDGE },
+    ...[1, 2, 3].map((n) => ({
+      y: 72 - (n - 1) * 14,
+      h: 10,
+      label: `size${n} ${REUSE.outRow[lang]}`,
+      fill: OUT_FILL,
+      edge: OUT_EDGE,
+    })),
+    {
+      y: TOP_BEFORE,
+      h: 10,
+      label: REUSE.boundaryRow[lang],
+      fill: BND_FILL,
+      edge: "var(--series-7)",
+      marks: true,
+    },
+  ];
+
+  const after: Row[] = [
+    {
+      y: 156,
+      h: 24,
+      label: REUSE.poolRow[lang],
+      fill: INT_FILL,
+      edge: INT_EDGE,
+      active: [1, 2, 3],
+      numbered: true,
+    },
+    { y: 142, h: 10, label: REUSE.outMax[lang], fill: OUT_FILL, edge: OUT_EDGE },
+    {
+      y: TOP_AFTER,
+      h: 10,
+      label: REUSE.boundaryRow[lang],
+      fill: BND_FILL,
+      edge: "var(--series-7)",
+      marks: true,
+    },
+  ];
+
+  const bracketX = BX0 + 112;
+
   return (
     <figure className="viz-stage bcg-viz" style={{ margin: "1.6rem 0" }}>
       <div className="viz-head">
@@ -62,103 +181,80 @@ export default function MemReuseViz({ lang = "zh" }: { lang?: Locale }) {
 
       <div className="bcg-bench">
         <div className="bcg-bench-panel">
-          <span className="bcg-bench-head">{REUSE.rowNaive[lang]}</span>
-          <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={REUSE.rowNaive[lang]}>
-            {SEGS.map((s, level) => {
-              const y = bandY(level);
-              return (
-                <g key={s.i}>
-                  <rect x={X0} y={y} width={X1 - X0} height={BAND_H} rx="3" fill={LIGHT} stroke={LIGHT_EDGE} />
-                  <rect x={s.x} y={y} width={SEG_W} height={BAND_H} rx="3" fill={DARK} stroke={DARK_EDGE} />
-                  <text x={X0 + 5} y={y + BAND_H / 2 + 3} fontSize="8.5" fill="var(--ink-2)">
-                    seg{s.i} {REUSE.segIntermediates[lang]}
-                  </text>
-                </g>
-              );
-            })}
-            <Axis lang={lang} />
+          <span className="bcg-bench-head">{REUSE.headBefore[lang]}</span>
+          <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={REUSE.headBefore[lang]}>
+            {before.map((row) => (
+              <Band key={row.label} row={row} />
+            ))}
+            <text x={BX1} y={TOP_BEFORE - 6} textAnchor="end" fontSize="8" fill="var(--ink-2)">
+              {REUSE.totalBefore[lang]}
+            </text>
+            <TimeAxis lang={lang} />
           </svg>
         </div>
 
         <div className="bcg-bench-panel">
-          <span className="bcg-bench-head">{REUSE.rowBcg[lang]}</span>
-          <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={REUSE.rowBcg[lang]}>
-            {/* 共用 pool:三段在同一地址带内先后使用 */}
-            <rect x={X0} y={bandY(0)} width={X1 - X0} height={BAND_H} rx="3" fill={LIGHT} stroke={LIGHT_EDGE} />
-            {SEGS.map((s) => (
-              <g key={s.i}>
-                <rect x={s.x} y={bandY(0)} width={SEG_W} height={BAND_H} rx="3" fill={DARK} stroke={DARK_EDGE} />
-                <text x={s.cx} y={bandY(0) + BAND_H / 2 + 3} textAnchor="middle" fontSize="8.5" fill="var(--ink-2)">
-                  seg{s.i} {REUSE.segIntermediates[lang]}
-                </text>
-              </g>
+          <span className="bcg-bench-head">{REUSE.headAfter[lang]}</span>
+          <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={REUSE.headAfter[lang]}>
+            {after.map((row) => (
+              <Band key={row.label} row={row} />
             ))}
-            <text x={X0} y={bandY(0) - 5} fontSize="8" fill="var(--muted)">
-              {REUSE.poolBlock[lang]}
-            </text>
 
-            {/* boundary buffer:常驻,断点处原地更新 */}
-            <rect x={X0} y={86} width={X1 - X0} height={12} rx="2" fill={BOUNDARY} stroke="var(--series-7)" />
-            <text x={X0 + 5} y={95.5} fontSize="8" fill="var(--ink-2)">
-              {REUSE.boundaryBand[lang]}
-            </text>
-            {BREAKS.map((bx) => (
-              <polygon key={bx} points={`${bx - 3.5},78 ${bx + 3.5},78 ${bx},85`} fill="var(--series-7)" />
-            ))}
-            <text x={X1} y={82} textAnchor="end" fontSize="7.5" fill="var(--muted)">
-              {REUSE.inPlace[lang]}
-            </text>
-
-            {/* 左图总量参照线与省下的部分 */}
+            {/* 优化前的总量参照线 + 省下的部分 */}
             <line
-              x1={X0}
-              y1={NAIVE_TOP}
-              x2={X1}
-              y2={NAIVE_TOP}
+              x1={BX0}
+              y1={TOP_BEFORE}
+              x2={BX1}
+              y2={TOP_BEFORE}
               stroke="var(--muted)"
               strokeWidth="1"
               strokeDasharray="4 3"
             />
-            <text x={X0 + 2} y={NAIVE_TOP - 5} fontSize="7.5" fill="var(--muted)">
-              {REUSE.naiveTotalLine[lang]}
+            <text x={BX1} y={TOP_BEFORE - 6} textAnchor="end" fontSize="8" fill="var(--muted)">
+              {REUSE.refBefore[lang]}
             </text>
-            <line x1={120} y1={NAIVE_TOP + 5} x2={120} y2={80} stroke="var(--ink-2)" strokeWidth="1" />
-            <polygon points={`116.5,${NAIVE_TOP + 9} 123.5,${NAIVE_TOP + 9} 120,${NAIVE_TOP + 3}`} fill="var(--ink-2)" />
-            <polygon points="116.5,76 123.5,76 120,82" fill="var(--ink-2)" />
-            <text x={127} y={(NAIVE_TOP + 86) / 2 + 3} fontSize="8" fill="var(--ink-2)">
-              {REUSE.savedLabel[lang]}
+            <line
+              x1={bracketX}
+              y1={TOP_BEFORE + 3}
+              x2={bracketX}
+              y2={TOP_AFTER - 3}
+              stroke="var(--ink-2)"
+              strokeWidth="1"
+            />
+            <polygon
+              points={`${bracketX - 3.2},${TOP_BEFORE + 7} ${bracketX + 3.2},${TOP_BEFORE + 7} ${bracketX},${TOP_BEFORE + 1}`}
+              fill="var(--ink-2)"
+            />
+            <polygon
+              points={`${bracketX - 3.2},${TOP_AFTER - 7} ${bracketX + 3.2},${TOP_AFTER - 7} ${bracketX},${TOP_AFTER - 1}`}
+              fill="var(--ink-2)"
+            />
+            <text
+              x={bracketX + 6}
+              y={(TOP_BEFORE + TOP_AFTER) / 2 + 3}
+              fontSize="8"
+              fill="var(--ink-2)"
+            >
+              {REUSE.saved[lang]}
             </text>
 
-            <Axis lang={lang} />
+            <text x={BX0} y={TOP_AFTER - 8} fontSize="7.5" fill="var(--muted)">
+              {REUSE.weakRefAnnot[lang]}
+            </text>
+
+            <TimeAxis lang={lang} />
           </svg>
         </div>
       </div>
 
-      <div className="bcg-outbuf">
-        <div className="bcg-outbuf-head">
-          <span className="bcg-bench-head" style={{ color: "var(--ink-2)" }}>
-            {REUSE.outbufTitle[lang]}
-          </span>
-          <span className="bcg-bench-note">{REUSE.outbufNote[lang]}</span>
-        </div>
-        <div className="bcg-outbuf-box">
-          <i style={{ width: "38%" }}>{REUSE.outRowSmall[lang]}</i>
-          <i style={{ width: "66%" }}>{REUSE.outRowMid[lang]}</i>
-          <i style={{ width: "100%" }}>{REUSE.outRowMax[lang]}</i>
-        </div>
-        <span className="bcg-bench-note">{REUSE.outNote[lang]}</span>
-      </div>
-
       <div className="viz-footer">
-        <span className="bcg-pad-note">{REUSE.weakNote[lang]}</span>
+        <span className="bcg-pad-note">{REUSE.axesNote[lang]}</span>
         <Legend
           items={[
-            { label: REUSE.pinnedTag[lang], swatch: { background: LIGHT, border: `1px solid ${LIGHT_EDGE}` } },
-            { label: REUSE.activeTag[lang], swatch: { background: DARK, border: `1px solid ${DARK_EDGE}` } },
-            {
-              label: REUSE.boundaryTag[lang],
-              swatch: { background: BOUNDARY, border: "1.5px solid var(--series-7)" },
-            },
+            { label: REUSE.pinnedTag[lang], swatch: { background: INT_FILL, border: `1px solid ${INT_EDGE}` } },
+            { label: REUSE.activeTag[lang], swatch: { background: ACT_FILL, border: `1px solid ${ACT_EDGE}` } },
+            { label: REUSE.outTag[lang], swatch: { background: OUT_FILL, border: `1px solid ${OUT_EDGE}` } },
+            { label: REUSE.boundaryTag[lang], swatch: { background: BND_FILL, border: "1.5px solid var(--series-7)" } },
           ]}
         />
       </div>

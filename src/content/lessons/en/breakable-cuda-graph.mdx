@@ -252,39 +252,34 @@ activation peak, capture has to cover the largest prefill shape.
 
 ### Reuse inside a segmented capture
 
-Intermediates allocated during capture have to keep their addresses, but that
-does not mean every intermediate needs memory of its own. Within a single
-capture, once an intermediate has been consumed and nothing references it any
-more, its memory can go straight to a later operation. What a graph has to
-hold onto is therefore the peak of what is live at the same time during the
-forward, not the sum of every intermediate in it.
+A segmented backend could easily multiply graph memory: every captured shape
+contains multiple graph segments, and each segment has intermediates that must
+remain valid for replay. The growth in question comes from the number of
+breaks: N breaks in a forward mean N+1 segments, and if every segment's
+intermediates occupy their own memory and each is retained for the long term,
+resident memory goes from the peak of one forward to the sum of the peaks of
+all segments — the more breaks, the higher the resident memory. BCG avoids that
+growth through three forms of reuse.
 
-Segmentation is what puts that at risk. Each BCG segment is its own CUDA
-Graph, and if every segment allocated from its own memory pool, memory used by
-the first segment could not be handed over while the second was being
-captured: what has to be held goes from the peak of one forward to the sum of
-the peaks of all segments. BCG has all segments share one memory pool — a
-process-wide one, in fact, shared by every capture shape and by both the
-prefill and decode paths, since they never replay at the same time — and
-because segments execute in strict order, memory released by one segment is
-picked up at the same addresses by the next.
+- **Segments share one memory pool.** Every segment of a captured shape uses
+  the same CUDA Graph pool, so intermediate storage can be reused rather than
+  pinned separately by each segment.
+- **Weak references at eager breaks.** When the storage of a tensor passed
+  into a break is already owned by the graph pool, the tensor is held through a
+  weak reference, avoiding unnecessary Python references that would extend its
+  lifetime. The weak-reference technique comes from
+  [vLLM PR #9724](https://github.com/vllm-project/vllm/pull/9724), which
+  introduced it so that captured graphs could share an output buffer instead of
+  each graph pinning one of its own.
+- **Capture sizes share one output buffer.** All capture sizes share a single
+  maximum-sized output buffer, with each shape slicing only the rows it needs,
+  instead of allocating an output buffer per shape.
 
-One easy-to-miss detail decides whether that reuse actually happens. The
-tensors handed to an eager function at a break are exactly the pool-resident
-intermediates the previous segment produced, and BCG has to remember them to
-call the eager function on every replay. The pool, however, only hands out
-memory that nothing references, so remembering them through ordinary Python
-references would keep those blocks locked for the graph's entire lifetime and
-cancel out the reuse above. BCG therefore remembers weak-reference views of
-them: the memory stays valid because the segment graphs hold the pool, not
-because Python holds a reference.
+One value cannot be treated this way: the tensor that carries data across an
+eager break. The next graph segment is captured against its address, so that
+buffer must stay alive and be updated in place on every replay.
 
-The output buffer, meanwhile, is shared across all capture sizes: one
-allocation at the maximum size, with each shape using only the first rows it
-needs. Exactly one value stays out of all this reuse — the tensor that carries
-data across an eager break. The next segment is captured against its address,
-so that buffer must stay alive and be updated in place on every replay. With
-these reuse mechanisms, even a long list of captured shapes stays modest: 42
+With these reuse mechanisms, even a large capture table remains modest: 42
 shapes across a 78-layer MoE add 2.4 GB of graph memory on GLM-5.2.
 
 <MemReuseViz client:visible lang="en" />

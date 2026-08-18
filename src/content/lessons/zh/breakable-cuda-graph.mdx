@@ -215,31 +215,29 @@ CUDA Graph 的显存与 activation 的显存性质不同。graph 显存是常驻
 
 ### 分段捕获内部的显存复用
 
-capture 期间分配的中间结果必须保留地址，但这不等于每一个中间结果都要独占一块显存。在一次
-capture 内部，前面已经算完、不再被任何人引用的中间结果，它的那块显存可以直接交给后面的算子使用。因此一张
-graph 需要长期保留的，是这次 forward 同时存活的中间结果的峰值，而不是所有中间结果的总和。
+分段 Backend 很容易让 graph 显存成倍增长：每个被捕获的 shape 都包含多个 graph
+segment，而每个 segment 的中间结果都必须在 replay 时保持有效。这里说的增长来自断点的数量：一次
+forward 打 N 个断点就有 N+1 个 segment，如果每个 segment 的中间结果各占一块显存、并各自长期保留，需要常驻的显存就从「一次
+forward 的峰值」变成「各 segment 峰值之和」，断点打得越多，常驻显存越高。BCG
+通过三种复用方式避免了这种增长。
 
-分段动摇的正是这一点。BCG 的每个 segment 都是一个独立的 CUDA
-Graph，如果各段分别从自己的显存池分配，第一段用过的显存在第二段 capture
-时就交不出去，需要保留的显存从「一次 forward 的峰值」变成「各段峰值之和」。BCG
-让所有 segment 共用同一个显存池——这个池实际上是进程级的，所有 capture shape、以及
-prefill 和 decode 两条路径都共用它，因为它们不会同时 replay——segment
-严格按顺序执行，前一段交出来的显存，后一段就在同样的地址上继续用。
+- **不同 segment 共享一个显存池。** 同一个 capture shape 的所有 segment 都使用同一个
+  CUDA Graph pool，让中间存储可以复用，而不是由每个 segment 分别长期占用。
+- **在 Eager 断点处使用弱引用。** 如果传入断点的 tensor storage 已由 graph pool
+  管理，就使用弱引用持有该 tensor，避免不必要的 Python reference 延长 tensor
+  生命周期。Tensor 弱引用技术来自 [vLLM PR #9724](https://github.com/vllm-project/vllm/pull/9724)；该
+  PR 引入这一技术，是为了让捕获的 graph 能够共享输出 buffer，而不是每张 graph
+  各自固定一块 buffer。
+- **不同 capture size 共享一个输出 buffer。** 所有 capture size
+  共用一块按最大尺寸分配的输出 buffer，每个 shape 只切出自己需要的行，避免为每个
+  shape 单独分配输出 buffer。
 
-要让这套复用真正生效，还有一个容易漏掉的细节。断点处传给 eager function 的
-tensor，正是前一个 segment 产出的、位于显存池中的中间结果；BCG 每次 replay
-都要拿这些 tensor 去调用 eager function，所以必须记住它们。而显存池只肯交出没有人引用的显存，一旦
-BCG 用普通的 Python 引用记住它们，这几块显存在 graph
-的整个生命周期内都交不出去，前面的复用就被抵消掉了。BCG
-记住的因此是它们的弱引用视图：这些显存的有效性由 segment graph
-对显存池的占用来保证，不需要 Python 这一侧再持有引用。
+有一个值不能这样处理：跨越 Eager 断点传递数据的 tensor。后一个 graph segment
+是基于它的地址完成 capture 的，因此这块 buffer 必须一直存活，并在每次 replay
+时原地更新。
 
-输出 buffer 则在所有 capture size 之间共享：按最大尺寸分配一块，每个 shape
-只使用自己需要的前几行。只有一个值不参与任何复用，就是跨越 eager
-断点传递数据的那个 tensor：后一个 segment 是基于它的地址完成 capture
-的，因此这块 buffer 必须一直存活，并在每次 replay
-时原地更新。有了这些复用机制，即使捕获的 shape 很多，显存开销仍然可控：在
-GLM-5.2 上，为 78 层 MoE 捕获 42 个 shape，只增加了 2.4 GB graph 显存。
+有了这些复用机制，即使 capture table 很大，显存开销仍然可控：在 GLM-5.2 上，为 78
+层 MoE 捕获 42 个 shape，只增加了 2.4 GB graph 显存。
 
 <MemReuseViz client:visible />
 

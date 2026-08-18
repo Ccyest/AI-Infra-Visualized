@@ -795,39 +795,4 @@
   color: var(--accent-ink, #fff);
 }
 
-/* ---------------- MemReuseViz ---------------- */
-
-.bcg-outbuf {
-  display: grid;
-  gap: 0.4rem;
-  margin: 0.9rem 0.2rem 0.2rem;
-}
-
-.bcg-outbuf-head {
-  display: flex;
-  gap: 0.7rem;
-  align-items: baseline;
-  flex-wrap: wrap;
-}
-
-.bcg-outbuf-box {
-  display: grid;
-  gap: 3px;
-  padding: 5px;
-  border: 1px solid color-mix(in srgb, var(--series-4) 55%, var(--grid));
-  border-radius: 6px;
-}
-
-.bcg-outbuf-box i {
-  height: 20px;
-  border-radius: 3px;
-  font-style: normal;
-  font-size: var(--bcg-font-xs);
-  color: var(--ink);
-  display: grid;
-  place-items: center;
-  white-space: nowrap;
-  overflow: hidden;
-  background: color-mix(in srgb, var(--series-4) 30%, var(--surface));
-  border: 1px solid color-mix(in srgb, var(--series-4) 55%, var(--grid));
-}
+/* MemReuseViz 复用 .bcg-bench 的两栏布局与 SVG 宽度规则,无额外样式 */
