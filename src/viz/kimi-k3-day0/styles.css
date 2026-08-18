@@ -1318,6 +1318,14 @@
   margin: 0 auto 0.35rem;
 }
 
+.dcp-flow-note {
+  display: block;
+  margin-top: 0.55rem;
+  color: var(--muted);
+  font-size: 0.68rem;
+  line-height: 1.55;
+}
+
 .dcp-inline-legend {
   display: flex;
   flex-wrap: wrap;

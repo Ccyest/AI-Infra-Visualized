@@ -32,9 +32,10 @@ const COPY = {
     step2: "② 各 GPU 本地 attention",
     step2Note: "只扫自己 1/N 的 KV",
     step3: "③ 一次 packed all-to-all",
-    step3Note: "交换 partial output + LSE",
-    step4: "④ LSE 精确合并",
-    step4Note: "结果与完整 softmax 一致",
+    step3Note: "o 按 head 切开分寄：每卡只发一份输出的量，O(N)",
+    step4: "④ 按 LSE 加权合并",
+    step4Note: "加权平均后与完整 softmax 完全一致",
+    flowNote: "LSE 是每张卡本地 softmax 的分母（取 log 保存）。打个比方：两个班各报一个平均分（o）和人数（LSE），按人数加权平均，就是全年级的平均分——所以合并是精确的，不是近似。",
     stored: "实色 = 该 GPU 保存",
     empty: "空框 = 此位置在其他 GPU",
   },
@@ -62,9 +63,10 @@ const COPY = {
     step2: "② Local attention per GPU",
     step2Note: "scan only 1/N of KV",
     step3: "③ One packed all-to-all",
-    step3Note: "exchange partial output + LSE",
-    step4: "④ Exact LSE merge",
-    step4Note: "matches the full softmax result",
+    step3Note: "o is split by head and scattered: each GPU sends one output's worth, O(N)",
+    step4: "④ LSE-weighted merge",
+    step4Note: "the weighted average equals the full softmax exactly",
+    flowNote: "LSE is each GPU's local softmax denominator (kept in log form). Think of two classes each reporting an average score (o) and a headcount (LSE): the headcount-weighted average is exactly the school-wide average — the merge is exact, not approximate.",
     stored: "filled = stored on this GPU",
     empty: "outline = owned by another GPU",
   },
@@ -148,37 +150,45 @@ function FlowIcon2() {
 
 function FlowIcon3() {
   return (
-    <svg className="dcp-flow-icon" viewBox="0 0 128 56" aria-hidden="true">
+    <svg className="dcp-flow-icon" viewBox="0 0 128 64" aria-hidden="true">
       <defs><marker id="dcp-a2a-arrow" viewBox="0 0 8 8" refX="6.5" refY="4" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L8 4L0 8Z" fill="var(--accent)" /></marker></defs>
-      <rect x="6" y="6" width="38" height="18" rx="4" fill="color-mix(in srgb, var(--series-1) 30%, var(--surface))" stroke="var(--border)" />
-      <text x="25" y="18.5" fontSize="7.5" fill="var(--ink-2)" textAnchor="middle">o₁·LSE₁</text>
-      <rect x="6" y="32" width="38" height="18" rx="4" fill="color-mix(in srgb, var(--series-2) 30%, var(--surface))" stroke="var(--border)" />
-      <text x="25" y="44.5" fontSize="7.5" fill="var(--ink-2)" textAnchor="middle">o₂·LSE₂</text>
-      <rect x="84" y="6" width="38" height="18" rx="4" fill="var(--surface)" stroke="var(--border)" />
-      <text x="103" y="18.5" fontSize="8" fill="var(--muted)" textAnchor="middle">G1</text>
-      <rect x="84" y="32" width="38" height="18" rx="4" fill="var(--surface)" stroke="var(--border)" />
-      <text x="103" y="44.5" fontSize="8" fill="var(--muted)" textAnchor="middle">G2</text>
-      <line x1="46" y1="15" x2="80" y2="39" stroke="var(--accent)" strokeWidth="1.4" markerEnd="url(#dcp-a2a-arrow)" />
-      <line x1="46" y1="41" x2="80" y2="17" stroke="var(--accent)" strokeWidth="1.4" markerEnd="url(#dcp-a2a-arrow)" />
+      <text x="3" y="18" fontSize="8" fill="var(--ink-2)">o₁</text>
+      <rect x="17" y="7" width="20" height="14" rx="2" fill="var(--series-1)" opacity="0.9" />
+      <rect x="38" y="7" width="20" height="14" rx="2" fill="var(--series-1)" opacity="0.35" />
+      <text x="3" y="52" fontSize="8" fill="var(--ink-2)">o₂</text>
+      <rect x="17" y="41" width="20" height="14" rx="2" fill="var(--series-2)" opacity="0.9" />
+      <rect x="38" y="41" width="20" height="14" rx="2" fill="var(--series-2)" opacity="0.35" />
+      <rect x="88" y="3" width="36" height="22" rx="4" fill="var(--surface)" stroke="var(--border)" />
+      <text x="91" y="17" fontSize="6.5" fill="var(--muted)">G1</text>
+      <rect x="102" y="7" width="9" height="14" rx="2" fill="var(--series-1)" opacity="0.9" />
+      <rect x="113" y="7" width="9" height="14" rx="2" fill="var(--series-2)" opacity="0.9" />
+      <rect x="88" y="39" width="36" height="22" rx="4" fill="var(--surface)" stroke="var(--border)" />
+      <text x="91" y="53" fontSize="6.5" fill="var(--muted)">G2</text>
+      <rect x="102" y="43" width="9" height="14" rx="2" fill="var(--series-1)" opacity="0.35" />
+      <rect x="113" y="43" width="9" height="14" rx="2" fill="var(--series-2)" opacity="0.35" />
+      <line x1="49" y1="22" x2="84" y2="46" stroke="var(--accent)" strokeWidth="1.3" markerEnd="url(#dcp-a2a-arrow)" />
+      <line x1="30" y1="40" x2="84" y2="17" stroke="var(--accent)" strokeWidth="1.3" markerEnd="url(#dcp-a2a-arrow)" />
     </svg>
   );
 }
 
 function FlowIcon4() {
   return (
-    <svg className="dcp-flow-icon" viewBox="0 0 128 56" aria-hidden="true">
+    <svg className="dcp-flow-icon" viewBox="0 0 128 64" aria-hidden="true">
       <defs><marker id="dcp-merge-arrow" viewBox="0 0 8 8" refX="6.5" refY="4" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L8 4L0 8Z" fill="var(--good)" /></marker></defs>
-      <rect x="6" y="6" width="34" height="16" rx="4" fill="color-mix(in srgb, var(--series-1) 30%, var(--surface))" stroke="var(--border)" />
-      <text x="23" y="17.5" fontSize="8" fill="var(--ink-2)" textAnchor="middle">o₁</text>
-      <rect x="6" y="34" width="34" height="16" rx="4" fill="color-mix(in srgb, var(--series-2) 30%, var(--surface))" stroke="var(--border)" />
-      <text x="23" y="45.5" fontSize="8" fill="var(--ink-2)" textAnchor="middle">o₂</text>
-      <line x1="42" y1="14" x2="64" y2="25" stroke="var(--good)" strokeWidth="1.4" markerEnd="url(#dcp-merge-arrow)" />
-      <line x1="42" y1="42" x2="64" y2="31" stroke="var(--good)" strokeWidth="1.4" markerEnd="url(#dcp-merge-arrow)" />
-      <circle cx="80" cy="28" r="12" fill="color-mix(in srgb, var(--good) 18%, var(--surface))" stroke="var(--good)" strokeWidth="1.4" />
-      <text x="80" y="31.5" fontSize="7.5" fill="var(--ink)" textAnchor="middle">LSE</text>
-      <line x1="93" y1="28" x2="102" y2="28" stroke="var(--good)" strokeWidth="1.4" markerEnd="url(#dcp-merge-arrow)" />
-      <rect x="105" y="19" width="17" height="18" rx="4" fill="var(--good)" opacity="0.85" />
-      <text x="113.5" y="31.5" fontSize="9" fill="var(--accent-ink)" textAnchor="middle" fontWeight="700">o</text>
+      <rect x="6" y="5" width="26" height="16" rx="3" fill="color-mix(in srgb, var(--series-1) 30%, var(--surface))" stroke="var(--border)" />
+      <text x="19" y="16.5" fontSize="8" fill="var(--ink-2)" textAnchor="middle">o₁</text>
+      <rect x="6" y="43" width="26" height="16" rx="3" fill="color-mix(in srgb, var(--series-2) 30%, var(--surface))" stroke="var(--border)" />
+      <text x="19" y="54.5" fontSize="8" fill="var(--ink-2)" textAnchor="middle">o₂</text>
+      <line x1="34" y1="13" x2="61" y2="27" stroke="var(--good)" strokeWidth="1.3" markerEnd="url(#dcp-merge-arrow)" />
+      <line x1="34" y1="51" x2="61" y2="37" stroke="var(--good)" strokeWidth="1.3" markerEnd="url(#dcp-merge-arrow)" />
+      <text x="40" y="11" fontSize="7" fill="var(--ink-2)">×w₁</text>
+      <text x="40" y="60" fontSize="7" fill="var(--ink-2)">×w₂</text>
+      <circle cx="74" cy="32" r="11" fill="color-mix(in srgb, var(--good) 18%, var(--surface))" stroke="var(--good)" strokeWidth="1.3" />
+      <text x="74" y="35.5" fontSize="9" fill="var(--ink)" textAnchor="middle">Σ</text>
+      <line x1="86" y1="32" x2="96" y2="32" stroke="var(--good)" strokeWidth="1.3" markerEnd="url(#dcp-merge-arrow)" />
+      <rect x="99" y="23" width="18" height="18" rx="3" fill="var(--good)" opacity="0.85" />
+      <text x="108" y="35.5" fontSize="9" fill="var(--accent-ink)" fontWeight="700" textAnchor="middle">o</text>
     </svg>
   );
 }
@@ -244,6 +254,7 @@ export default function DcpViz({ lang = "zh" }: { lang?: Locale }) {
           <i>→</i>
           <FlowStep title={copy.step4} note={copy.step4Note} icon={<FlowIcon4 />} />
         </div>
+        <small className="dcp-flow-note">{copy.flowNote}</small>
       </section>
 
       <div className="dcp-inline-legend"><span><i className="stored" />{copy.stored}</span><span><i className="empty" />{copy.empty}</span></div>
