@@ -7,11 +7,8 @@ import "./styles.css";
 const COPY = {
   title: { zh: "Channel 图示", en: "Channel diagram" },
   hiddenLabel: { zh: "hidden state", en: "hidden state" },
-  hiddenNote: { zh: "整模型共享的 hidden embedding", en: "the model-wide hidden embedding" },
-  arrow: { zh: "学习投影", en: "learned projection" },
   headLabel: { zh: "一个 head 的 k", en: "k for one head" },
   channelNote: { zh: "高亮的一维 = 一条 channel", en: "the highlighted dim = one channel" },
-  headsNote: { zh: "每个 head 一份投影，共 96 个", en: "one projection per head, 96 heads" },
 } as const;
 
 const KVEC_CELLS = 9;
@@ -33,11 +30,9 @@ export default function StateChannelViz({ lang = "zh" }: { lang?: Locale }) {
             ))}
           </div>
           <code>xₜ ∈ ℝ⁷¹⁶⁸</code>
-          <small>{COPY.hiddenNote[lang]}</small>
         </section>
 
         <div className="state-channel-arrow" aria-hidden="true">
-          <span>{COPY.arrow[lang]}</span>
           <b>→</b>
           <code>Wₖ ∈ ℝ¹²⁸ˣ⁷¹⁶⁸</code>
         </div>
@@ -54,7 +49,6 @@ export default function StateChannelViz({ lang = "zh" }: { lang?: Locale }) {
           </div>
           <code>kₜ ∈ ℝ¹²⁸</code>
           <small>{COPY.channelNote[lang]}</small>
-          <small>{COPY.headsNote[lang]}</small>
         </section>
       </div>
     </figure>

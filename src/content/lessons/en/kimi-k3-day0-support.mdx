@@ -150,9 +150,9 @@ context, the larger that effect gets.
 ### Attention mechanisms in detail: KDA
 
 KDA's gating works per channel, so first, what a channel is. K3's hidden size
-is 7168; each KDA head uses a learned projection to compress the 7168-d hidden
-state down to 128 dimensions, and a channel is one dimension of that projected
-128-d space. Key channel $j$ sets the coefficient with which content is
+is 7168; each of the 96 KDA heads uses its own learned projection to compress
+the model-wide 7168-d hidden state down to 128 dimensions, and a channel is
+one dimension of that projected 128-d space. Key channel $j$ sets the coefficient with which content is
 written into row $j$ of S:
 
 <StateChannelViz client:visible lang="en" />
