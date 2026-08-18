@@ -1,0 +1,251 @@
+---
+title: "Breakable CUDA Graph: Advanced CUDA Graph Techniques in SGLang"
+description: "Where kernel-launch overhead comes from, how BCG breaks and resumes mid-capture, how full CUDA Graph covers prefill with two-dimensional padding, and why capturing through the chunked-prefill size saves memory."
+order: 4
+concepts:
+  - Kernel-launch overhead
+  - Runner/backend split
+  - "@eager_on_graph"
+  - Persistent boundary buffer
+  - Token buckets & zero-length sentinels
+  - Capture ceiling
+tryOnSglang: "https://github.com/sgl-project/sglang"
+references:
+  - label: "LMSYS Blog: Advanced CUDA Graph Techniques in SGLang"
+    url: "https://www.lmsys.org/blog/2026-08-17-advanced-cuda-graph/"
+  - label: "sglang#19102: first BCG implementation"
+    url: "https://github.com/sgl-project/sglang/pull/19102"
+  - label: "sglang#22218: BCG for prefill"
+    url: "https://github.com/sgl-project/sglang/pull/22218"
+  - label: "sglang#23906: runner/backend refactor"
+    url: "https://github.com/sgl-project/sglang/pull/23906"
+  - label: "sglang#27988: full CUDA Graph for prefill"
+    url: "https://github.com/sgl-project/sglang/pull/27988"
+  - label: "NVIDIA: Getting Started with CUDA Graphs"
+    url: "https://developer.nvidia.com/blog/cuda-graphs/"
+---
+
+import LaunchRaceViz from "../../../viz/breakable-cuda-graph/LaunchRaceViz";
+import BcgStepViz from "../../../viz/breakable-cuda-graph/BcgStepViz";
+import PrefillPadViz from "../../../viz/breakable-cuda-graph/PrefillPadViz";
+import ReplayBenchViz from "../../../viz/breakable-cuda-graph/ReplayBenchViz";
+import MemoryCeilingViz from "../../../viz/breakable-cuda-graph/MemoryCeilingViz";
+import Mapping from "../../../viz/breakable-cuda-graph/Mapping";
+
+## Start from kernel-launch overhead
+
+One inference forward is not a single kernel but hundreds of GPU operations in
+sequence. Every operation needs a CPU-side launch; the shorter the kernel, the
+larger the launch overhead looms, and for latency-sensitive workloads it sits
+directly on the critical path. CUDA Graph records the GPU work once (capture)
+and replays the whole span afterwards, turning one launch per kernel into one
+launch per span.
+
+The diagram below compares three ways of executing the same forward. In eager
+mode the CPU is busy issuing launches one by one while the GPU spends half its
+time waiting; a full graph runs the whole span off a single launch; BCG
+(Breakable CUDA Graph) sits in between — most kernels live inside graphs while
+a few incompatible operations stay eager outside them:
+
+<LaunchRaceViz client:visible lang="en" />
+
+Using CUDA Graph well is more than "record it once", though. Capture demands
+that the whole span be static: fixed shapes, fixed addresses, no host
+participation. Real serving is not like that — attention plans from live
+sequence lengths, collectives coordinate at runtime, and LoRA, MoE, and PD
+disaggregation each bring dynamic logic. A single incompatible operation can
+leave a much larger part of the forward uncaptured. Everything below trades
+"capture more" against compatibility, startup time, and memory.
+
+## The runner/backend split
+
+In #23906 SGLang refactored CUDA Graph support into two layers. A runner
+manages the state each execution path needs: captured shapes, static input
+buffers, attention metadata, and padding live batches into captured shapes. A
+backend decides how that execution becomes replayable graphs. Runners depend
+only on a common backend interface, so each execution path picks its capture
+strategy independently:
+
+| Backend | Segmentation | How boundaries are placed |
+| --- | --- | --- |
+| full | One graph for the whole span, no eager regions | No boundaries needed |
+| breakable (BCG) | Broken during capture into segments plus eager regions | Marked with `@eager_on_graph`, split directly at capture time |
+| tc_piecewise | torch.compile traces the full forward, the FX graph splits at registered points | The compiler must be able to represent the inputs and outputs crossing each boundary |
+
+Prefill and decode have separate runners; speculative decoding adds the EAGLE
+draft, draft-extend, and frozen-KV MTP draft runners on top of the decode
+runner, while target verify reuses the decode runner itself, capturing more
+than one token per request.
+
+## Breakable CUDA Graph
+
+### Break, then resume
+
+BCG was proposed, named, implemented, and first open-sourced in SGLang: #19102
+(February 21, 2026) carried the first implementation, and #22218 extended it to
+prefill, after which it became SGLang's default prefill strategy. The mechanism
+does exactly one thing: it inserts explicit eager breaks while capture is in
+progress. When execution reaches a function marked `@eager_on_graph`, the
+current graph segment is closed; the function runs eagerly; capture then
+resumes in a new segment. The forward becomes a sequence of graph segments
+connected by eager regions.
+
+The stitching relies on one fixed address. During capture, the tensor the eager
+function returns is retained as a persistent boundary buffer, so its device
+address stays fixed, and the next segment is captured against that address. At
+replay, the eager function runs normally each time and returns a fresh tensor;
+BCG copies it into the retained buffer — same address, new value — and the next
+segment reads the updated value from the address it was captured against. BCG
+never inspects the inside of an eager region: those operations only need to
+execute correctly.
+
+<BcgStepViz client:visible lang="en" />
+
+### What removing the compiler buys
+
+tc_piecewise reaches the same segmented structure, but only after torch.compile
+understands the entire forward. That costs three things.
+
+**Startup time.** Compilation — not capture — dominates setup, taking 78–86% of
+the time spent preparing prefill graphs, and it grows with model complexity: 90
+seconds on a 235B MoE, 158 seconds on GLM-5.2. BCG reaches segmented execution
+in a single capture pass and builds prefill graphs 3.8–5.2× faster (42 captured
+shapes, TP4, 4×GB300).
+
+**Compatibility.** SGLang leans heavily on custom CUDA, Triton, and
+JIT-compiled kernels. Making them visible to the compiler meant torch.library
+registrations and fake implementations for tracing; worse, the boundaries
+themselves were compiler-constrained — inputs and outputs crossing an operator
+boundary had to be types the compiler could represent, which sometimes forced
+moving the cut point or enlarging the eager region just to expose an acceptable
+interface. As DP attention, MoE all-to-all, LoRA, PD disaggregation, and
+hierarchical cache kept arriving, maintaining CUDA Graph increasingly felt like
+a torch.compile integration project. BCG needs no understanding of the marked
+function at a break, so graph boundaries follow serving logic instead. The line
+counts tell the same story: the same segmented execution takes BCG 521 lines
+versus 1,771 for tc_piecewise.
+
+**Debuggability.** A captured graph replays as an opaque unit — prints and
+assertions cannot reach inside it. BCG's eager regions remain ordinary Python
+on every replay. `--debug-cuda-graph` wraps the whole forward in one eager
+break: the model runs eagerly while still going through the runner, static
+buffers, replay path, and metadata preparation. If the problem persists, the
+suspect is the model or runner path; if it disappears, capture itself is.
+
+BCG has also been adopted by SGLang's diffusion stack (#27436). Denoising
+repeatedly executes the same DiT forward, dense with small launch-bound
+kernels: on a single B200, Qwen-Image at 512×512 improves from 6.48 s to 2.45 s
+end-to-end, and Z-Image from 1.231 s to 0.662 s. BCG removes launch overhead,
+not FLOPs — its advantage is largest when exposed launch gaps are a meaningful
+fraction of execution time.
+
+## Full CUDA Graph for prefill
+
+### Two dimensions, both pinned
+
+Decode captures easily because each request contributes one token: the only
+varying dimension is batch size, covered by a set of captured buckets. A
+prefill batch varies in two dimensions at once — the total number of tokens,
+and how many requests those tokens belong to — while a captured graph requires
+both to stay fixed. Together with attention backends that depend on runtime
+metadata, this was the main reason prefill stayed on BCG. #27988 restructured
+how request slots and attention metadata are represented, so supported
+attention backends no longer have to remain outside the graph.
+
+The token dimension is pinned with token buckets: a live batch is padded to the
+nearest captured token count. The request dimension is handled separately: each
+graph reserves a fixed number of request slots; live requests occupy the first
+ones, and unused slots are rewritten as zero-length sentinels — zero sequence
+and extend lengths, offsets parked after the real tokens. A batch with more
+requests than slots falls back to eager. Sentinel metadata must be rewritten
+before every replay (the captured graph still reads the whole request table),
+and attention metadata is likewise rebuilt outside the graph for the padded
+batch — which is why full capture currently requires backends that prepare
+extend-mode metadata this way, namely FlashAttention (fa4) and FlashInfer.
+
+<PrefillPadViz client:visible lang="en" />
+
+The two forms of padding cost very different amounts. Padded tokens are real
+work: they become actual rows in the captured batch and pass through the dense
+projections as part of the same GEMMs. SGLang carries the true token count
+separately so MoE routing, attention, and linear-attention kernels skip much of
+the padded region, but the dense computation still pays for those rows. Empty
+request slots are much cheaper: FlashAttention's variable-length scheduler
+derives work from each sequence's actual length, so a zero-length request
+contributes essentially no attention work — just metadata and a little
+scheduling overhead. Tokens are the expensive dimension; request slots are the
+cheap one. Full prefill capture is still experimental and must be enabled
+explicitly; for production workloads the engine recommends breakable or
+tc_piecewise.
+
+### Prefill benchmark
+
+Measuring prefill alone — fixed input length, a single output token, one
+request at a time, decode graphs disabled in every arm — on gpt-oss-120b (TP4,
+4×GB300), where all four paths run: full capture is 1.93× over eager, BCG
+1.70×, tc_piecewise 1.45×. BCG's replay is another 17% faster than the
+compiler-based backend: BCG replays its recorded segments directly, while
+tc_piecewise re-enters the compiled callable every time, paying Torch Dynamo's
+guard checks and dispatch first. On GLM-5.2 only BCG can capture at all —
+tc_piecewise cannot trace its forward, and full capture has no path for its
+sparse attention — reaching 1.60×. Every curve stays flat across a 32× range of
+prompt lengths: the signature of launch overhead, not compute.
+
+<ReplayBenchViz client:visible lang="en" />
+
+## The memory footprint of CUDA Graphs
+
+Memory poses two problems: a segmented capture must not multiply resident
+memory, and capture must reach deep enough that resident graph memory actually
+replaces the worst eager activation peak.
+
+### Reuse inside a segmented capture
+
+A segmented backend could easily multiply graph memory: every captured shape
+contains several segments, and each segment's intermediates must stay valid for
+replay. BCG avoids this with three forms of reuse: all segments of a captured
+shape share one CUDA Graph memory pool, so intermediate storage is reused
+across segments instead of pinned per segment; tensors passed into a break are
+held only weakly when the pool already owns their storage, so Python references
+do not extend their lifetimes; and all capture sizes share one maximum-sized
+output buffer, sliced to the rows each shape needs. The one tensor that cannot
+be treated this way is the one carrying data across an eager break — the next
+segment is captured against its address, so it must stay alive and be updated
+in place. With these in place, capturing 42 shapes on GLM-5.2 (a 78-layer MoE)
+adds only 2.4 GB of graph memory.
+
+### Capture through the chunked-prefill size
+
+CUDA Graphs change the shape of prefill memory. Graph memory is resident:
+allocated at capture, kept for the server's lifetime. Eager activations are
+transient: each prefill allocates working memory, and the largest supported
+prefill sets the peak. Capturing a prefill shape moves that transient working
+set into the graph's resident pool — but only shapes that actually replay a
+graph benefit. If the capture ladder stops below the largest prefill, the
+largest one still falls back to eager, the original peak stays exactly where it
+was, and the server pays for all the resident graphs beneath it.
+
+That makes the capture ceiling matter more than the number of captured shapes.
+`chunked_prefill_size` bounds the largest single prefill forward, so capturing
+through that size removes the worst eager activation peak: 0.56 GB → 0.001 GB
+on gpt-oss-120b, and 1.55 GB → 0.35 GB on GLM-5.2 (whose sparse-attention
+indexer still runs eagerly at a break). The total then lands below the no-graph
+baseline — 0.51 GB lower on gpt-oss-120b, 1.10 GB on GLM-5.2. Modest against a
+footprint of hundreds of gigabytes, but a saving rather than a cost. The other
+half of the benefit is predictability: a workload-dependent activation spike
+becomes a fixed allocation established at capture time, which the engine can
+account for up front instead of reserving headroom for a transient peak.
+
+<MemoryCeilingViz client:visible lang="en" />
+
+## Diagram ↔ real system
+
+<Mapping client:visible lang="en" />
+
+## Acknowledgments
+
+This work was a collaboration between the SGLang team and the Meta team.
+SGLang: Yuwei An*, Cheng Wan, Xiaoyu Zhang, Mick Qian, Baizhou Zhang, Yusheng
+Su, Ke Bao; Meta: Shiyang Chen*, Lianmin Zheng (* equal contribution). Thanks
+also to the NVIDIA, AMD, Thinking Machines Lab, and Meta PyTorch teams for
+their help along the way.
