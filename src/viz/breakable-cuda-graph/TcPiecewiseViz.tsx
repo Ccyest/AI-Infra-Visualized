@@ -21,10 +21,10 @@ function Ops({ pieces }: { pieces: boolean }) {
 
 export default function TcPiecewiseViz({ lang = "zh" }: { lang?: Locale }) {
   const stages = [
-    { name: TC.stage1[lang], visual: <Ops pieces={false} /> },
-    { name: TC.stage2[lang], visual: null },
-    { name: TC.stage3[lang], visual: <Ops pieces /> },
-    { name: TC.stage4[lang], visual: null },
+    { name: TC.stage1[lang], badge: TC.stage1Badge[lang], visual: <Ops pieces={false} /> },
+    { name: TC.stage2[lang], badge: TC.stage2Badge[lang], visual: null },
+    { name: TC.stage3[lang], badge: null, visual: <Ops pieces /> },
+    { name: TC.stage4[lang], badge: null, visual: null },
   ];
 
   return (
@@ -45,6 +45,7 @@ export default function TcPiecewiseViz({ lang = "zh" }: { lang?: Locale }) {
             <section className="bcg-tc-stage">
               <b>{s.name}</b>
               {s.visual}
+              {s.badge && <small>{s.badge}</small>}
             </section>
           </div>
         ))}

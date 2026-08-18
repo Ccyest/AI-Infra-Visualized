@@ -75,15 +75,20 @@ export const TC = {
     en: "Four steps left to right; orange marks the incompatible op",
   },
   stage1: { zh: "一个 forward", en: "One forward" },
+  stage1Badge: { zh: "E 依赖运行时信息", en: "E depends on runtime info" },
   stage2: { zh: "torch.compile trace", en: "torch.compile trace" },
+  stage2Badge: {
+    zh: "Dynamo 把整个 forward trace 成 FX graph；custom kernel 要 torch.library + fake impl",
+    en: "Dynamo traces the whole forward into an FX graph; custom kernels need torch.library + fake impls",
+  },
   stage3: { zh: "在切分点拆开", en: "Split at the registered points" },
   stage4: { zh: "逐 piece 编译 + capture", en: "Compile + capture each piece" },
   timebarLabel: { zh: "构建时间构成", en: "Build-time breakdown" },
   timebarCompile: { zh: "编译", en: "compile" },
   timebarCapture: { zh: "capture", en: "capture" },
   timebarNumbers: {
-    zh: "235B MoE 90 s · GLM-5.2 158 s",
-    en: "90 s on a 235B MoE · 158 s on GLM-5.2",
+    zh: "例：235B MoE 90 s · GLM-5.2 158 s",
+    en: "e.g. 90 s on a 235B MoE · 158 s on GLM-5.2",
   },
   replayNote: {
     zh: "replay 每次先付 Dynamo guard check 与 dispatch",
