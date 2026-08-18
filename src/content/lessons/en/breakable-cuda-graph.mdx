@@ -245,31 +245,47 @@ resident: replay requires every intermediate tensor to keep its address, so
 this storage is allocated from a dedicated memory pool at capture time and
 retained for the lifetime of the server. Eager activations are transient: each
 forward allocates working memory and frees it afterwards, with the peak set by
-the largest supported prefill. This poses two separate challenges: once
-capture is segmented, resident memory must not multiply with the number of
-segments and shapes; and for resident graph memory to actually replace the
-worst-case activation peak, capture has to cover the largest prefill shape.
+the largest supported prefill. This poses two separate challenges: once the
+forward is cut into segments, resident memory must not grow with the number of
+segments; and for resident graph memory to actually replace the worst-case
+activation peak, capture has to cover the largest prefill shape.
 
 ### Reuse inside a segmented capture
 
-Segmentation could easily multiply graph memory: a captured shape now contains
-multiple segments, and if every segment kept its own intermediate storage,
-graph memory would scale with the segment count, and again with the number of
-captured shapes. BCG avoids this through three forms of reuse. First, all
-segments of one captured shape share a single CUDA Graph memory pool: segments
-execute in order, so intermediate storage the previous segment no longer needs
-can be reused at the same addresses when the next segment is captured, instead
-of each segment pinning its own copy. Second, tensors passed into a break are
-held only weakly when the pool already owns their storage: the pool can only
-reuse storage that nothing references, and one extra Python strong reference
-at a break would keep that storage unusable for the graph's whole lifetime.
-Third, the output buffer is shared across all capture sizes: one allocation at
-the maximum size, with each shape using only the first rows it needs. One
-value cannot join any of this reuse: the tensor that carries data across an
-eager break. The next graph segment is captured against its address, so that
-buffer must stay alive and be updated in place on every replay. With these
-reuse mechanisms, even a long list of captured shapes stays modest: 42 shapes
-across a 78-layer MoE add 2.4 GB of graph memory on GLM-5.2.
+Intermediates allocated during capture have to keep their addresses, but that
+does not mean every intermediate needs memory of its own. Within a single
+capture, once an intermediate has been consumed and nothing references it any
+more, its memory can go straight to a later operation. What a graph has to
+hold onto is therefore the peak of what is live at the same time during the
+forward, not the sum of every intermediate in it.
+
+Segmentation is what puts that at risk. Each BCG segment is its own CUDA
+Graph, and if every segment allocated from its own memory pool, memory used by
+the first segment could not be handed over while the second was being
+captured: what has to be held goes from the peak of one forward to the sum of
+the peaks of all segments. BCG has all segments share one memory pool — a
+process-wide one, in fact, shared by every capture shape and by both the
+prefill and decode paths, since they never replay at the same time — and
+because segments execute in strict order, memory released by one segment is
+picked up at the same addresses by the next.
+
+One easy-to-miss detail decides whether that reuse actually happens. The
+tensors handed to an eager function at a break are exactly the pool-resident
+intermediates the previous segment produced, and BCG has to remember them to
+call the eager function on every replay. The pool, however, only hands out
+memory that nothing references, so remembering them through ordinary Python
+references would keep those blocks locked for the graph's entire lifetime and
+cancel out the reuse above. BCG therefore remembers weak-reference views of
+them: the memory stays valid because the segment graphs hold the pool, not
+because Python holds a reference.
+
+The output buffer, meanwhile, is shared across all capture sizes: one
+allocation at the maximum size, with each shape using only the first rows it
+needs. Exactly one value stays out of all this reuse — the tensor that carries
+data across an eager break. The next segment is captured against its address,
+so that buffer must stay alive and be updated in place on every replay. With
+these reuse mechanisms, even a long list of captured shapes stays modest: 42
+shapes across a 78-layer MoE add 2.4 GB of graph memory on GLM-5.2.
 
 <MemReuseViz client:visible lang="en" />
 
