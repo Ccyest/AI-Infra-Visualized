@@ -1,3 +1,4 @@
+import Legend from "../../components/core/Legend";
 import type { Locale } from "../../lib/i18n";
 import { REUSE } from "./strings";
 import "./styles.css";
@@ -51,15 +52,34 @@ export default function MemReuseViz({ lang = "zh" }: { lang?: Locale }) {
             <i className="boundary" style={{ width: w(1) }} title={REUSE.boundaryTag[lang]} />
           </span>
         </div>
+      </div>
 
-        <div className="bcg-reuse-row bcg-reuse-tagsrow" aria-hidden="true">
-          <span className="bcg-reuse-name" />
-          <span className="bcg-reuse-bar tags">
-            <small style={{ width: w(3) }}>{REUSE.poolTag[lang]}</small>
-            <small style={{ width: w(2) }}>{REUSE.outMaxTag[lang]}</small>
-            <small style={{ width: w(9) }}>{REUSE.boundaryTag[lang]}</small>
-          </span>
-        </div>
+      <div className="viz-footer">
+        <Legend
+          items={[
+            {
+              label: REUSE.poolTag[lang],
+              swatch: {
+                background: "color-mix(in srgb, var(--series-1) 26%, var(--surface))",
+                border: "1px solid color-mix(in srgb, var(--series-1) 50%, var(--grid))",
+              },
+            },
+            {
+              label: REUSE.outMaxTag[lang],
+              swatch: {
+                background: "color-mix(in srgb, var(--series-4) 30%, var(--surface))",
+                border: "1px solid color-mix(in srgb, var(--series-4) 55%, var(--grid))",
+              },
+            },
+            {
+              label: REUSE.boundaryTag[lang],
+              swatch: {
+                background: "color-mix(in srgb, var(--series-7) 30%, var(--surface))",
+                border: "1.5px solid var(--series-7)",
+              },
+            },
+          ]}
+        />
       </div>
     </figure>
   );
