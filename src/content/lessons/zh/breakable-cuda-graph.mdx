@@ -1,6 +1,6 @@
 ---
 title: "SGLang 的 CUDA Graph 进阶"
-description: "Breakable CUDA Graph 由 SGLang 提出、命名、实现并率先开源：在 capture 过程中直接插入 eager 断点，不再依赖编译器；prefill 的 full CUDA Graph 与 CUDA Graph 的显存管理也在文中一并展开。"
+description: "Breakable CUDA Graph 由 SGLang 提出并率先开源，通过在 capture 过程中直接插入 eager 断点，解决了靠编译器切图带来的启动慢、兼容性差的问题；prefill 的 full CUDA Graph 也一并展开，通过 token bucket 与 zero-length sentinel 钉死两个动态维度，解决了 prefill 无法整图捕获的问题。"
 order: 4
 tryOnSglang: "https://github.com/sgl-project/sglang"
 references:

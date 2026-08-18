@@ -1,6 +1,6 @@
 ---
 title: "Advanced CUDA Graph Techniques in SGLang"
-description: "Breakable CUDA Graph was proposed, named, implemented, and first open-sourced in SGLang: eager breaks inserted directly during capture, with no compiler required; the post also covers full CUDA Graph for prefill and CUDA Graph memory management."
+description: "Breakable CUDA Graph, proposed and first open-sourced in SGLang, inserts eager breaks directly during capture to solve the slow startup and poor compatibility of compiler-based graph splitting; full CUDA Graph for prefill is covered too, pinning both dynamic dimensions with token buckets and zero-length sentinels so prefill can be captured whole."
 order: 4
 tryOnSglang: "https://github.com/sgl-project/sglang"
 references:
