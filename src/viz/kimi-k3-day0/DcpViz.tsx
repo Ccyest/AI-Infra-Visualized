@@ -32,10 +32,9 @@ const COPY = {
     step2: "② 各 GPU 本地 attention",
     step2Note: "只扫自己 1/N 的 KV",
     step3: "③ 一次 packed all-to-all",
-    step3Note: "o 按 head 切 4 段分寄，G_g 只收第 g 段。消息条数确实是 N²，但每段只有 o 的 1/N：每卡收发总量 ≈ 一份 o，按字节算 O(N)",
+    step3Note: "每段只有 o 的 1/N",
     step4: "④ 按 LSE 加权合并",
-    step4Note: "加权平均后与完整 softmax 完全一致",
-    flowNote: "LSE 是每张卡本地 softmax 的分母（取 log 保存）。打个比方：四个班各报一个平均分（o）和人数（LSE），按人数加权平均，就是全年级的平均分——所以合并是精确的，不是近似。图 ③ 只画出 o₁ 的分寄路径，o₂–o₄ 同理；右侧深浅表示来源不同。",
+    step4Note: "结果与完整 softmax 一致",
     stored: "实色 = 该 GPU 保存",
     empty: "空框 = 此位置在其他 GPU",
   },
@@ -63,10 +62,9 @@ const COPY = {
     step2: "② Local attention per GPU",
     step2Note: "scan only 1/N of KV",
     step3: "③ One packed all-to-all",
-    step3Note: "o splits into 4 head segments and G_g receives only segment g. The message count is indeed N², but each segment is 1/N of o: every GPU sends and receives about one output's worth — O(N) in bytes",
+    step3Note: "each segment is 1/N of o",
     step4: "④ LSE-weighted merge",
-    step4Note: "the weighted average equals the full softmax exactly",
-    flowNote: "LSE is each GPU's local softmax denominator (kept in log form). Think of four classes each reporting an average score (o) and a headcount (LSE): the headcount-weighted average is exactly the school-wide average — the merge is exact, not approximate. Step ③ draws the scatter paths for o₁ only; o₂–o₄ work the same way, and shading on the right marks the source.",
+    step4Note: "matches the full softmax result",
     stored: "filled = stored on this GPU",
     empty: "outline = owned by another GPU",
   },
@@ -264,7 +262,6 @@ export default function DcpViz({ lang = "zh" }: { lang?: Locale }) {
           <i>→</i>
           <FlowStep title={copy.step4} note={copy.step4Note} icon={<FlowIcon4 />} />
         </div>
-        <small className="dcp-flow-note">{copy.flowNote}</small>
       </section>
 
       <div className="dcp-inline-legend"><span><i className="stored" />{copy.stored}</span><span><i className="empty" />{copy.empty}</span></div>
