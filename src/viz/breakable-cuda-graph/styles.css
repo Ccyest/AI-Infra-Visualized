@@ -518,94 +518,58 @@
   gap: 0.35rem;
 }
 
-.bcg-mem-chart {
-  position: relative;
+.bcg-ceil-chart {
+  max-width: 30rem;
+  margin: 0.5rem auto 0;
+}
+
+.bcg-ceil-chart svg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.bcg-ceil-control {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 1.4rem;
-  align-items: end;
-  height: 190px;
-  margin: 1.6rem 0.2rem 0.4rem;
-  padding: 0 0.6rem;
+  gap: 0.3rem;
+  max-width: 30rem;
+  margin: 0.4rem auto 0;
+  width: 100%;
 }
 
-.bcg-mem-col {
+.bcg-ceil-top {
   display: flex;
-  flex-direction: column;
-  justify-content: flex-end;
-  align-items: center;
-  height: 100%;
-  position: relative;
-}
-
-.bcg-mem-stack {
-  width: min(64px, 70%);
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-end;
-}
-
-.bcg-mem-slice {
-  border-radius: 3px 3px 0 0;
-  flex: none;
-}
-
-.bcg-mem-slice.peak {
-  background: color-mix(in srgb, var(--series-2) 75%, var(--surface));
-}
-
-.bcg-mem-slice.resident {
-  background: var(--series-1);
-  border-radius: 0 0 3px 3px;
-}
-
-.bcg-mem-slice.peak + .bcg-mem-slice.resident {
-  border-radius: 0 0 3px 3px;
-}
-
-.bcg-mem-delta {
-  position: absolute;
-  top: -1.35rem;
-  font-size: var(--bcg-font-xs);
-  font-weight: 650;
-  font-variant-numeric: tabular-nums;
-  color: var(--ink-2);
-  white-space: nowrap;
-}
-
-.bcg-mem-delta.saving {
-  color: var(--series-3);
-}
-
-.bcg-mem-peaklabel {
-  position: absolute;
-  font-size: var(--bcg-font-xs);
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-
-.bcg-mem-baseline {
-  position: absolute;
-  left: 0;
-  right: 0;
-  border-top: 1.5px dashed var(--axis);
-  pointer-events: none;
-}
-
-.bcg-mem-baseline small {
-  position: absolute;
-  right: 0;
-  top: -1.1rem;
-  font-size: var(--bcg-font-xs);
-  color: var(--muted);
-}
-
-.bcg-mem-colname {
+  justify-content: space-between;
+  align-items: baseline;
   font-size: var(--bcg-font-sm);
   color: var(--ink-2);
-  text-align: center;
-  margin-top: 0.45rem;
+}
+
+.bcg-ceil-top output {
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  font-weight: 650;
+}
+
+.bcg-ceil-reads {
+  display: flex;
+  gap: 1.1rem;
+  flex-wrap: wrap;
+  justify-content: center;
+  margin-top: 0.5rem;
+  font-size: var(--bcg-font-xs);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.bcg-ceil-reads b {
+  color: var(--ink);
+  font-weight: 650;
+}
+
+.bcg-ceil-reads output.saving {
+  color: var(--series-3);
+  font-weight: 650;
 }
 
 /* ---------------- TimelineViz ---------------- */
@@ -797,37 +761,30 @@
 
 /* ---------------- MemReuseViz ---------------- */
 
-.bcg-reuse {
+.bcg-outbuf {
   display: grid;
-  gap: 0.55rem;
-  margin: 0.5rem 0 0.2rem;
+  gap: 0.4rem;
+  margin: 0.9rem 0.2rem 0.2rem;
 }
 
-.bcg-reuse-row {
-  display: grid;
-  grid-template-columns: 6.8rem 1fr;
-  gap: 0.7rem;
-  align-items: center;
-}
-
-.bcg-reuse-tagsrow {
-  margin-top: -0.35rem;
-}
-
-.bcg-reuse-name {
-  font-size: var(--bcg-font-sm);
-  color: var(--ink-2);
-  text-align: right;
-}
-
-.bcg-reuse-bar {
+.bcg-outbuf-head {
   display: flex;
-  gap: 3px;
+  gap: 0.7rem;
+  align-items: baseline;
+  flex-wrap: wrap;
 }
 
-.bcg-reuse-bar i {
-  height: 26px;
-  border-radius: 4px;
+.bcg-outbuf-box {
+  display: grid;
+  gap: 3px;
+  padding: 5px;
+  border: 1px solid color-mix(in srgb, var(--series-4) 55%, var(--grid));
+  border-radius: 6px;
+}
+
+.bcg-outbuf-box i {
+  height: 20px;
+  border-radius: 3px;
   font-style: normal;
   font-size: var(--bcg-font-xs);
   color: var(--ink);
@@ -835,29 +792,6 @@
   place-items: center;
   white-space: nowrap;
   overflow: hidden;
-  padding: 0 2px;
-  flex: none;
-}
-
-.bcg-reuse-bar i.seg {
-  background: color-mix(in srgb, var(--series-1) 26%, var(--surface));
-  border: 1px solid color-mix(in srgb, var(--series-1) 50%, var(--grid));
-}
-
-.bcg-reuse-bar i.out {
   background: color-mix(in srgb, var(--series-4) 30%, var(--surface));
   border: 1px solid color-mix(in srgb, var(--series-4) 55%, var(--grid));
-}
-
-.bcg-reuse-bar i.boundary {
-  background: color-mix(in srgb, var(--series-7) 30%, var(--surface));
-  border: 1.5px solid var(--series-7);
-}
-
-.bcg-reuse-bar.tags small {
-  font-size: var(--bcg-font-xs);
-  color: var(--muted);
-  flex: none;
-  white-space: nowrap;
-  overflow: visible;
 }
