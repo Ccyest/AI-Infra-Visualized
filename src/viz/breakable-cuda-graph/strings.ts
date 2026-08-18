@@ -66,6 +66,41 @@ export const TIMELINE_ITEMS: TimelineItem[] = [
   },
 ];
 
+/* ---------------- TcPiecewiseViz ---------------- */
+
+export const TC = {
+  title: { zh: "TC piecewise 断点图示", en: "TC-piecewise breakpoints diagram" },
+  subtitle: {
+    zh: "从左到右四步；橙色为不兼容算子",
+    en: "Four steps left to right; orange marks the incompatible op",
+  },
+  stage1: { zh: "完整 forward", en: "The full forward" },
+  stage1Badge: { zh: "E 依赖运行时信息", en: "E depends on runtime info" },
+  stage2: { zh: "torch.compile trace", en: "torch.compile trace" },
+  stage2Badge: {
+    zh: "custom kernel 要 torch.library + fake impl",
+    en: "custom kernels need torch.library + fake impls",
+  },
+  stage3: { zh: "FX graph 在注册切分点拆开", en: "FX graph split at registered points" },
+  stage3Badge: {
+    zh: "边界类型须编译器可表示",
+    en: "boundary types must be compiler-representable",
+  },
+  stage4: { zh: "逐 piece 编译 + capture", en: "compile + capture each piece" },
+  stage4Badge: { zh: "编译占准备时间 78–86%", en: "compilation is 78–86% of setup" },
+  timebarLabel: { zh: "构建时间构成", en: "Build-time breakdown" },
+  timebarCompile: { zh: "编译", en: "compile" },
+  timebarCapture: { zh: "capture", en: "capture" },
+  timebarNumbers: {
+    zh: "235B MoE 90 s · GLM-5.2 158 s",
+    en: "90 s on a 235B MoE · 158 s on GLM-5.2",
+  },
+  replayNote: {
+    zh: "replay 每次先付 Dynamo guard check 与 dispatch",
+    en: "every replay first pays Dynamo guard checks and dispatch",
+  },
+} satisfies Record<string, Localized>;
+
 /* ---------------- LaunchRaceViz ---------------- */
 
 export const RACE = {

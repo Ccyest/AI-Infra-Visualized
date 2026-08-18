@@ -24,6 +24,7 @@ import PrefillPadViz from "../../../viz/breakable-cuda-graph/PrefillPadViz";
 import ReplayBenchViz from "../../../viz/breakable-cuda-graph/ReplayBenchViz";
 import MemoryCeilingViz from "../../../viz/breakable-cuda-graph/MemoryCeilingViz";
 import TimelineViz from "../../../viz/breakable-cuda-graph/TimelineViz";
+import TcPiecewiseViz from "../../../viz/breakable-cuda-graph/TcPiecewiseViz";
 
 ## Background
 
@@ -49,7 +50,9 @@ a much larger part of the forward uncaptured. Our first answer went through
 torch.compile: trace the full forward, then split the graph at registered
 points. It worked, but compilation time grew with model complexity, every
 custom kernel needed scaffolding just to be traceable, and graph boundaries
-had to bend to what the compiler could represent.
+had to bend to what the compiler could represent. Here is that route in full:
+
+<TcPiecewiseViz client:visible lang="en" />
 
 Since capture already executes operators in order, why should a compiler be
 the one to find the break points? Following that idea, we built Breakable CUDA

@@ -24,6 +24,7 @@ import PrefillPadViz from "../../../viz/breakable-cuda-graph/PrefillPadViz";
 import ReplayBenchViz from "../../../viz/breakable-cuda-graph/ReplayBenchViz";
 import MemoryCeilingViz from "../../../viz/breakable-cuda-graph/MemoryCeilingViz";
 import TimelineViz from "../../../viz/breakable-cuda-graph/TimelineViz";
+import TcPiecewiseViz from "../../../viz/breakable-cuda-graph/TcPiecewiseViz";
 
 ## 背景
 
@@ -45,7 +46,9 @@ backend 要按活的 sequence length 做 planning，collective
 各带动态逻辑——只要出现一个不兼容算子，一大段 forward
 就无图可用。我们最初的答案是借助 torch.compile：先让编译器 trace 完整
 forward，再在注册的切分点把图拆开。它能工作，但编译时间随模型复杂度增长，每个自定义
-kernel 都要为 tracing 写适配，图的边界也要迁就编译器能表示的类型。
+kernel 都要为 tracing 写适配，图的边界也要迁就编译器能表示的类型。这条路线的流程如下：
+
+<TcPiecewiseViz client:visible />
 
 既然 capture 本身就是按顺序执行算子，断点为什么要靠编译器去找？顺着这个想法，我们做出了
 Breakable CUDA Graph：在 capture 进行当中直接插入 eager

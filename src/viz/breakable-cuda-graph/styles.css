@@ -684,3 +684,112 @@
 .bcg-timeline-body a:hover {
   text-decoration: underline;
 }
+
+/* ---------------- TcPiecewiseViz ---------------- */
+
+.bcg-tc-flow {
+  display: flex;
+  align-items: stretch;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin: 0.4rem 0 0.9rem;
+}
+
+.bcg-tc-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 1 1 9rem;
+  min-width: 9rem;
+}
+
+.bcg-tc-arrow {
+  color: var(--muted);
+  font-weight: 650;
+  flex: none;
+}
+
+.bcg-tc-stage {
+  display: grid;
+  gap: 0.4rem;
+  align-content: start;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid var(--grid);
+  border-radius: 10px;
+  flex: 1;
+  min-height: 5.6rem;
+}
+
+.bcg-tc-stage b {
+  font-size: var(--bcg-font-sm);
+  font-weight: 650;
+  color: var(--ink);
+}
+
+.bcg-tc-stage small {
+  font-size: var(--bcg-font-xs);
+  color: var(--muted);
+}
+
+.bcg-tc-ops {
+  display: flex;
+  gap: 2px;
+  flex-wrap: wrap;
+}
+
+.bcg-tc-ops i {
+  font-style: normal;
+  font-size: 0.62rem;
+  font-weight: 650;
+  color: var(--ink-2);
+  border: 1px solid var(--grid);
+  border-radius: 3px;
+  padding: 0.05rem 0.22rem;
+  background: color-mix(in srgb, var(--series-1) 14%, var(--surface));
+}
+
+.bcg-tc-ops i.eager {
+  background: color-mix(in srgb, var(--series-2) 20%, var(--surface));
+  border-color: color-mix(in srgb, var(--series-2) 50%, var(--grid));
+  color: var(--series-2);
+}
+
+.bcg-tc-ops.pieces i:nth-child(3),
+.bcg-tc-ops.pieces i.eager {
+  margin-right: 6px;
+}
+
+.bcg-tc-timebar {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 0.7rem;
+  font-size: var(--bcg-font-xs);
+  color: var(--muted);
+}
+
+.bcg-tc-bar {
+  display: flex;
+  height: 18px;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.bcg-tc-bar i {
+  font-style: normal;
+  font-size: var(--bcg-font-xs);
+  font-weight: 650;
+  display: grid;
+  place-items: center;
+  white-space: nowrap;
+}
+
+.bcg-tc-bar i.compile {
+  background: color-mix(in srgb, var(--series-4) 75%, var(--surface));
+  color: var(--ink);
+}
+
+.bcg-tc-bar i.capture {
+  background: var(--series-1);
+  color: var(--accent-ink, #fff);
+}
