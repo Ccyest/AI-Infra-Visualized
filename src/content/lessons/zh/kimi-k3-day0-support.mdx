@@ -139,8 +139,8 @@ $\beta_t$ 控制改写强度：$\beta_t = 1$ 代表完全替换旧关联，$\bet
 
 <details className="lesson-details">
   <summary>数学细节：图中的 A/B 和串扰项</summary>
-  <p>A、B 是 key 空间 $\mathbb{R}^{d_k}$ 中的两个单位方向 $k_A, k_B$（$\lVert k_A \rVert = \lVert k_B \rVert = 1$），不是 token 槽位，也不是单条 channel。图中的 $A=1$ 只是“key 指向 $k_A$、value 为标量 1”的简写；彩色只用于追踪各次写入的来源，真实 S 只保存它们的和。</p>
-  <p>设 S 中已写入两条关联：$S = k_A v_A^{\top} + k_B v_B^{\top}$。用 $q_A = k_A$ 读出，得 $o_A = S^{\top} q_A = (k_A^{\top} k_A)\, v_A + (k_B^{\top} k_A)\, v_B = v_A + \cos\theta \cdot v_B$，其中 $\theta$ 是两个 key 的夹角。第二项就是 B 漏进 A 的串扰，系数恰好是内积 $k_A^{\top} k_B$。</p>
+  <p>A、B 是 key 空间 $\mathbb{R}^{d_k}$ 中的两个单位方向 $k_a, k_b$（$\lVert k_a \rVert = \lVert k_b \rVert = 1$），不是 token 槽位，也不是单条 channel。图中的 $A=1$ 只是“key 指向 $k_a$、value 为标量 1”的简写；彩色只用于追踪各次写入的来源，真实 S 只保存它们的和。</p>
+  <p>设 S 中已写入两条关联：$S = k_a v_a^{\top} + k_b v_b^{\top}$。用 $q_a = k_a$ 读出，得 $o_a = S^{\top} q_a = (k_a^{\top} k_a)\, v_a + (k_b^{\top} k_a)\, v_b = v_a + \cos\theta \cdot v_b$，其中 $\theta$ 是两个 key 的夹角。第二项就是 B 漏进 A 的串扰，系数恰好是内积 $k_a^{\top} k_b$。</p>
   <p>推广到任意一组写入 $\{(k_i, v_i)\}$：读出为 $o(q) = \sum_i (k_i^{\top} q)\, v_i$，各条写入之间的干扰由 Gram 矩阵 $G_{ij} = k_i^{\top} k_j$ 决定。当且仅当所有 key 两两正交时读出零串扰；而 $\mathbb{R}^{d_k}$ 中至多只有 $d_k$ 个两两正交的方向，存的关联一旦超过这个数，固定大小状态里的串扰就无法消除，只能被管理。</p>
 </details>
 
@@ -159,7 +159,7 @@ $\mathrm{Diag}(\alpha_t)$ 缩放旧状态的各条 channel，再执行 DeltaNet 
   <p>完整更新为 $S_t = \big(I - \beta_t k_t k_t^{\top}\big)\,\mathrm{Diag}(\alpha_t)\, S_{t-1} + \beta_t k_t v_t^{\top}$。逐项看：$\alpha_t \in (0,1)^{d_k}$ 是由当前 hidden state 算出的向量门控，$\mathrm{Diag}(\alpha_t)$ 把 S 的第 $j$ 行整体缩放 $\alpha_t[j]$ 倍——同一行里所有历史贡献一起衰减，它不会直接选择 A 或 B，也不会把 key 旋转成正交；$\beta_t \in (0,1)$ 是标量写入强度。</p>
   <p>把一步更新拆开看。先门控：$\tilde S = \mathrm{Diag}(\alpha_t)\, S_{t-1}$；再沿当前 key 做 delta 改写：记 $r_{\text{old}} = \tilde S^{\top} k_t$（衰减后状态对当前 key 的预测），则 $S_t = \tilde S + \beta_t k_t (v_t - r_{\text{old}})^{\top}$。对单位 $k_t$，更新后沿同一 key 的读出为 $S_t^{\top} k_t = (1-\beta_t)\, r_{\text{old}} + \beta_t v_t$：$\beta_t = 1$ 完全替换，$\beta_t = 0$ 完全保留。</p>
   <p>把递推展开可以看到位置信息的来源：$S_t = \sum_{s \le t} \Big[\prod_{u=s+1}^{t} \big(I - \beta_u k_u k_u^{\top}\big)\mathrm{Diag}(\alpha_u)\Big]\, \beta_s k_s v_s^{\top}$。越早的写入要穿过越多次门控与改写，衰减随距离自然累积——这正是 K3 可以不用 RoPE 的机制来源。K3 还给 $\alpha$ 设衰减下界、配 full-rank output gate，保证长序列下数值稳定。</p>
-  <p>下图把真实的 128 维 key 空间压成二维教学切片：$k_A = \tfrac{1}{\sqrt{2}}[1,1]^{\top}$、$k_B = \tfrac{1}{\sqrt{2}}[1,-1]^{\top}$，A/B 都横跨 $\mathrm{ch}_1$ 和 $\mathrm{ch}_2$。门控先缩放两行，delta rule 再沿完整 $k_A$ 写入到达目标值 4 所需的残差。</p>
+  <p>下图把真实的 128 维 key 空间压成二维教学切片：$k_a = \tfrac{1}{\sqrt{2}}[1,1]^{\top}$、$k_b = \tfrac{1}{\sqrt{2}}[1,-1]^{\top}$，A/B 都横跨 $\mathrm{ch}_1$ 和 $\mathrm{ch}_2$。门控先缩放两行，delta rule 再沿完整 $k_a$ 写入到达目标值 4 所需的残差。</p>
 </details>
 
 <KdaGateViz client:visible />
