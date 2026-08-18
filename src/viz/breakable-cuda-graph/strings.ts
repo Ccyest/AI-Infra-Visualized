@@ -71,7 +71,7 @@ export const TIMELINE_ITEMS: TimelineItem[] = [
 export const RACE = {
   title: { zh: "Launch 开销图示", en: "Launch-overhead diagram" },
   subtitle: {
-    zh: "上 eager,中 BCG,下 full graph;每行上为 CPU、下为 GPU",
+    zh: "上 eager，中 BCG，下 full graph；每行上为 CPU、下为 GPU",
     en: "Eager on top, BCG in the middle, full graph at the bottom; CPU row above GPU row",
   },
   laneEager: { zh: "Eager", en: "Eager" },
@@ -80,8 +80,8 @@ export const RACE = {
   cpuRow: { zh: "CPU", en: "CPU" },
   gpuRow: { zh: "GPU", en: "GPU" },
   legendLaunch: { zh: "CPU 发射 / host 工作", en: "CPU launch / host work" },
-  legendGraphKernel: { zh: "kernel(graph 内)", en: "kernel (inside a graph)" },
-  legendEagerKernel: { zh: "kernel(eager)", en: "kernel (eager)" },
+  legendGraphKernel: { zh: "kernel（graph 内）", en: "kernel (inside a graph)" },
+  legendEagerKernel: { zh: "kernel（eager）", en: "kernel (eager)" },
   legendIdle: { zh: "GPU 空等", en: "GPU waiting" },
 } satisfies Record<string, Localized>;
 
@@ -98,7 +98,7 @@ export function raceFinished(locale: Locale, t: number): string {
 export const BCG_STEP = {
   title: { zh: "BCG 断开与接上图示", en: "BCG break-and-resume diagram" },
   subtitle: {
-    zh: "上:算子序列;下:boundary buffer。单步播放看每一步",
+    zh: "上：算子序列；下：boundary buffer。单步播放看每一步",
     en: "Ops on top, boundary buffer below. Step through to follow",
   },
   phaseCapture: { zh: "Capture", en: "Capture" },
@@ -108,7 +108,7 @@ export const BCG_STEP = {
   seg2: { zh: "segment 2", en: "segment 2" },
   eagerBadge: { zh: "@eager_on_graph", en: "@eager_on_graph" },
   bufferName: { zh: "boundary buffer", en: "boundary buffer" },
-  bufferAddr: { zh: "地址 0x4F00,固定", en: "address 0x4F00, fixed" },
+  bufferAddr: { zh: "地址 0x4F00，固定", en: "address 0x4F00, fixed" },
   freshName: { zh: "新 tensor", en: "fresh tensor" },
   copyArrow: { zh: "copy", en: "copy" },
   captureAgainst: { zh: "对着 0x4F00 捕获", en: "captured against 0x4F00" },
@@ -121,55 +121,55 @@ export const BCG_STEP = {
 
 export const BCG_STEPS: Localized[] = [
   {
-    zh: "一段 forward:A1–A3 与 B1–B3 图兼容,E 被 @eager_on_graph 标注。播放开始 capture",
+    zh: "一段 forward：A1–A3 与 B1–B3 图兼容，E 被 @eager_on_graph 标注。播放开始 capture",
     en: "One forward: A1–A3 and B1–B3 are graph-safe; E is marked @eager_on_graph. Play to start capture",
   },
   {
-    zh: "capture 开始:segment 1 录制 A1–A3",
+    zh: "capture 开始：segment 1 录制 A1–A3",
     en: "Capture begins: segment 1 records A1–A3",
   },
   {
-    zh: "执行到 E:segment 1 收口",
+    zh: "执行到 E：segment 1 收口",
     en: "Execution reaches E: segment 1 is closed",
   },
   {
-    zh: "E eager 执行;返回的 tensor 保留为 boundary buffer,地址 0x4F00 从此固定",
+    zh: "E eager 执行；返回的 tensor 保留为 boundary buffer，地址 0x4F00 从此固定",
     en: "E runs eagerly; its output is retained as the boundary buffer — address 0x4F00 is now fixed",
   },
   {
-    zh: "capture 在 segment 2 继续:B1–B3 对着地址 0x4F00 录制",
+    zh: "capture 在 segment 2 继续：B1–B3 对着地址 0x4F00 录制",
     en: "Capture resumes in segment 2: B1–B3 are captured against address 0x4F00",
   },
   {
-    zh: "capture 完成:两段图 + 一个 eager 区",
+    zh: "capture 完成：两段图 + 一个 eager 区",
     en: "Capture done: two graph segments plus one eager region",
   },
   {
-    zh: "replay:segment 1 一次发射,整段重放",
+    zh: "replay：segment 1 一次发射，整段重放",
     en: "Replay: segment 1 replays as one unit with a single launch",
   },
   {
-    zh: "E 正常执行,返回新 tensor(地址 0x7A10,值 v₁)",
+    zh: "E 正常执行，返回新 tensor（地址 0x7A10，值 v₁）",
     en: "E runs normally and returns a fresh tensor (address 0x7A10, value v₁)",
   },
   {
-    zh: "BCG 把 v₁ 拷进 0x4F00:地址不变,值更新",
+    zh: "BCG 把 v₁ 拷进 0x4F00：地址不变，值更新",
     en: "BCG copies v₁ into 0x4F00: same address, new value",
   },
   {
-    zh: "segment 2 重放,从捕获时的地址 0x4F00 读到 v₁",
+    zh: "segment 2 重放，从捕获时的地址 0x4F00 读到 v₁",
     en: "Segment 2 replays and reads v₁ from the address it was captured against",
   },
   {
-    zh: "再一次 replay:segment 1 重放",
+    zh: "再一次 replay：segment 1 重放",
     en: "Another replay: segment 1 replays",
   },
   {
-    zh: "E 返回又一个新 tensor(0x9C20,v₂),拷进 0x4F00",
+    zh: "E 返回又一个新 tensor（0x9C20，v₂），拷进 0x4F00",
     en: "E returns another fresh tensor (0x9C20, v₂), copied into 0x4F00",
   },
   {
-    zh: "segment 2 重放,读到 v₂。eager 区内部,BCG 始终不需要理解",
+    zh: "segment 2 重放，读到 v₂。eager 区内部，BCG 始终不需要理解",
     en: "Segment 2 replays and reads v₂. BCG never needs to understand what happens inside the eager region",
   },
 ];
@@ -179,16 +179,16 @@ export const BCG_STEPS: Localized[] = [
 export const PAD = {
   title: { zh: "Prefill padding 图示", en: "Prefill-padding diagram" },
   subtitle: {
-    zh: "上 token 维,下 request 槽位;点按钮切换场景",
+    zh: "上 token 维，下 request 槽位；点按钮切换场景",
     en: "Token dimension on top, request slots below; pick a scenario",
   },
   scenariosAria: { zh: "切换场景", en: "Switch scenario" },
-  tokenAxis: { zh: "token 维(bucket:16 / 32 / 64)", en: "tokens (buckets: 16 / 32 / 64)" },
-  slotAxis: { zh: "request 槽位(每图 4 个)", en: "request slots (4 per graph)" },
+  tokenAxis: { zh: "token 维（bucket：16 / 32 / 64）", en: "tokens (buckets: 16 / 32 / 64)" },
+  slotAxis: { zh: "request 槽位（每图 4 个）", en: "request slots (4 per graph)" },
   sentinel: { zh: "len 0", en: "len 0" },
-  legendToken: { zh: "真实 token(颜色 = 请求)", en: "real token (color = request)" },
+  legendToken: { zh: "真实 token（颜色 = 请求）", en: "real token (color = request)" },
   legendPad: { zh: "padding token", en: "padding token" },
-  legendUnused: { zh: "更大 bucket,未用", en: "larger bucket, unused" },
+  legendUnused: { zh: "更大 bucket，未用", en: "larger bucket, unused" },
   padNote: { zh: "pad token 是真实 GEMM 行", en: "pad tokens are real GEMM rows" },
   slotNote: { zh: "len 0 槽仅 metadata", en: "len-0 slots are metadata only" },
 } satisfies Record<string, Localized>;
@@ -235,22 +235,22 @@ export function padSlotLabel(locale: Locale, id: number, len: number): string {
 export const BENCH = {
   title: { zh: "Prefill replay 加速图示", en: "Prefill-replay speedup diagram" },
   subtitle: {
-    zh: "左:加速比;右:延迟随 prompt 长度",
+    zh: "左：加速比；右：延迟随 prompt 长度",
     en: "Speedups on the left; latency vs prompt length on the right",
   },
   barsHead: {
     zh: "gpt-oss-120b · TP4 · 4×GB300",
     en: "gpt-oss-120b · TP4 · 4×GB300",
   },
-  linesHead: { zh: "prefill-only 延迟(相对)", en: "Prefill-only latency (relative)" },
+  linesHead: { zh: "prefill-only 延迟（相对）", en: "Prefill-only latency (relative)" },
   eager: { zh: "eager", en: "eager" },
   tc: { zh: "tc_piecewise", en: "tc_piecewise" },
   bcg: { zh: "BCG", en: "BCG" },
   full: { zh: "full", en: "full" },
-  xAxis: { zh: "prompt 长度(相对,log)", en: "prompt length (relative, log)" },
+  xAxis: { zh: "prompt 长度（相对，log）", en: "prompt length (relative, log)" },
   flatNote: { zh: "32× 范围内平坦 = launch-bound", en: "flat across 32× = launch-bound" },
   glmNote: {
-    zh: "GLM-5.2:仅 BCG 可捕获,1.60×",
+    zh: "GLM-5.2：仅 BCG 可捕获，1.60×",
     en: "GLM-5.2: only BCG can capture, 1.60×",
   },
 } satisfies Record<string, Localized>;
@@ -260,18 +260,18 @@ export const BENCH = {
 export const MEM = {
   title: { zh: "Capture 天花板图示", en: "Capture-ceiling diagram" },
   subtitle: {
-    zh: "prefill 显存对 no-graph baseline 的增量;点按钮切换模型",
+    zh: "prefill 显存对 no-graph baseline 的增量；点按钮切换模型",
     en: "Prefill memory vs the no-graph baseline; pick a model",
   },
   modelsAria: { zh: "切换模型", en: "Switch model" },
   colBaseline: { zh: "无 graph", en: "no graphs" },
   colBelow: { zh: "天花板 < chunk", en: "ceiling < chunk" },
   colAt: { zh: "捕到 chunk size", en: "through chunk size" },
-  legendPeak: { zh: "eager activation 峰值(瞬态)", en: "eager activation peak (transient)" },
+  legendPeak: { zh: "eager activation 峰值（瞬态）", en: "eager activation peak (transient)" },
   legendResident: { zh: "graph 常驻显存", en: "resident graph memory" },
   baselineMark: { zh: "no-graph baseline", en: "no-graph baseline" },
   schematicNote: {
-    zh: "峰值与差值为实测,常驻切分为示意",
+    zh: "峰值与差值为实测，常驻切分为示意",
     en: "peaks and deltas measured; resident split schematic",
   },
 } satisfies Record<string, Localized>;
