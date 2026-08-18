@@ -32,10 +32,10 @@ const COPY = {
     step2: "② 各 GPU 本地 attention",
     step2Note: "只扫自己 1/N 的 KV",
     step3: "③ 一次 packed all-to-all",
-    step3Note: "o 按 head 切开分寄：每卡只发一份输出的量，O(N)",
+    step3Note: "o 按 head 切 4 段分寄，G_g 只收第 g 段：每卡只发一份输出的量，O(N) 不是 O(N²)",
     step4: "④ 按 LSE 加权合并",
     step4Note: "加权平均后与完整 softmax 完全一致",
-    flowNote: "LSE 是每张卡本地 softmax 的分母（取 log 保存）。打个比方：两个班各报一个平均分（o）和人数（LSE），按人数加权平均，就是全年级的平均分——所以合并是精确的，不是近似。",
+    flowNote: "LSE 是每张卡本地 softmax 的分母（取 log 保存）。打个比方：四个班各报一个平均分（o）和人数（LSE），按人数加权平均，就是全年级的平均分——所以合并是精确的，不是近似。图 ③ 只画出 o₁ 的分寄路径，o₂–o₄ 同理；右侧深浅表示来源不同。",
     stored: "实色 = 该 GPU 保存",
     empty: "空框 = 此位置在其他 GPU",
   },
@@ -63,10 +63,10 @@ const COPY = {
     step2: "② Local attention per GPU",
     step2Note: "scan only 1/N of KV",
     step3: "③ One packed all-to-all",
-    step3Note: "o is split by head and scattered: each GPU sends one output's worth, O(N)",
+    step3Note: "o splits into 4 head segments and G_g receives only segment g: each GPU sends one output's worth, O(N) not O(N²)",
     step4: "④ LSE-weighted merge",
     step4Note: "the weighted average equals the full softmax exactly",
-    flowNote: "LSE is each GPU's local softmax denominator (kept in log form). Think of two classes each reporting an average score (o) and a headcount (LSE): the headcount-weighted average is exactly the school-wide average — the merge is exact, not approximate.",
+    flowNote: "LSE is each GPU's local softmax denominator (kept in log form). Think of four classes each reporting an average score (o) and a headcount (LSE): the headcount-weighted average is exactly the school-wide average — the merge is exact, not approximate. Step ③ draws the scatter paths for o₁ only; o₂–o₄ work the same way, and shading on the right marks the source.",
     stored: "filled = stored on this GPU",
     empty: "outline = owned by another GPU",
   },
@@ -109,16 +109,20 @@ function KvGrid({ gpuCount, mode, lang }: { gpuCount: number; mode: "tp" | "dcp"
   );
 }
 
-/* 四步流程的简笔图示：G1/G2 两卡为例 */
+/* 四步流程的简笔图示：与上方网格一致，按 N=4 举例；颜色 = 归哪张卡 */
+const ICON_GPUS = [0, 1, 2, 3];
+const SUB = ["\u2081", "\u2082", "\u2083", "\u2084"];
+const iconRowY = (row: number) => 3 + row * 19;
+
 function FlowIcon1() {
   return (
-    <svg className="dcp-flow-icon" viewBox="0 0 128 56" aria-hidden="true">
-      {[0, 1].map((row) => (
-        <g key={row} transform={`translate(0 ${row * 26})`}>
-          <rect x="6" y="4" width="116" height="22" rx="4" fill="var(--surface)" stroke="var(--border)" />
-          <text x="14" y="19" fontSize="9" fill="var(--muted)">G{row + 1}</text>
-          <rect x="98" y="7" width="16" height="16" rx="3" fill="var(--accent)" />
-          <text x="106" y="19" fontSize="9" fill="var(--accent-ink)" textAnchor="middle">q</text>
+    <svg className="dcp-flow-icon" viewBox="0 0 128 80" aria-hidden="true">
+      {ICON_GPUS.map((row) => (
+        <g key={row} transform={`translate(0 ${iconRowY(row)})`}>
+          <rect x="6" y="0" width="116" height="15" rx="3" fill="var(--surface)" stroke="var(--border)" />
+          <text x="12" y="11" fontSize="7" fill="var(--muted)">G{row + 1}</text>
+          <rect x="104" y="2" width="11" height="11" rx="2" fill="var(--accent)" />
+          <text x="109.5" y="11" fontSize="7" fill="var(--accent-ink)" textAnchor="middle">q</text>
         </g>
       ))}
     </svg>
@@ -127,18 +131,18 @@ function FlowIcon1() {
 
 function FlowIcon2() {
   return (
-    <svg className="dcp-flow-icon" viewBox="0 0 128 56" aria-hidden="true">
-      {[0, 1].map((row) => (
-        <g key={row} transform={`translate(0 ${row * 28})`}>
-          <rect x="6" y="8" width="14" height="14" rx="3" fill="var(--accent)" />
-          <text x="13" y="18.5" fontSize="8.5" fill="var(--accent-ink)" textAnchor="middle">q</text>
-          {[0, 1, 2, 3, 4, 5].map((c) => {
-            const mine = c % 2 === row;
-            const x = 34 + c * 15;
+    <svg className="dcp-flow-icon" viewBox="0 0 128 80" aria-hidden="true">
+      {ICON_GPUS.map((row) => (
+        <g key={row} transform={`translate(0 ${iconRowY(row)})`}>
+          <rect x="6" y="2" width="11" height="11" rx="2" fill="var(--accent)" />
+          <text x="11.5" y="11" fontSize="6.5" fill="var(--accent-ink)" textAnchor="middle">q</text>
+          {ICON_GPUS.map((c) => {
+            const mine = c === row;
+            const x = 30 + c * 24;
             return (
               <g key={c}>
-                {mine && <path d={`M20 11 Q ${(20 + x) / 2} 1 ${x + 6} 8`} fill="none" stroke="var(--accent)" strokeWidth="1" opacity="0.6" />}
-                <rect x={x} y="8" width="12" height="14" rx="2" fill={mine ? (row === 0 ? "var(--series-1)" : "var(--series-2)") : "none"} stroke={mine ? "none" : "var(--grid)"} opacity={mine ? 0.85 : 1} />
+                {mine && <path d={`M17 6 Q ${(17 + x) / 2} -4 ${x + 8} 1`} fill="none" stroke="var(--accent)" strokeWidth="1" opacity="0.55" />}
+                <rect x={x} y="1" width="17" height="13" rx="2" fill={mine ? seriesColor(row + 1) : "none"} stroke={mine ? "none" : "var(--grid)"} opacity={mine ? 0.85 : 1} />
               </g>
             );
           })}
@@ -150,45 +154,51 @@ function FlowIcon2() {
 
 function FlowIcon3() {
   return (
-    <svg className="dcp-flow-icon" viewBox="0 0 128 64" aria-hidden="true">
-      <defs><marker id="dcp-a2a-arrow" viewBox="0 0 8 8" refX="6.5" refY="4" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L8 4L0 8Z" fill="var(--accent)" /></marker></defs>
-      <text x="3" y="18" fontSize="8" fill="var(--ink-2)">o₁</text>
-      <rect x="17" y="7" width="20" height="14" rx="2" fill="var(--series-1)" opacity="0.9" />
-      <rect x="38" y="7" width="20" height="14" rx="2" fill="var(--series-1)" opacity="0.35" />
-      <text x="3" y="52" fontSize="8" fill="var(--ink-2)">o₂</text>
-      <rect x="17" y="41" width="20" height="14" rx="2" fill="var(--series-2)" opacity="0.9" />
-      <rect x="38" y="41" width="20" height="14" rx="2" fill="var(--series-2)" opacity="0.35" />
-      <rect x="88" y="3" width="36" height="22" rx="4" fill="var(--surface)" stroke="var(--border)" />
-      <text x="91" y="17" fontSize="6.5" fill="var(--muted)">G1</text>
-      <rect x="102" y="7" width="9" height="14" rx="2" fill="var(--series-1)" opacity="0.9" />
-      <rect x="113" y="7" width="9" height="14" rx="2" fill="var(--series-2)" opacity="0.9" />
-      <rect x="88" y="39" width="36" height="22" rx="4" fill="var(--surface)" stroke="var(--border)" />
-      <text x="91" y="53" fontSize="6.5" fill="var(--muted)">G2</text>
-      <rect x="102" y="43" width="9" height="14" rx="2" fill="var(--series-1)" opacity="0.35" />
-      <rect x="113" y="43" width="9" height="14" rx="2" fill="var(--series-2)" opacity="0.35" />
-      <line x1="49" y1="22" x2="84" y2="46" stroke="var(--accent)" strokeWidth="1.3" markerEnd="url(#dcp-a2a-arrow)" />
-      <line x1="30" y1="40" x2="84" y2="17" stroke="var(--accent)" strokeWidth="1.3" markerEnd="url(#dcp-a2a-arrow)" />
+    <svg className="dcp-flow-icon" viewBox="0 0 128 80" aria-hidden="true">
+      {ICON_GPUS.map((row) => (
+        <g key={row}>
+          <text x="2" y={iconRowY(row) + 10} fontSize="6.5" fill="var(--ink-2)">o{SUB[row]}</text>
+          {ICON_GPUS.map((seg) => (
+            <rect key={seg} x={13 + seg * 12} y={iconRowY(row) + 1} width="11" height="13" rx="1.5" fill={seriesColor(seg + 1)} opacity="0.85" />
+          ))}
+          <rect x="84" y={iconRowY(row)} width="40" height="15" rx="3" fill="var(--surface)" stroke="var(--border)" />
+          <text x="87" y={iconRowY(row) + 11} fontSize="6" fill="var(--muted)">G{row + 1}</text>
+          {ICON_GPUS.map((src) => (
+            <rect key={src} x={98 + src * 6.5} y={iconRowY(row) + 2} width="5.5" height="11" rx="1" fill={seriesColor(row + 1)} opacity={0.95 - src * 0.22} />
+          ))}
+        </g>
+      ))}
+      {ICON_GPUS.map((dest) => (
+        <path
+          key={dest}
+          d={`M ${18.5 + dest * 12} ${iconRowY(0) + 14} C ${40 + dest * 10} ${iconRowY(0) + 30}, 70 ${iconRowY(dest) + 8}, 83 ${iconRowY(dest) + 8}`}
+          fill="none"
+          stroke={seriesColor(dest + 1)}
+          strokeWidth="1.1"
+          opacity="0.75"
+        />
+      ))}
     </svg>
   );
 }
 
 function FlowIcon4() {
   return (
-    <svg className="dcp-flow-icon" viewBox="0 0 128 64" aria-hidden="true">
+    <svg className="dcp-flow-icon" viewBox="0 0 128 80" aria-hidden="true">
       <defs><marker id="dcp-merge-arrow" viewBox="0 0 8 8" refX="6.5" refY="4" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L8 4L0 8Z" fill="var(--good)" /></marker></defs>
-      <rect x="6" y="5" width="26" height="16" rx="3" fill="color-mix(in srgb, var(--series-1) 30%, var(--surface))" stroke="var(--border)" />
-      <text x="19" y="16.5" fontSize="8" fill="var(--ink-2)" textAnchor="middle">o₁</text>
-      <rect x="6" y="43" width="26" height="16" rx="3" fill="color-mix(in srgb, var(--series-2) 30%, var(--surface))" stroke="var(--border)" />
-      <text x="19" y="54.5" fontSize="8" fill="var(--ink-2)" textAnchor="middle">o₂</text>
-      <line x1="34" y1="13" x2="61" y2="27" stroke="var(--good)" strokeWidth="1.3" markerEnd="url(#dcp-merge-arrow)" />
-      <line x1="34" y1="51" x2="61" y2="37" stroke="var(--good)" strokeWidth="1.3" markerEnd="url(#dcp-merge-arrow)" />
-      <text x="40" y="11" fontSize="7" fill="var(--ink-2)">×w₁</text>
-      <text x="40" y="60" fontSize="7" fill="var(--ink-2)">×w₂</text>
-      <circle cx="74" cy="32" r="11" fill="color-mix(in srgb, var(--good) 18%, var(--surface))" stroke="var(--good)" strokeWidth="1.3" />
-      <text x="74" y="35.5" fontSize="9" fill="var(--ink)" textAnchor="middle">Σ</text>
-      <line x1="86" y1="32" x2="96" y2="32" stroke="var(--good)" strokeWidth="1.3" markerEnd="url(#dcp-merge-arrow)" />
-      <rect x="99" y="23" width="18" height="18" rx="3" fill="var(--good)" opacity="0.85" />
-      <text x="108" y="35.5" fontSize="9" fill="var(--accent-ink)" fontWeight="700" textAnchor="middle">o</text>
+      {ICON_GPUS.map((row) => (
+        <g key={row}>
+          <rect x="6" y={iconRowY(row)} width="24" height="14" rx="3" fill={`color-mix(in srgb, ${seriesColor(row + 1)} 30%, var(--surface))`} stroke="var(--border)" />
+          <text x="18" y={iconRowY(row) + 10.5} fontSize="7" fill="var(--ink-2)" textAnchor="middle">o{SUB[row]}</text>
+          <line x1="32" y1={iconRowY(row) + 7} x2="68" y2={38 + (row - 1.5) * 3} stroke="var(--good)" strokeWidth="1" opacity="0.8" />
+          <text x="36" y={iconRowY(row) + 5} fontSize="5.5" fill="var(--ink-2)">{`\u00d7w`}{SUB[row]}</text>
+        </g>
+      ))}
+      <circle cx="79" cy="38" r="10" fill="color-mix(in srgb, var(--good) 18%, var(--surface))" stroke="var(--good)" strokeWidth="1.3" />
+      <text x="79" y="41.5" fontSize="9" fill="var(--ink)" textAnchor="middle">\u03a3</text>
+      <line x1="90" y1="38" x2="99" y2="38" stroke="var(--good)" strokeWidth="1.3" markerEnd="url(#dcp-merge-arrow)" />
+      <rect x="101" y="30" width="17" height="16" rx="3" fill="var(--good)" opacity="0.85" />
+      <text x="109.5" y="41.5" fontSize="9" fill="var(--accent-ink)" fontWeight="700" textAnchor="middle">o</text>
     </svg>
   );
 }
