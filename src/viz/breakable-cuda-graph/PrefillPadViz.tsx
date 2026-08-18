@@ -87,7 +87,6 @@ export default function PrefillPadViz({ lang = "zh" }: { lang?: Locale }) {
             </span>
           ))}
         </div>
-        {!fallback && <span className="bcg-pad-note">{PAD.padNote[lang]}</span>}
       </div>
 
       <div className="bcg-pad-section">
@@ -97,26 +96,23 @@ export default function PrefillPadViz({ lang = "zh" }: { lang?: Locale }) {
             {padFallback(lang, sc.reqs.length, PAD_SLOTS)}
           </div>
         ) : (
-          <>
-            <div className="bcg-slots">
-              {Array.from({ length: PAD_SLOTS }, (_, i) =>
-                i < sc.reqs.length ? (
-                  <span className="bcg-slot" key={i}>
-                    <span
-                      className="bcg-slot-dot"
-                      style={{ background: seriesColor(i + 1) }}
-                    />
-                    {padSlotLabel(lang, i + 1, sc.reqs[i])}
-                  </span>
-                ) : (
-                  <span className="bcg-slot sentinel" key={i}>
-                    {PAD.sentinel[lang]}
-                  </span>
-                ),
-              )}
-            </div>
-            <span className="bcg-pad-note">{PAD.slotNote[lang]}</span>
-          </>
+          <div className="bcg-slots">
+            {Array.from({ length: PAD_SLOTS }, (_, i) =>
+              i < sc.reqs.length ? (
+                <span className="bcg-slot" key={i}>
+                  <span
+                    className="bcg-slot-dot"
+                    style={{ background: seriesColor(i + 1) }}
+                  />
+                  {padSlotLabel(lang, i + 1, sc.reqs[i])}
+                </span>
+              ) : (
+                <span className="bcg-slot sentinel" key={i}>
+                  {PAD.sentinel[lang]}
+                </span>
+              ),
+            )}
+          </div>
         )}
       </div>
 

@@ -209,18 +209,16 @@ export const BCG_STEPS: Localized[] = [
 export const PAD = {
   title: { zh: "Prefill padding 图示", en: "Prefill-padding diagram" },
   subtitle: {
-    zh: "上 token 维，下 request 槽位；点按钮切换场景",
-    en: "Token dimension on top, request slots below; pick a scenario",
+    zh: "bucket：16 / 32 / 64 · request 槽位 ×4",
+    en: "buckets: 16 / 32 / 64 · request slots ×4",
   },
   scenariosAria: { zh: "切换场景", en: "Switch scenario" },
-  tokenAxis: { zh: "token 维（bucket：16 / 32 / 64）", en: "tokens (buckets: 16 / 32 / 64)" },
-  slotAxis: { zh: "request 槽位（每图 4 个）", en: "request slots (4 per graph)" },
+  tokenAxis: { zh: "token 维", en: "tokens" },
+  slotAxis: { zh: "request 槽位", en: "request slots" },
   sentinel: { zh: "len 0", en: "len 0" },
   legendToken: { zh: "真实 token（颜色 = 请求）", en: "real token (color = request)" },
   legendPad: { zh: "padding token", en: "padding token" },
   legendUnused: { zh: "更大 bucket，未用", en: "larger bucket, unused" },
-  padNote: { zh: "pad token 是真实 GEMM 行", en: "pad tokens are real GEMM rows" },
-  slotNote: { zh: "len 0 槽仅 metadata", en: "len-0 slots are metadata only" },
 } satisfies Record<string, Localized>;
 
 export interface PadScenario {
