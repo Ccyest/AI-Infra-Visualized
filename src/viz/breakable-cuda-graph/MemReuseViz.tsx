@@ -22,8 +22,8 @@ const SEGS = [0, 1, 2].map((i) => {
 });
 const BREAKS = [BX0 + SEG_W + 4, BX0 + 2 * SEG_W + 12];
 
-const TOP_BEFORE = 30;
-const TOP_AFTER = 128;
+const TOP_BEFORE = 22;
+const TOP_AFTER = 124;
 
 const INT_FILL = "color-mix(in srgb, var(--series-1) 14%, var(--surface))";
 const INT_EDGE = "color-mix(in srgb, var(--series-1) 35%, var(--grid))";
@@ -124,16 +124,16 @@ function TimeAxis({ lang }: { lang: Locale }) {
 export default function MemReuseViz({ lang = "zh" }: { lang?: Locale }) {
   const before: Row[] = [
     ...SEGS.map((s, idx) => ({
-      y: 156 - idx * 28,
-      h: 24,
+      y: 160 - idx * 24,
+      h: 20,
       label: `seg${s.i} ${REUSE.segInt[lang]}`,
       fill: INT_FILL,
       edge: INT_EDGE,
       active: [s.i],
     })),
-    { y: 86, h: 10, label: REUSE.breakTensor[lang], fill: INT_FILL, edge: INT_EDGE },
+    { y: 94, h: 10, label: REUSE.breakTensor[lang], fill: INT_FILL, edge: INT_EDGE },
     ...[1, 2, 3].map((n) => ({
-      y: 72 - (n - 1) * 14,
+      y: 76 - (n - 1) * 18,
       h: 10,
       label: `size${n} ${REUSE.outRow[lang]}`,
       fill: OUT_FILL,
@@ -151,8 +151,8 @@ export default function MemReuseViz({ lang = "zh" }: { lang?: Locale }) {
 
   const after: Row[] = [
     {
-      y: 156,
-      h: 24,
+      y: 160,
+      h: 20,
       label: REUSE.poolRow[lang],
       fill: INT_FILL,
       edge: INT_EDGE,
@@ -186,7 +186,7 @@ export default function MemReuseViz({ lang = "zh" }: { lang?: Locale }) {
             {before.map((row) => (
               <Band key={row.label} row={row} />
             ))}
-            <text x={BX1} y={TOP_BEFORE - 6} textAnchor="end" fontSize="8" fill="var(--ink-2)">
+            <text x={BX1} y={TOP_BEFORE - 8} textAnchor="end" fontSize="8" fill="var(--ink-2)">
               {REUSE.totalBefore[lang]}
             </text>
             <TimeAxis lang={lang} />
@@ -210,7 +210,7 @@ export default function MemReuseViz({ lang = "zh" }: { lang?: Locale }) {
               strokeWidth="1"
               strokeDasharray="4 3"
             />
-            <text x={BX1} y={TOP_BEFORE - 6} textAnchor="end" fontSize="8" fill="var(--muted)">
+            <text x={BX1} y={TOP_BEFORE - 8} textAnchor="end" fontSize="8" fill="var(--muted)">
               {REUSE.refBefore[lang]}
             </text>
             <line
