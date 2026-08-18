@@ -41,6 +41,8 @@ export const CHROME = {
     en: "Open the SGLang repo and run this in a real inference engine",
   },
   contribute: { zh: "贡献一篇", en: "Contribute a post" },
+  lessonCredit: { zh: "可视化教学由", en: "This visualized tutorial was written by" },
+  lessonCreditTail: { zh: " 写作。", en: "." },
 } satisfies Record<string, Localized>;
 
 /** 播放器控件(VizStage)文案 */

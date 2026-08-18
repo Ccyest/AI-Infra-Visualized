@@ -82,6 +82,11 @@ const altPath = twin ? lessonPath(other, twin.slug) : other === "zh" ? "/" : "/e
       )
     }
 
+    <p class="lesson-credit">
+      {CHROME.lessonCredit[locale]}
+      <a href={SITE.author.url} target="_blank" rel="noopener">Yichi Zhang</a>{CHROME.lessonCreditTail[locale]}
+    </p>
+
     <nav class="lesson-nav">
       <span>
         {
