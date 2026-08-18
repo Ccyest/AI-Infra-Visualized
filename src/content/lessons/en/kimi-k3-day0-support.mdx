@@ -74,11 +74,11 @@ variant.
 
 ### Attention mechanisms in detail: classic MHA
 
-In ordinary MHA, token $N$ reads the cached history in three steps:
+In ordinary MHA, decoding token $t$ reads the $t-1$ cached history tokens in three steps:
 
-1. **Score:** compare against each earlier token $i$ with $z_{N,i} = \frac{q_N \cdot k_i}{\sqrt{d_k}}$.
-2. **Normalize:** compute $Z = \sum_{j=1}^{N-1} \exp(z_{N,j})$, then assign attention weight $a_{N,i} = \exp(z_{N,i}) / Z$.
-3. **Aggregate:** take the weighted sum of values, $o_N = \sum_{i=1}^{N-1} a_{N,i} v_i$.
+1. **Score:** compare against each earlier token $i$ with $z_{t,i} = \frac{q_t \cdot k_i}{\sqrt{d_k}}$. The subscript $t,i$ reads “step $t$'s query against history key $i$”.
+2. **Normalize:** compute $Z = \sum_{j=1}^{t-1} \exp(z_{t,j})$, then assign attention weight $a_{t,i} = \exp(z_{t,i}) / Z$.
+3. **Aggregate:** take the weighted sum of values, $o_t = \sum_{i=1}^{t-1} a_{t,i} \cdot v_i$.
 
 A length-$N$ sequence therefore performs about $N^2/2$ dot products: $O(N^2)$
 compute and $O(N)$ cache. In the diagram, every token has a line to each of

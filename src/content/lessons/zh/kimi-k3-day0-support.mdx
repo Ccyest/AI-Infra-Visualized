@@ -68,11 +68,11 @@ KDA 的递归隐式提供。下图展示了全部使用 MLA 和 KDA+MLA 混合�
 
 ### attention 机制详解：传统 MHA
 
-在普通 MHA 中，第 $N$ 个 token 会读取 cache 里的历史 token，分三步计算：
+在普通 MHA 中，解码到第 $t$ 个 token 时，它会读取 cache 里前面 $t-1$ 个历史 token，分三步计算：
 
-1. **打分**：对每个历史 token $i$ 计算 $z_{N,i} = \frac{q_N \cdot k_i}{\sqrt{d_k}}$。
-2. **归一化**：先求 $Z = \sum_{j=1}^{N-1} \exp(z_{N,j})$，再得到注意力权重 $a_{N,i} = \exp(z_{N,i}) / Z$。
-3. **汇总**：用这些权重对 value 加权求和，$o_N = \sum_{i=1}^{N-1} a_{N,i} v_i$。
+1. **打分**：对每个历史 token $i$ 计算分数 $z_{t,i} = \frac{q_t \cdot k_i}{\sqrt{d_k}}$。下标 $t,i$ 读作「第 $t$ 步的 query 对第 $i$ 个历史 key」。
+2. **归一化**：先求 $Z = \sum_{j=1}^{t-1} \exp(z_{t,j})$，再得到注意力权重 $a_{t,i} = \exp(z_{t,i}) / Z$。
+3. **汇总**：用这些权重对 value 加权求和，$o_t = \sum_{i=1}^{t-1} a_{t,i} \cdot v_i$。
 
 长度为 $N$ 的序列累计约有 $N^2/2$ 次点积，计算为 $O(N^2)$，cache 为 $O(N)$。
 如图所示，每一个 token 都和之前的所有 history token 有连线。
