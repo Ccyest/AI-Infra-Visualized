@@ -32,7 +32,7 @@ const COPY = {
     step2: "② 各 GPU 本地 attention",
     step2Note: "只扫自己 1/N 的 KV",
     step3: "③ 一次 packed all-to-all",
-    step3Note: "o 按 head 切 4 段分寄，G_g 只收第 g 段：每卡只发一份输出的量，O(N) 不是 O(N²)",
+    step3Note: "o 按 head 切 4 段分寄，G_g 只收第 g 段。消息条数确实是 N²，但每段只有 o 的 1/N：每卡收发总量 ≈ 一份 o，按字节算 O(N)",
     step4: "④ 按 LSE 加权合并",
     step4Note: "加权平均后与完整 softmax 完全一致",
     flowNote: "LSE 是每张卡本地 softmax 的分母（取 log 保存）。打个比方：四个班各报一个平均分（o）和人数（LSE），按人数加权平均，就是全年级的平均分——所以合并是精确的，不是近似。图 ③ 只画出 o₁ 的分寄路径，o₂–o₄ 同理；右侧深浅表示来源不同。",
@@ -63,7 +63,7 @@ const COPY = {
     step2: "② Local attention per GPU",
     step2Note: "scan only 1/N of KV",
     step3: "③ One packed all-to-all",
-    step3Note: "o splits into 4 head segments and G_g receives only segment g: each GPU sends one output's worth, O(N) not O(N²)",
+    step3Note: "o splits into 4 head segments and G_g receives only segment g. The message count is indeed N², but each segment is 1/N of o: every GPU sends and receives about one output's worth — O(N) in bytes",
     step4: "④ LSE-weighted merge",
     step4Note: "the weighted average equals the full softmax exactly",
     flowNote: "LSE is each GPU's local softmax denominator (kept in log form). Think of four classes each reporting an average score (o) and a headcount (LSE): the headcount-weighted average is exactly the school-wide average — the merge is exact, not approximate. Step ③ draws the scatter paths for o₁ only; o₂–o₄ work the same way, and shading on the right marks the source.",
@@ -195,7 +195,7 @@ function FlowIcon4() {
         </g>
       ))}
       <circle cx="79" cy="38" r="10" fill="color-mix(in srgb, var(--good) 18%, var(--surface))" stroke="var(--good)" strokeWidth="1.3" />
-      <text x="79" y="41.5" fontSize="9" fill="var(--ink)" textAnchor="middle">\u03a3</text>
+      <text x="79" y="41.5" fontSize="9" fill="var(--ink)" textAnchor="middle">Σ</text>
       <line x1="90" y1="38" x2="99" y2="38" stroke="var(--good)" strokeWidth="1.3" markerEnd="url(#dcp-merge-arrow)" />
       <rect x="101" y="30" width="17" height="16" rx="3" fill="var(--good)" opacity="0.85" />
       <text x="109.5" y="41.5" fontSize="9" fill="var(--accent-ink)" fontWeight="700" textAnchor="middle">o</text>
