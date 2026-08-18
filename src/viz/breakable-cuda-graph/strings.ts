@@ -283,6 +283,25 @@ export const BENCH = {
   },
 } satisfies Record<string, Localized>;
 
+/* ---------------- MemReuseViz ---------------- */
+
+export const REUSE = {
+  title: { zh: "显存复用图示", en: "Memory-reuse diagram" },
+  subtitle: {
+    zh: "例：一个 shape 3 个 segment，共 3 个 capture size",
+    en: "Example: 3 segments per shape, 3 capture sizes",
+  },
+  rowNaive: { zh: "每段各锁一份", en: "Pinned per segment" },
+  rowBcg: { zh: "BCG 复用", en: "BCG reuse" },
+  segBlock: { zh: "seg", en: "seg" },
+  outBlock: { zh: "输出", en: "out" },
+  poolBlock: { zh: "共用 pool", en: "shared pool" },
+  poolTag: { zh: "段间同址复用 · 断点 tensor 弱引用", en: "reused across segments · weak refs at breaks" },
+  outMaxBlock: { zh: "输出 buffer（max）", en: "output buffer (max)" },
+  outMaxTag: { zh: "按 shape 切行", en: "sliced per shape" },
+  boundaryTag: { zh: "boundary · 常驻 · 原地更新", en: "boundary · pinned · updated in place" },
+} satisfies Record<string, Localized>;
+
 /* ---------------- MemoryCeilingViz ---------------- */
 
 export const MEM = {

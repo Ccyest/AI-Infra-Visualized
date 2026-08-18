@@ -794,3 +794,70 @@
   background: var(--series-1);
   color: var(--accent-ink, #fff);
 }
+
+/* ---------------- MemReuseViz ---------------- */
+
+.bcg-reuse {
+  display: grid;
+  gap: 0.55rem;
+  margin: 0.5rem 0 0.2rem;
+}
+
+.bcg-reuse-row {
+  display: grid;
+  grid-template-columns: 6.8rem 1fr;
+  gap: 0.7rem;
+  align-items: center;
+}
+
+.bcg-reuse-tagsrow {
+  margin-top: -0.35rem;
+}
+
+.bcg-reuse-name {
+  font-size: var(--bcg-font-sm);
+  color: var(--ink-2);
+  text-align: right;
+}
+
+.bcg-reuse-bar {
+  display: flex;
+  gap: 3px;
+}
+
+.bcg-reuse-bar i {
+  height: 26px;
+  border-radius: 4px;
+  font-style: normal;
+  font-size: var(--bcg-font-xs);
+  color: var(--ink);
+  display: grid;
+  place-items: center;
+  white-space: nowrap;
+  overflow: hidden;
+  padding: 0 2px;
+  flex: none;
+}
+
+.bcg-reuse-bar i.seg {
+  background: color-mix(in srgb, var(--series-1) 26%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--series-1) 50%, var(--grid));
+}
+
+.bcg-reuse-bar i.out {
+  background: color-mix(in srgb, var(--series-4) 30%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--series-4) 55%, var(--grid));
+}
+
+.bcg-reuse-bar i.boundary {
+  background: color-mix(in srgb, var(--series-7) 30%, var(--surface));
+  border: 1.5px solid var(--series-7);
+}
+
+.bcg-reuse-bar.tags small {
+  font-size: var(--bcg-font-xs);
+  color: var(--muted);
+  flex: none;
+  white-space: nowrap;
+  overflow: visible;
+}

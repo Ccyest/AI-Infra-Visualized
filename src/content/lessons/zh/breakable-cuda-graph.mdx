@@ -25,6 +25,7 @@ import ReplayBenchViz from "../../../viz/breakable-cuda-graph/ReplayBenchViz";
 import MemoryCeilingViz from "../../../viz/breakable-cuda-graph/MemoryCeilingViz";
 import TimelineViz from "../../../viz/breakable-cuda-graph/TimelineViz";
 import TcPiecewiseViz from "../../../viz/breakable-cuda-graph/TcPiecewiseViz";
+import MemReuseViz from "../../../viz/breakable-cuda-graph/MemReuseViz";
 
 ## 背景
 
@@ -142,10 +143,15 @@ kernel 时，CUDA Graph 尤其有效：warmup 之后，单张 B200 上 512×512 
 
 ## Prefill 的 full CUDA Graph
 
+前面的 BCG 靠断开换来兼容性：不兼容算子留在图外，代价是每个断点处保留一小段
+eager 执行。full CUDA Graph 是三种 backend 里最彻底的一种：整个 forward
+捕成一张图，没有任何 eager region，replay 时的发射次数也最少。decode
+一直是这样跑的——每个 request 只贡献一个 token，唯一变化的维度是 batch
+size，捕一组 batch size bucket 就能覆盖。这一节要把同样的捕法推到 prefill 上。
+
 ### 让 prefill 静态化
 
-full CUDA Graph 很适合 decode，因为每个 request 只贡献一个 token，主要变化的维度是
-batch size，捕获一组 batch size bucket 就能覆盖。prefill 更难处理，因为一个
+prefill 难捕，是因为一个
 batch 会同时在两个维度上变化——总 token 数，以及这些 token 所属的 request
 数量——而被捕获的 graph 要求这两个维度都保持固定。再加上部分 attention backend
 依赖运行时 metadata，full CUDA Graph 一度很难应用于 prefill，这也是 prefill
@@ -218,6 +224,8 @@ tensor。后一个 graph segment 是基于它的地址完成 capture 的，因�
 必须一直存活，并在每次 replay 时原地更新。有了这些复用机制，即使 capture table
 很大，显存开销仍然可控：在 GLM-5.2 上，为 78 层 MoE 捕获 42 个 shape，只增加了
 2.4 GB graph 显存。
+
+<MemReuseViz client:visible />
 
 ### Capture 覆盖整个 chunked-prefill size
 

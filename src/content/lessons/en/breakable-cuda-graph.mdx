@@ -25,6 +25,7 @@ import ReplayBenchViz from "../../../viz/breakable-cuda-graph/ReplayBenchViz";
 import MemoryCeilingViz from "../../../viz/breakable-cuda-graph/MemoryCeilingViz";
 import TimelineViz from "../../../viz/breakable-cuda-graph/TimelineViz";
 import TcPiecewiseViz from "../../../viz/breakable-cuda-graph/TcPiecewiseViz";
+import MemReuseViz from "../../../viz/breakable-cuda-graph/MemReuseViz";
 
 ## Background
 
@@ -166,11 +167,17 @@ gaps are a meaningful fraction of execution time.
 
 ## Full CUDA Graph for prefill
 
+BCG buys compatibility by breaking: incompatible operations stay outside the
+graphs, at the cost of a short eager stretch at every break. Full CUDA Graph
+is the most complete of the three backends: the whole forward is captured as
+one graph, with no eager regions and the fewest replay-time launches. Decode
+has always run this way — each request contributes one token, the only varying
+dimension is batch size, and a set of captured batch-size buckets covers it.
+This section pushes the same capture onto prefill.
+
 ### Making prefill static
 
-Full CUDA Graph is straightforward for decode because each request contributes
-one token: the main varying dimension is batch size, which can be covered by a
-set of captured batch-size buckets. Prefill is harder because a batch varies
+Prefill is hard to capture because a batch varies
 in two dimensions at once — the total number of tokens and the number of
 requests those tokens belong to — while a captured graph requires both to
 remain fixed. Together with attention backends that depend on runtime
@@ -254,6 +261,8 @@ segment is captured against its address, so that buffer must stay alive and be
 updated in place on every replay. With these reuse mechanisms, even a large
 capture table remains modest: 42 shapes across a 78-layer MoE add 2.4 GB of
 graph memory on GLM-5.2.
+
+<MemReuseViz client:visible lang="en" />
 
 ### Capture through the chunked-prefill size
 
