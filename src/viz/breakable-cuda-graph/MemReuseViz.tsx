@@ -10,8 +10,8 @@ import "./styles.css";
 
 const W = 300;
 const H = 215;
-const GUT_X = 58;
-const BX0 = 62;
+const GUT_X = 74;
+const BX0 = 78;
 const BX1 = 292;
 const AXIS_Y = 190;
 const SEG_W = (BX1 - BX0 - 16) / 3;
@@ -126,10 +126,11 @@ export default function MemReuseViz({ lang = "zh" }: { lang?: Locale }) {
     ...SEGS.map((s, idx) => ({
       y: 160 - idx * 24,
       h: 20,
-      label: `seg${s.i} ${REUSE.segInt[lang]}`,
+      label: REUSE.segInt[lang],
       fill: INT_FILL,
       edge: INT_EDGE,
       active: [s.i],
+      numbered: true,
     })),
     { y: 94, h: 10, label: REUSE.breakTensor[lang], fill: INT_FILL, edge: INT_EDGE },
     ...[1, 2, 3].map((n) => ({
@@ -184,7 +185,7 @@ export default function MemReuseViz({ lang = "zh" }: { lang?: Locale }) {
           <span className="bcg-bench-head">{REUSE.headBefore[lang]}</span>
           <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={REUSE.headBefore[lang]}>
             {before.map((row) => (
-              <Band key={row.label} row={row} />
+              <Band key={`${row.label}-${row.y}`} row={row} />
             ))}
             <text x={BX1} y={TOP_BEFORE - 8} textAnchor="end" fontSize="8" fill="var(--ink-2)">
               {REUSE.totalBefore[lang]}
@@ -197,7 +198,7 @@ export default function MemReuseViz({ lang = "zh" }: { lang?: Locale }) {
           <span className="bcg-bench-head">{REUSE.headAfter[lang]}</span>
           <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={REUSE.headAfter[lang]}>
             {after.map((row) => (
-              <Band key={row.label} row={row} />
+              <Band key={`${row.label}-${row.y}`} row={row} />
             ))}
 
             {/* 优化前的总量参照线 + 省下的部分 */}
