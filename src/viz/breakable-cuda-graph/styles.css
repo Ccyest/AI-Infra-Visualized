@@ -606,3 +606,81 @@
   text-align: center;
   margin-top: 0.45rem;
 }
+
+/* ---------------- TimelineViz ---------------- */
+
+.bcg-timeline {
+  display: grid;
+  margin: 0.3rem 0 0.2rem;
+}
+
+.bcg-timeline-item {
+  display: grid;
+  grid-template-columns: 6.4rem 14px 1fr;
+  gap: 0.7rem;
+  align-items: baseline;
+  position: relative;
+  padding: 0.34rem 0;
+}
+
+.bcg-timeline-item::before {
+  content: "";
+  position: absolute;
+  left: calc(6.4rem + 0.7rem + 6px);
+  top: 0;
+  bottom: 0;
+  width: 1.5px;
+  background: var(--grid);
+}
+
+.bcg-timeline-item:first-child::before {
+  top: 50%;
+}
+
+.bcg-timeline-item:last-child::before {
+  bottom: 50%;
+}
+
+.bcg-timeline-date {
+  font-size: var(--bcg-font-sm);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.bcg-timeline-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--axis);
+  align-self: center;
+  justify-self: center;
+  position: relative;
+  z-index: 1;
+}
+
+.bcg-timeline-item.origin .bcg-timeline-dot {
+  background: var(--series-1);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--series-1) 25%, transparent);
+}
+
+.bcg-timeline-body {
+  font-size: var(--bcg-font-body);
+  color: var(--ink);
+}
+
+.bcg-timeline-item.origin .bcg-timeline-body {
+  font-weight: 650;
+}
+
+.bcg-timeline-body a {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: var(--bcg-font-sm);
+  color: var(--accent);
+  text-decoration: none;
+  margin-right: 0.5rem;
+}
+
+.bcg-timeline-body a:hover {
+  text-decoration: underline;
+}

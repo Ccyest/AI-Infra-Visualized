@@ -1,6 +1,6 @@
 ---
 title: "Breakable CUDA Graph: Advanced CUDA Graph Techniques in SGLang"
-description: "How SGLang refactored CUDA Graph support around a runner/backend interface: BCG inserts eager breaks during capture, full CUDA Graph covers prefill with token buckets and request padding, and graph memory is kept in check through reuse and the capture ceiling."
+description: "Breakable CUDA Graph was proposed, named, implemented, and first open-sourced in SGLang: eager breaks inserted directly during capture, with no compiler required; the post also covers full CUDA Graph for prefill and CUDA Graph memory management."
 order: 4
 tryOnSglang: "https://github.com/sgl-project/sglang"
 references:
@@ -23,6 +23,7 @@ import BcgStepViz from "../../../viz/breakable-cuda-graph/BcgStepViz";
 import PrefillPadViz from "../../../viz/breakable-cuda-graph/PrefillPadViz";
 import ReplayBenchViz from "../../../viz/breakable-cuda-graph/ReplayBenchViz";
 import MemoryCeilingViz from "../../../viz/breakable-cuda-graph/MemoryCeilingViz";
+import TimelineViz from "../../../viz/breakable-cuda-graph/TimelineViz";
 
 ## Background
 
@@ -40,12 +41,30 @@ operations running eagerly between them:
 
 <LaunchRaceViz client:visible lang="en" />
 
-But applying CUDA Graphs effectively in a modern inference engine is not
-straightforward. The graph design must fit different execution phases, remain
-compatible with complex kernels and runtime-dependent behavior, and control
-the capture-time and memory overhead introduced by the graphs themselves. As
-inference stacks become more complex, proper CUDA Graph integration becomes
-increasingly important.
+While maintaining SGLang, though, we found that using CUDA Graph well takes
+far more than recording once. Attention backends plan from live sequence
+lengths, collectives coordinate at runtime, and LoRA, MoE, and PD
+disaggregation each bring dynamic logic — one incompatible operation can leave
+a much larger part of the forward uncaptured. Our first answer went through
+torch.compile: trace the full forward, then split the graph at registered
+points. It worked, but compilation time grew with model complexity, every
+custom kernel needed scaffolding just to be traceable, and graph boundaries
+had to bend to what the compiler could represent.
+
+Since capture already executes operators in order, why should a compiler be
+the one to find the break points? Following that idea, we built Breakable CUDA
+Graph: eager breaks inserted directly while capture is in progress, with no
+compiler needed to understand the forward. BCG was proposed, named,
+implemented, and first open-sourced in SGLang. It reaches the same segmented
+execution in roughly a quarter of the code (521 versus 1,771 lines); it builds
+prefill graphs 3.8–5.2× faster because no compilation is involved; and
+measured on prefill alone it runs 1.70× over eager, while the full CUDA Graph
+for prefill we later shipped first on the FA4 and FlashInfer attention
+backends reaches 1.93×. BCG is now SGLang's default for prefill, and memory
+reuse across shapes and graph segments is becoming an increasingly important
+part of SGLang's overall memory management:
+
+<TimelineViz client:visible lang="en" />
 
 ## The runner/backend split
 
@@ -75,17 +94,6 @@ more than one token per request.
 
 ### Design and mechanism
 
-BCG is an SGLang-originated serving technique: it was proposed, named,
-implemented, and first open-sourced in SGLang. The first implementation was
-published in #19102 on February 21, 2026, and #22218 extended it to prefill,
-after which BCG became SGLang's default prefill CUDA Graph strategy.
-
-CUDA Graph traditionally requires the captured region to be fully
-graph-compatible, yet real inference forwards contain operations that do not
-fit naturally inside that model: attention backends may plan from live
-sequence lengths, collectives may involve runtime coordination, and serving
-features may update state dynamically. A single incompatible operation can
-therefore prevent CUDA Graph from covering a much larger part of the forward.
 BCG lets developers mark the incompatible region directly with
 `@eager_on_graph`. During capture, the current graph segment is closed when
 execution reaches the marked function, the function runs eagerly, and capture

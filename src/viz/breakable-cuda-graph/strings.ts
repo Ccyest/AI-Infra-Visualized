@@ -2,6 +2,70 @@ import type { Locale, Localized } from "../../lib/i18n";
 
 /** 本课可视化的全部界面文案(zh / en) */
 
+/* ---------------- TimelineViz ---------------- */
+
+export const TIMELINE = {
+  title: { zh: "BCG 时间线图示", en: "BCG timeline diagram" },
+} satisfies Record<string, Localized>;
+
+export interface TimelineItem {
+  date: string;
+  pr: string;
+  url: string;
+  text: Localized;
+  /** 原创性锚点,高亮 */
+  origin?: boolean;
+}
+
+export const TIMELINE_ITEMS: TimelineItem[] = [
+  {
+    date: "2026-02-21",
+    pr: "#19102",
+    url: "https://github.com/sgl-project/sglang/pull/19102",
+    text: {
+      zh: "首个 BCG 实现公开：提出、命名并开源",
+      en: "First BCG implementation published: proposed, named, open-sourced",
+    },
+    origin: true,
+  },
+  {
+    date: "2026-04-11",
+    pr: "#19102",
+    url: "https://github.com/sgl-project/sglang/pull/19102",
+    text: { zh: "BCG 合入 SGLang main", en: "BCG merged into SGLang main" },
+  },
+  {
+    date: "2026-04-24",
+    pr: "#22218",
+    url: "https://github.com/sgl-project/sglang/pull/22218",
+    text: {
+      zh: "BCG 扩展到 prefill，随后成为默认",
+      en: "BCG extended to prefill; became the default",
+    },
+  },
+  {
+    date: "2026-06-10",
+    pr: "#23906",
+    url: "https://github.com/sgl-project/sglang/pull/23906",
+    text: { zh: "Runner/Backend 重构", en: "Runner/backend refactor" },
+  },
+  {
+    date: "2026-07-07",
+    pr: "#27988",
+    url: "https://github.com/sgl-project/sglang/pull/27988",
+    text: {
+      zh: "Full CUDA Graph for prefill（FA4 / FlashInfer 首发）",
+      en: "Full CUDA Graph for prefill (first on FA4 / FlashInfer)",
+    },
+  },
+  {
+    date: "2026-07-08",
+    pr: "#27436",
+    url: "https://github.com/sgl-project/sglang/pull/27436",
+    text: { zh: "diffusion stack 采用 BCG", en: "BCG adopted by the diffusion stack" },
+  },
+];
+
 /* ---------------- LaunchRaceViz ---------------- */
 
 export const RACE = {

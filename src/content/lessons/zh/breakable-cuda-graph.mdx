@@ -1,6 +1,6 @@
 ---
 title: "Breakable CUDA Graph:SGLang 的 CUDA Graph 进阶"
-description: "SGLang 围绕 Runner/Backend 接口重构了 CUDA Graph 支持:BCG 在 capture 过程中插入 eager 断点,full CUDA Graph 通过 token bucket 和 request padding 覆盖 prefill,graph 显存则依靠复用与合适的 capture 上限来控制。"
+description: "Breakable CUDA Graph 由 SGLang 提出、命名、实现并率先开源:在 capture 过程中直接插入 eager 断点,不再依赖编译器;prefill 的 full CUDA Graph 与 CUDA Graph 的显存管理也在文中一并展开。"
 order: 4
 tryOnSglang: "https://github.com/sgl-project/sglang"
 references:
@@ -23,6 +23,7 @@ import BcgStepViz from "../../../viz/breakable-cuda-graph/BcgStepViz";
 import PrefillPadViz from "../../../viz/breakable-cuda-graph/PrefillPadViz";
 import ReplayBenchViz from "../../../viz/breakable-cuda-graph/ReplayBenchViz";
 import MemoryCeilingViz from "../../../viz/breakable-cuda-graph/MemoryCeilingViz";
+import TimelineViz from "../../../viz/breakable-cuda-graph/TimelineViz";
 
 ## 背景
 
@@ -38,11 +39,25 @@ eager 模式执行:
 
 <LaunchRaceViz client:visible />
 
-但要在现代推理引擎中有效使用 CUDA Graph 并不容易。graph
-的设计需要适配不同的执行阶段,兼容复杂 kernel
-和依赖运行时信息的行为,同时还要控制 capture
-本身带来的时间和显存开销。随着推理软件栈越来越复杂,正确集成 CUDA Graph
-也变得越来越重要。
+但在维护 SGLang 的过程中,我们发现把 CUDA Graph 用好远不止「录一遍」。attention
+backend 要按活的 sequence length 做 planning,collective
+涉及运行时协调,LoRA、MoE、PD disaggregation
+各带动态逻辑——只要出现一个不兼容算子,一大段 forward
+就无图可用。我们最初的答案是借助 torch.compile:先让编译器 trace 完整
+forward,再在注册的切分点把图拆开。它能工作,但编译时间随模型复杂度增长,每个自定义
+kernel 都要为 tracing 写适配,图的边界也要迁就编译器能表示的类型。
+
+既然 capture 本身就是按顺序执行算子,断点为什么要靠编译器去找?顺着这个想法,我们做出了
+Breakable CUDA Graph:在 capture 进行当中直接插入 eager
+断点,不需要编译器理解 forward。BCG 由 SGLang
+提出、命名、实现并率先开源:同样的分段执行只用四分之一的代码量(521 行对 1771
+行);因为无需编译,构建 prefill graph 快 3.8–5.2 倍;只测 prefill,BCG 相对
+eager 快 1.70 倍,而我们随后率先在 FA4 和 FlashInfer attention backend 上实现的
+prefill full CUDA Graph 达到 1.93 倍。BCG 现在是 SGLang prefill
+的默认方案;不同 shape、不同 graph segment 之间的显存复用,也正在成为 SGLang
+整体显存管理中越来越重要的一环:
+
+<TimelineViz client:visible />
 
 ## Runner/Backend 解耦
 
@@ -69,19 +84,10 @@ runner,但每个 request 会捕获多个 token。
 
 ### 设计与机制
 
-BCG 是由 SGLang 原创的推理服务技术,由 SGLang
-提出、命名、实现并率先开源:首个实现于 2026 年 2 月 21 日通过 #19102
-公开,#22218 随后把它扩展到 prefill,BCG 也成为 SGLang 默认的 prefill CUDA Graph
-方案。
-
-传统 CUDA Graph 要求被捕获的区域完全兼容 graph,而真实的推理 forward
-中存在许多难以纳入的操作:attention backend 可能需要根据实时 sequence length
-制订执行计划,collective 可能涉及运行时协调,serving feature
-也可能动态更新状态。只要存在一个不兼容操作,forward
-中大得多的一段区域就可能失去捕获机会。BCG 允许开发者用 `@eager_on_graph`
-直接标记不兼容区域:capture 执行到被标记函数时,当前 graph segment
-结束;函数以 eager 模式运行;随后开启新的 segment 继续 capture。forward
-由此变成由 eager region 分隔的一系列 CUDA Graph segment。
+BCG 允许开发者用 `@eager_on_graph` 直接标记不兼容区域:capture
+执行到被标记函数时,当前 graph segment 结束;函数以 eager
+模式运行;随后开启新的 segment 继续 capture。forward 由此变成由 eager region
+分隔的一系列 CUDA Graph segment。
 
 replay 时,已记录的 graph segment 和 eager function 按原来的顺序执行。capture
 阶段,被标记的函数会在两个 segment 之间运行一次,其返回的 tensor
