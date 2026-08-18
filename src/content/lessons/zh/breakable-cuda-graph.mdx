@@ -205,47 +205,56 @@ prompt 长度变化范围内，每条曲线都基本保持水平，这正是 lau
 
 ## CUDA Graph 的显存占用
 
-显存方面有两个不同的挑战：一是避免分段捕获让常驻显存成倍增加；二是让 capture
-覆盖足够大的 shape，使常驻的 graph 显存真正替代最坏情况下的 eager activation
-峰值。
+CUDA Graph 的显存与 activation 的显存性质不同。graph 显存是常驻的：replay
+要求每个中间 tensor 的地址保持不变，因此这些存储在 capture
+时从专用的显存池分配，并在 server 的整个生命周期内保留。eager activation
+则是瞬时的：每次 forward 临时分配、算完即释放，其峰值由支持的最大 prefill
+决定。由此产生两个不同的挑战：一是分段捕获之后，常驻显存不能随 segment 数和
+shape 数成倍增长；二是常驻的 graph 显存要真正顶替最坏情况下的 activation
+峰值，capture 就必须覆盖到最大的 prefill shape。
 
 ### 分段捕获内部的显存复用
 
-分段 backend 很容易让 graph 显存成倍增长：每个被捕获的 shape 都包含多个
-segment，而每个 segment 的中间结果都必须在 replay 时保持有效。BCG
-通过三种复用方式避免这种增长：同一个 capture shape 的所有 segment 共用一个 CUDA
-Graph pool，中间存储可以复用，而不是由每个 segment 分别长期占用；传入断点的
-tensor 如果其 storage 已由 graph pool 管理，就只以弱引用持有，避免不必要的
-Python reference 延长 tensor 生命周期；所有 capture size
-共用一块按最大尺寸分配的输出 buffer，每个 shape
-只切出自己需要的行。有一个值不能这样处理：跨越 eager 断点传递数据的那个
-tensor。后一个 graph segment 是基于它的地址完成 capture 的，因此这块 buffer
-必须一直存活，并在每次 replay 时原地更新。有了这些复用机制，即使 capture table
-很大，显存开销仍然可控：在 GLM-5.2 上，为 78 层 MoE 捕获 42 个 shape，只增加了
-2.4 GB graph 显存。
+分段很容易让 graph 显存成倍增长：一个 capture shape 现在包含多个
+segment，如果每个 segment 都把自己的中间存储单独保留一份，graph
+显存就会先乘以 segment 数，再乘以捕获的 shape
+数。BCG 通过三种复用避免这种增长。第一，同一个 capture shape 的所有 segment
+共用一个 CUDA Graph 显存池：segment
+按顺序执行，前一段不再使用的中间存储，后一段 capture
+时可以在同样的地址上复用，不必每段各留一份。第二，传入断点的 tensor 如果其
+storage 已由这个显存池管理，BCG
+只以弱引用持有：显存池只能复用没有引用的存储，断点处多持有一个 Python
+强引用，这块存储在 graph 的整个生命周期内都无法复用。第三，输出 buffer
+在所有 capture size 之间共享：按最大尺寸分配一块，每个 shape
+只使用自己需要的前几行。有一个值不能参与任何复用：跨越 eager
+断点传递数据的那个 tensor。后一个 graph segment 是基于它的地址完成 capture
+的，因此这块 buffer 必须一直存活，并在每次 replay
+时原地更新。有了这些复用机制，即使捕获的 shape 很多，显存开销仍然可控：在
+GLM-5.2 上，为 78 层 MoE 捕获 42 个 shape，只增加了 2.4 GB graph 显存。
 
 <MemReuseViz client:visible />
 
 ### Capture 覆盖整个 chunked-prefill size
 
-CUDA Graph 会改变 prefill 显存的使用形态。graph 显存是常驻的：在 capture
-时分配，并在 server 的整个生命周期内保留。eager activation 则是瞬时的：每次
-prefill 都会分配工作显存，支持的最大 prefill 决定其峰值。捕获某个 prefill
-shape，会将很大一部分瞬时工作集转移到 graph 的常驻显存池中，但这只对真正使用
-graph replay 的 shape 有效：如果 capture ladder 在最大 prefill size
-之前就停止，最大的 prefill 仍会回退到 eager 执行，保留原来的 activation
-峰值；与此同时，server 还要承担更小 shape 对应的所有常驻 graph 显存。
+捕获一个 prefill shape，相当于把它的瞬时工作显存搬进常驻的 graph
+显存池。这笔交换只对真正走 graph replay 的 shape 成立：如果 capture
+只覆盖到某个中等 size，比它更大的 prefill 仍会回退到 eager 执行，原来的
+activation 峰值原封不动；与此同时，更小 shape 的常驻 graph
+显存已经付出去了。两头的成本都要承担，总显存反而高于不开 graph 的 baseline。
 
-因此，capture 上限比捕获了多少个 shape 更重要。`chunked_prefill_size`
-限制了单次 prefill forward 的最大规模，只要一直捕获到这个
-size，就能消除最坏情况下的 eager activation 峰值：在 gpt-oss-120b 上几乎降为
+因此，capture 的上限比捕获了多少个 shape 更重要。`chunked_prefill_size`
+限制了单次 prefill forward 的最大规模——再长的 prompt
+也会被切成不超过这个 size 的 chunk 逐个处理——只要一直捕获到这个
+size，最大的 prefill 也走 graph replay，最坏情况下的 eager activation
+峰值就被消除：在 gpt-oss-120b 上几乎降为
 0（从 0.56 GB 降至 0.001 GB）；在 GLM-5.2 上则从 1.55 GB 降至 0.35 GB，因为它的
 sparse-attention indexer 仍然需要在断点处以 eager
 模式运行。总显存最终低于无 graph baseline：gpt-oss-120b 低 0.51 GB，GLM-5.2 低
 1.10 GB。与几百 GB 的整体显存占用相比，这个数字不算大，但它意味着 CUDA Graph
 带来的是节省，而不是额外成本。另一项收益是显存使用可预测：依赖 workload 的
 activation 瞬时峰值，变成了在 capture 阶段确定的固定分配，engine
-可以提前计入这部分显存，不必再为只在大规模 prefill 时出现的瞬时峰值预留空间：
+可以提前计入这部分显存，不必再为只在大规模 prefill
+时出现的瞬时峰值预留空间。下图可以拖动 capture 上限，观察三部分显存的变化：
 
 <MemoryCeilingViz client:visible />
 

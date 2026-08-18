@@ -240,54 +240,63 @@ prompt length, which is the signature of launch overhead rather than compute:
 
 ## Memory footprint of CUDA Graphs
 
-Memory poses two separate challenges: keeping a segmented capture from
-multiplying resident memory, and capturing far enough that resident graph
-memory actually replaces the worst eager activation peak.
+Graph memory and activation memory behave differently. Graph memory is
+resident: replay requires every intermediate tensor to keep its address, so
+this storage is allocated from a dedicated memory pool at capture time and
+retained for the lifetime of the server. Eager activations are transient: each
+forward allocates working memory and frees it afterwards, with the peak set by
+the largest supported prefill. This poses two separate challenges: once
+capture is segmented, resident memory must not multiply with the number of
+segments and shapes; and for resident graph memory to actually replace the
+worst-case activation peak, capture has to cover the largest prefill shape.
 
 ### Reuse inside a segmented capture
 
-A segmented backend could easily multiply graph memory: every captured shape
-contains multiple graph segments, and each segment has intermediates that must
-remain valid for replay. BCG avoids that multiplication through three forms of
-reuse: every segment for a captured shape uses the same CUDA Graph pool,
-allowing intermediate storage to be reused rather than pinned separately for
-each segment; tensors passed into a break are held weakly when the graph pool
-already owns their storage, avoiding unnecessary Python references that would
-extend tensor lifetimes; and capture sizes share a single maximum-sized output
-buffer, sliced to the rows needed by each shape. One value cannot be treated
-this way: the tensor that carries data across an eager break. The next graph
-segment is captured against its address, so that buffer must stay alive and be
-updated in place on every replay. With these reuse mechanisms, even a large
-capture table remains modest: 42 shapes across a 78-layer MoE add 2.4 GB of
-graph memory on GLM-5.2.
+Segmentation could easily multiply graph memory: a captured shape now contains
+multiple segments, and if every segment kept its own intermediate storage,
+graph memory would scale with the segment count, and again with the number of
+captured shapes. BCG avoids this through three forms of reuse. First, all
+segments of one captured shape share a single CUDA Graph memory pool: segments
+execute in order, so intermediate storage the previous segment no longer needs
+can be reused at the same addresses when the next segment is captured, instead
+of each segment pinning its own copy. Second, tensors passed into a break are
+held only weakly when the pool already owns their storage: the pool can only
+reuse storage that nothing references, and one extra Python strong reference
+at a break would keep that storage unusable for the graph's whole lifetime.
+Third, the output buffer is shared across all capture sizes: one allocation at
+the maximum size, with each shape using only the first rows it needs. One
+value cannot join any of this reuse: the tensor that carries data across an
+eager break. The next graph segment is captured against its address, so that
+buffer must stay alive and be updated in place on every replay. With these
+reuse mechanisms, even a long list of captured shapes stays modest: 42 shapes
+across a 78-layer MoE add 2.4 GB of graph memory on GLM-5.2.
 
 <MemReuseViz client:visible lang="en" />
 
 ### Capture through the chunked-prefill size
 
-CUDA Graphs change the shape of prefill memory usage. Graph memory is
-resident: it is allocated during capture and remains for the lifetime of the
-server. Eager activations are transient: each prefill allocates working
-memory, and the largest supported prefill determines the peak. Capturing a
-prefill shape moves much of that transient working set into the graph's
-resident memory pool, but this only helps for shapes that actually replay a
-graph: if the capture ladder stops below the maximum prefill size, the largest
-prefill still falls back to eager execution and retains the original
-activation peak — while the server also pays for all of the resident graphs
-below it.
+Capturing a prefill shape moves its transient working memory into the resident
+graph pool. That trade only pays off for shapes that actually replay a graph:
+if capture stops at some middle size, any larger prefill still falls back to
+eager execution and the original activation peak stays exactly where it was —
+while the resident memory for all the smaller shapes has already been paid.
+The server then carries both costs, and total memory ends up above the
+no-graph baseline.
 
 This makes the capture ceiling more important than the number of captured
-shapes. Since `chunked_prefill_size` bounds the largest single prefill
-forward, capturing through that size removes the worst eager activation peak:
-to essentially nothing on gpt-oss-120b (0.56 GB to 0.001 GB), and from 1.55 GB
-to 0.35 GB on GLM-5.2, whose sparse-attention indexer still runs eagerly at a
-break. The total then lands below the no-graph baseline — 0.51 GB lower on
-gpt-oss-120b, 1.10 GB on GLM-5.2. Modest against a footprint of a few hundred
-gigabytes, but a saving rather than a cost. The other benefit is predictable
-memory usage: a workload-dependent activation spike becomes a fixed allocation
-established at capture time, and the engine can account for that memory up
-front instead of reserving headroom for a transient peak that appears only
-during large prefills:
+shapes. `chunked_prefill_size` bounds the largest single prefill forward —
+longer prompts are processed as chunks no bigger than this size — so capturing
+all the way up to it lets the largest prefill replay a graph too, removing the
+worst eager activation peak: to essentially nothing on gpt-oss-120b (0.56 GB
+to 0.001 GB), and from 1.55 GB to 0.35 GB on GLM-5.2, whose sparse-attention
+indexer still runs eagerly at a break. The total then lands below the no-graph
+baseline — 0.51 GB lower on gpt-oss-120b, 1.10 GB on GLM-5.2. Modest against a
+footprint of a few hundred gigabytes, but a saving rather than a cost. The
+other benefit is predictable memory usage: a workload-dependent activation
+spike becomes a fixed allocation established at capture time, and the engine
+can account for that memory up front instead of reserving headroom for a
+transient peak that appears only during large prefills. In the figure below,
+drag the capture ceiling and watch the three parts of memory change:
 
 <MemoryCeilingViz client:visible lang="en" />
 
