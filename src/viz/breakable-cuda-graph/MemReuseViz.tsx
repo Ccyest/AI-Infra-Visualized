@@ -148,7 +148,7 @@ export default function MemReuseViz({ lang = "zh" }: { lang?: Locale }) {
               );
             })}
 
-            <text x={BX1} y={TOP_BEFORE - 8} textAnchor="end" fontSize="8" fill="var(--ink-2)">
+            <text x={BX1} y={TOP_BEFORE - 4} textAnchor="end" fontSize="8" fill="var(--ink-2)">
               {REUSE.totalBefore[lang]}
             </text>
           </svg>
@@ -246,7 +246,7 @@ export default function MemReuseViz({ lang = "zh" }: { lang?: Locale }) {
               strokeWidth="1"
               strokeDasharray="4 3"
             />
-            <text x={BX1} y={TOP_BEFORE - 8} textAnchor="end" fontSize="8" fill="var(--muted)">
+            <text x={BX1} y={TOP_BEFORE - 4} textAnchor="end" fontSize="8" fill="var(--muted)">
               {REUSE.refBefore[lang]}
             </text>
             <line x1={190} y1={TOP_BEFORE + 3} x2={190} y2={TOP_AFTER - 3} stroke="var(--ink-2)" strokeWidth="1" />
