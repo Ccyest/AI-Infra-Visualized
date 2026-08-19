@@ -20,7 +20,7 @@ const SEGS = [1, 2, 3];
 const TOTAL = SHAPES.length * SEGS.length - 1;
 
 const W = 300;
-const H = 176;
+const H = 192;
 const GUT = 74;
 const BX0 = 78;
 const BX1 = 292;
@@ -138,7 +138,7 @@ function Axis({ lang }: { lang: Locale }) {
           ))}
           <text
             x={groupX(g) + GROUP_W / 2}
-            y={AXIS_Y + 24}
+            y={AXIS_Y + 28}
             textAnchor="middle"
             fontSize="7.5"
             fill="var(--ink-2)"
