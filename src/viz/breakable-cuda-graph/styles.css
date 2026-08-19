@@ -797,17 +797,6 @@
 
 /* MemReuseViz 复用 .bcg-bench 的两栏布局与 SVG 宽度规则,无额外样式 */
 
-.bcg-reuse-status {
-  font-size: var(--bcg-font-sm);
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
-}
-
-.bcg-reuse-status b {
-  color: var(--ink);
-  font-weight: 650;
-}
-
 .bcg-premise {
   display: grid;
   gap: 0.4rem;
@@ -818,4 +807,9 @@
   width: 100%;
   height: auto;
   display: block;
+}
+
+.bcg-section-head {
+  display: block;
+  margin: 0.2rem 0 0.5rem;
 }

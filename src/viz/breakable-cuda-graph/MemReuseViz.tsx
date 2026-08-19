@@ -157,18 +157,11 @@ export default function MemReuseViz({ lang = "zh" }: { lang?: Locale }) {
   return (
     <VizStage
       title={REUSE.title[lang]}
-      subtitle={REUSE.subtitle[lang]}
       player={player}
       lang={lang}
       className="bcg-viz"
-      headExtra={
-        <span className="bcg-reuse-status">
-          {REUSE.replayOf[lang]} <b>size{shape.id}</b> · <b>seg{seg}</b>
-        </span>
-      }
       footer={
         <>
-          <span className="bcg-pad-note">{REUSE.contextNote[lang]}</span>
           <Legend
             items={[
               { label: REUSE.actTag[lang], swatch: { background: ACT_FILL, border: `1.5px solid ${ACT_EDGE}` } },
@@ -199,6 +192,7 @@ export default function MemReuseViz({ lang = "zh" }: { lang?: Locale }) {
         </svg>
       </div>
 
+      <span className="bcg-bench-head bcg-section-head">{REUSE.replayHead[lang]}</span>
       <div className="bcg-bench">
         <div className="bcg-bench-panel">
           <span className="bcg-bench-head">{REUSE.headBefore[lang]}</span>

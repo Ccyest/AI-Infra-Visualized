@@ -287,17 +287,12 @@ export const BENCH = {
 
 export const REUSE = {
   title: { zh: "显存复用图示", en: "Memory-reuse diagram" },
-  subtitle: {
-    zh: "左：优化前；右：优化后；方块的位置就是显存地址",
-    en: "Left: before optimization; right: after; a block's position is its address",
-  },
   headBefore: { zh: "优化前", en: "Before optimization" },
   headAfter: { zh: "优化后", en: "After optimization" },
   segInt: { zh: "中间结果", en: "intermediates" },
   poolRow: { zh: "共用 pool", en: "shared pool" },
   outRow: { zh: "输出", en: "out" },
   outMaxRow: { zh: "输出 buffer", en: "output buffer" },
-  replayOf: { zh: "正在 replay", en: "replaying" },
   running: { zh: "执行中", en: "running" },
   idle: { zh: "闲置", en: "idle" },
   empty: { zh: "空", en: "empty" },
@@ -318,9 +313,9 @@ export const REUSE = {
   },
   graphSeg: { zh: "graph", en: "graph" },
   maxTag: { zh: "max", en: "max" },
-  contextNote: {
-    zh: "上排是被捕获的三个 shape，下排是它们的显存怎么放",
-    en: "Top: the three captured shapes. Bottom: how their memory is laid out",
+  replayHead: {
+    zh: "CUDA Graph replay：三个 shape 轮流 replay，方块的位置就是显存地址",
+    en: "CUDA Graph replay: the three shapes replay in turn; a block's position is its address",
   },
 } satisfies Record<string, Localized>;
 
