@@ -21,6 +21,16 @@ const TOTAL = SHAPES.length * SEGS.length - 1;
 
 const W = 300;
 const H = 150;
+
+/* 前提图:三个被捕获的 shape,每个 = graph 段 + eager 断点 + graph 段 */
+const PW = 600;
+const PH = 104;
+const PGUT = 52;
+const PX0 = 56;
+const PX1 = 592;
+const PROW_H = 16;
+const PROW_Y: Record<number, number> = { 1: 14, 2: 40, 3: 66 };
+const EAGER_W = 12;
 const GUT = 76;
 const BX0 = 80;
 const BX1 = 292;
@@ -50,6 +60,81 @@ function RowLabel({ y, h, text }: { y: number; h: number; text: string }) {
     <text x={GUT} y={y + h / 2 + 3} textAnchor="end" fontSize="7.5" fill="var(--muted)">
       {text}
     </text>
+  );
+}
+
+function PremiseRow({
+  shape,
+  activeSeg,
+  lang,
+}: {
+  shape: { id: number; frac: number };
+  activeSeg: number | null;
+  lang: Locale;
+}) {
+  const y = PROW_Y[shape.id];
+  const total = (PX1 - PX0) * shape.frac;
+  const segW = (total - 2 * EAGER_W) / 3;
+  return (
+    <g>
+      <text x={PGUT} y={y + PROW_H / 2 + 3} textAnchor="end" fontSize="8" fill="var(--muted)">
+        size{shape.id}
+      </text>
+      {SEGS.map((seg) => {
+        const x = PX0 + (seg - 1) * (segW + EAGER_W);
+        const act = activeSeg === seg;
+        return (
+          <g key={seg}>
+            <rect
+              x={x}
+              y={y}
+              width={segW}
+              height={PROW_H}
+              rx="3"
+              fill={act ? ACT_FILL : HELD_FILL}
+              stroke={act ? ACT_EDGE : HELD_EDGE}
+              strokeWidth={act ? 1.5 : 1}
+            />
+            <text
+              x={x + segW / 2}
+              y={y + PROW_H / 2 + 3}
+              textAnchor="middle"
+              fontSize="7.5"
+              fill={act ? "var(--ink)" : "var(--ink-2)"}
+            >
+              {REUSE.graphSeg[lang]} seg{seg}
+            </text>
+            {seg < 3 && (
+              <g>
+                <rect
+                  x={x + segW}
+                  y={y}
+                  width={EAGER_W}
+                  height={PROW_H}
+                  rx="2"
+                  fill="color-mix(in srgb, var(--series-2) 30%, var(--surface))"
+                  stroke="color-mix(in srgb, var(--series-2) 55%, var(--grid))"
+                />
+                <text
+                  x={x + segW + EAGER_W / 2}
+                  y={y + PROW_H / 2 + 3}
+                  textAnchor="middle"
+                  fontSize="6.5"
+                  fill="var(--ink-2)"
+                >
+                  e
+                </text>
+              </g>
+            )}
+          </g>
+        );
+      })}
+      {shape.frac === 1 && (
+        <text x={PX1 + 2} y={y + PROW_H / 2 + 3} textAnchor="end" fontSize="7" fill="var(--muted)">
+          {REUSE.maxTag[lang]}
+        </text>
+      )}
+    </g>
   );
 }
 
@@ -94,6 +179,26 @@ export default function MemReuseViz({ lang = "zh" }: { lang?: Locale }) {
         </>
       }
     >
+      <div className="bcg-premise">
+        <span className="bcg-bench-head">{REUSE.premiseHead[lang]}</span>
+        <svg viewBox={`0 0 ${PW} ${PH}`} role="img" aria-label={REUSE.premiseHead[lang]}>
+          {[1, 2, 3].map((id) => {
+            const sh = SHAPES.find((x) => x.id === id)!;
+            return (
+              <PremiseRow
+                key={id}
+                shape={sh}
+                activeSeg={sh.id === shape.id ? seg : null}
+                lang={lang}
+              />
+            );
+          })}
+          <text x={PX0} y={98} fontSize="7.5" fill="var(--muted)">
+            {REUSE.premiseNote[lang]}
+          </text>
+        </svg>
+      </div>
+
       <div className="bcg-bench">
         <div className="bcg-bench-panel">
           <span className="bcg-bench-head">{REUSE.headBefore[lang]}</span>

@@ -807,3 +807,15 @@
   color: var(--ink);
   font-weight: 650;
 }
+
+.bcg-premise {
+  display: grid;
+  gap: 0.4rem;
+  margin: 0.2rem 0 1rem;
+}
+
+.bcg-premise svg {
+  width: 100%;
+  height: auto;
+  display: block;
+}

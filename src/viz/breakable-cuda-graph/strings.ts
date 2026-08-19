@@ -308,9 +308,19 @@ export const REUSE = {
   actTag: { zh: "正在写入 / 使用", en: "being written / in use" },
   heldTag: { zh: "占着但没在用", en: "held but idle" },
   outTag: { zh: "输出 buffer 已写入的行", en: "rows written in the output buffer" },
+  premiseHead: {
+    zh: "前提：capture 了三个 shape，每个都被切成 graph 段 + eager 断点",
+    en: "Setup: three shapes are captured, each split into graph segments and eager breaks",
+  },
+  premiseNote: {
+    zh: "e = eager 断点；一次 replay 依次跑完这一行的三个 graph 段",
+    en: "e = eager break; one replay runs the row's three graph segments in order",
+  },
+  graphSeg: { zh: "graph", en: "graph" },
+  maxTag: { zh: "max", en: "max" },
   contextNote: {
-    zh: "size1 / size2 / size3 是三个不同的 capture size，size3 = max；一次 replay 依次跑完三个 segment",
-    en: "size1 / size2 / size3 are three capture sizes, size3 = max; one replay runs the three segments in order",
+    zh: "上排是被捕获的三个 shape，下排是它们的显存怎么放",
+    en: "Top: the three captured shapes. Bottom: how their memory is laid out",
   },
 } satisfies Record<string, Localized>;
 
