@@ -796,3 +796,14 @@
 }
 
 /* MemReuseViz 复用 .bcg-bench 的两栏布局与 SVG 宽度规则,无额外样式 */
+
+.bcg-reuse-status {
+  font-size: var(--bcg-font-sm);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.bcg-reuse-status b {
+  color: var(--ink);
+  font-weight: 650;
+}

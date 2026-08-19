@@ -5,11 +5,11 @@ import type { Locale } from "../../lib/i18n";
 import { REUSE, REUSE_STEPS } from "./strings";
 import "./styles.css";
 
-/* 时间轴:三次 replay(size3 / size1 / size2)×每次三个 segment,共 9 步。
-   同一根时间轴同时驱动中间结果和输出 buffer:
-   优化前每段中间结果、每个 size 的输出各占一块并全程保留;
-   优化后中间结果共用一块 pool,输出共用一块按最大 size 分配的 buffer,
-   两者都是后来者从头覆写前一个。高度为教学比例。 */
+/* 内存图:方块的位置就是显存地址,时间只由播放器推进。
+   时间轴 = 三次 replay(size3 / size1 / size2)× 每次三个 segment,共 9 步。
+   优化前:seg1/seg2/seg3 各一块 + 每个 capture size 各一块输出,全程都占着。
+   优化后:一块共用 pool 原地擦掉重写 + 一块输出 buffer 每次从第 0 行重写。
+   高度与宽度为教学比例,不代表真实字节数。 */
 
 const SHAPES = [
   { id: 3, frac: 1 },
@@ -20,149 +20,54 @@ const SEGS = [1, 2, 3];
 const TOTAL = SHAPES.length * SEGS.length - 1;
 
 const W = 300;
-const H = 192;
-const GUT = 74;
-const BX0 = 78;
+const H = 150;
+const GUT = 76;
+const BX0 = 80;
 const BX1 = 292;
-const AXIS_Y = 150;
-const GROUP_W = 66;
-const WIN_W = 22;
-const groupX = (g: number) => BX0 + g * (GROUP_W + 8);
-const winX = (g: number, seg: number) => groupX(g) + (seg - 1) * WIN_W;
+const BW = BX1 - BX0;
 
 const BAND_H = 20;
 const THIN_H = 10;
-const BEFORE_BANDS = [124, 100, 76]; // seg1 / seg2 / seg3
-const BEFORE_OUTS = [58, 40, 22]; // 按 capture 顺序:size3 / size1 / size2
-const TOP_BEFORE = 22;
-const AFTER_BAND = 124;
-const AFTER_OUT = 106;
-const TOP_AFTER = 106;
+/** 优化前:三段中间结果各一块(seg1 在最下) */
+const BEFORE_SEGS = [112, 88, 64];
+/** 优化前:三个 capture size 各一块输出 */
+const BEFORE_OUTS = [{ y: 46, i: 1 }, { y: 32, i: 2 }, { y: 18, i: 3 }];
+const TOP_BEFORE = 18;
+const AFTER_POOL = 112;
+const AFTER_OUT = 94;
+const TOP_AFTER = 94;
 
-const BASE_FILL = "color-mix(in srgb, var(--series-1) 12%, var(--surface))";
-const BASE_EDGE = "color-mix(in srgb, var(--series-1) 32%, var(--grid))";
-const HELD_FILL = "color-mix(in srgb, var(--series-1) 30%, var(--surface))";
-const HELD_EDGE = "color-mix(in srgb, var(--series-1) 50%, var(--grid))";
+const HELD_FILL = "color-mix(in srgb, var(--series-1) 26%, var(--surface))";
+const HELD_EDGE = "color-mix(in srgb, var(--series-1) 45%, var(--grid))";
 const ACT_FILL = "color-mix(in srgb, var(--series-1) 58%, var(--surface))";
 const ACT_EDGE = "var(--series-1)";
-const OUT_BASE = "color-mix(in srgb, var(--series-4) 12%, var(--surface))";
-const OUT_FILL = "color-mix(in srgb, var(--series-4) 38%, var(--surface))";
+const OUT_BASE = "color-mix(in srgb, var(--series-4) 10%, var(--surface))";
+const OUT_FILL = "color-mix(in srgb, var(--series-4) 40%, var(--surface))";
 const OUT_EDGE = "color-mix(in srgb, var(--series-4) 55%, var(--grid))";
-
-type BlockState = "held" | "active" | "gone";
 
 function RowLabel({ y, h, text }: { y: number; h: number; text: string }) {
   return (
-    <text
-      x={GUT}
-      y={y + h / 2 + 3}
-      textAnchor="end"
-      fontSize={h > 14 ? "8" : "7"}
-      fill="var(--muted)"
-    >
+    <text x={GUT} y={y + h / 2 + 3} textAnchor="end" fontSize="7.5" fill="var(--muted)">
       {text}
     </text>
-  );
-}
-
-function Block({
-  x,
-  y,
-  h,
-  state,
-  label,
-}: {
-  x: number;
-  y: number;
-  h: number;
-  state: BlockState;
-  label?: string;
-}) {
-  const gone = state === "gone";
-  const act = state === "active";
-  return (
-    <g>
-      <rect
-        x={x}
-        y={y}
-        width={WIN_W}
-        height={h}
-        rx="3"
-        fill={gone ? "transparent" : act ? ACT_FILL : HELD_FILL}
-        stroke={gone ? "var(--muted)" : act ? ACT_EDGE : HELD_EDGE}
-        strokeWidth={act ? 1.5 : 1}
-        strokeDasharray={gone ? "3 2" : undefined}
-      />
-      {label && (
-        <text
-          x={x + WIN_W / 2}
-          y={y + h / 2 + 3}
-          textAnchor="middle"
-          fontSize="7"
-          fill={gone ? "var(--muted)" : "var(--ink)"}
-        >
-          {label}
-        </text>
-      )}
-      {gone && (
-        <line
-          x1={x + 4}
-          y1={y + h / 2}
-          x2={x + WIN_W - 4}
-          y2={y + h / 2}
-          stroke="var(--muted)"
-          strokeWidth="1"
-        />
-      )}
-    </g>
-  );
-}
-
-function Axis({ lang }: { lang: Locale }) {
-  return (
-    <g>
-      <line x1={BX0} y1={AXIS_Y} x2={BX1} y2={AXIS_Y} stroke="var(--axis)" strokeWidth="1" />
-      {SHAPES.map((sh, g) => (
-        <g key={sh.id}>
-          {SEGS.map((seg) => (
-            <text
-              key={seg}
-              x={winX(g, seg) + WIN_W / 2}
-              y={AXIS_Y + 11}
-              textAnchor="middle"
-              fontSize="6.5"
-              fill="var(--muted)"
-            >
-              seg{seg}
-            </text>
-          ))}
-          <text
-            x={groupX(g) + GROUP_W / 2}
-            y={AXIS_Y + 28}
-            textAnchor="middle"
-            fontSize="7.5"
-            fill="var(--ink-2)"
-          >
-            {REUSE.replayOf[lang]} size{sh.id}
-          </text>
-        </g>
-      ))}
-    </g>
   );
 }
 
 export default function MemReuseViz({ lang = "zh" }: { lang?: Locale }) {
   const player = useSimPlayer(TOTAL, 0.9);
   const t = Math.min(player.t, TOTAL);
-  const curG = Math.floor(t / SEGS.length);
-  const curSeg = (t % SEGS.length) + 1;
+  const g = Math.floor(t / SEGS.length);
+  const seg = (t % SEGS.length) + 1;
+  const shape = SHAPES[g];
 
-  /** 已经写完输出的最近一次 replay(每组第 3 步写输出) */
-  const written = t >= 2 ? Math.floor((t - 2) / SEGS.length) : -1;
+  /** 最近一次写完输出的 replay(每次 replay 的第 3 步写输出) */
+  const written = t >= 2 ? SHAPES[Math.floor((t - 2) / SEGS.length)] : null;
+  /** 之前写过的最长前缀,用来显示尾部残留的旧数据 */
+  const staleFrac = Math.max(
+    0,
+    ...SHAPES.filter((_, i) => i * SEGS.length + 2 <= t).map((s) => s.frac),
+  );
   const justWrote = t % SEGS.length === 2;
-
-  const isActive = (g: number, seg: number) => g === curG && seg === curSeg;
-  const isPast = (g: number, seg: number) => g < curG || (g === curG && seg < curSeg);
 
   return (
     <VizStage
@@ -171,17 +76,18 @@ export default function MemReuseViz({ lang = "zh" }: { lang?: Locale }) {
       player={player}
       lang={lang}
       className="bcg-viz"
+      headExtra={
+        <span className="bcg-reuse-status">
+          {REUSE.replayOf[lang]} <b>size{shape.id}</b> · <b>seg{seg}</b>
+        </span>
+      }
       footer={
         <>
-          <span className="bcg-pad-note">{REUSE.axesNote[lang]}</span>
+          <span className="bcg-pad-note">{REUSE.contextNote[lang]}</span>
           <Legend
             items={[
               { label: REUSE.actTag[lang], swatch: { background: ACT_FILL, border: `1.5px solid ${ACT_EDGE}` } },
               { label: REUSE.heldTag[lang], swatch: { background: HELD_FILL, border: `1px solid ${HELD_EDGE}` } },
-              {
-                label: REUSE.goneTag[lang],
-                swatch: { background: "transparent", border: "1px dashed var(--muted)" },
-              },
               { label: REUSE.outTag[lang], swatch: { background: OUT_FILL, border: `1px solid ${OUT_EDGE}` } },
             ]}
           />
@@ -192,59 +98,52 @@ export default function MemReuseViz({ lang = "zh" }: { lang?: Locale }) {
         <div className="bcg-bench-panel">
           <span className="bcg-bench-head">{REUSE.headBefore[lang]}</span>
           <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={REUSE.headBefore[lang]}>
-            <rect
-              x={winX(curG, curSeg)}
-              y={20}
-              width={WIN_W}
-              height={AXIS_Y - 20}
-              fill="color-mix(in srgb, var(--accent) 9%, transparent)"
-            />
-
-            {/* 中间结果:每个 segment 一条地址带,三次 replay 都落在同一块 */}
-            {BEFORE_BANDS.map((y, idx) => {
-              const seg = idx + 1;
+            {BEFORE_SEGS.map((y, idx) => {
+              const s = idx + 1;
+              const act = s === seg;
               return (
                 <g key={y}>
                   <rect
                     x={BX0}
                     y={y}
-                    width={BX1 - BX0}
+                    width={BW}
                     height={BAND_H}
                     rx="3"
-                    fill={BASE_FILL}
-                    stroke={BASE_EDGE}
+                    fill={act ? ACT_FILL : HELD_FILL}
+                    stroke={act ? ACT_EDGE : HELD_EDGE}
+                    strokeWidth={act ? 1.5 : 1}
                   />
-                  {SHAPES.map((sh, g) => (
-                    <Block
-                      key={sh.id}
-                      x={winX(g, seg)}
-                      y={y}
-                      h={BAND_H}
-                      state={isActive(g, seg) ? "active" : "held"}
-                    />
-                  ))}
-                  <RowLabel y={y} h={BAND_H} text={REUSE.segInt[lang]} />
+                  <text
+                    x={BX0 + BW / 2}
+                    y={y + BAND_H / 2 + 3}
+                    textAnchor="middle"
+                    fontSize="8"
+                    fill={act ? "var(--ink)" : "var(--muted)"}
+                  >
+                    seg{s} {act ? REUSE.running[lang] : REUSE.idle[lang]}
+                  </text>
+                  <RowLabel y={y} h={BAND_H} text={`seg${s} ${REUSE.segInt[lang]}`} />
                 </g>
               );
             })}
 
-            {/* 输出:每个 capture size 各一块,大小不同、地址不同 */}
-            {SHAPES.map((sh, g) => {
-              const y = BEFORE_OUTS[g];
-              const filled = written >= 0 && g <= Math.max(written, -1) && g <= curG;
+            {BEFORE_OUTS.map((o) => {
+              const sh = SHAPES.find((s) => s.id === o.i)!;
+              const gi = SHAPES.findIndex((s) => s.id === o.i);
+              const done = gi * SEGS.length + 2 <= t;
               return (
-                <g key={sh.id}>
+                <g key={o.i}>
                   <rect
                     x={BX0}
-                    y={y}
-                    width={(BX1 - BX0) * sh.frac}
+                    y={o.y}
+                    width={BW * sh.frac}
                     height={THIN_H}
                     rx="3"
-                    fill={filled ? OUT_FILL : OUT_BASE}
+                    fill={done ? OUT_FILL : OUT_BASE}
                     stroke={OUT_EDGE}
-                    strokeWidth={justWrote && g === curG ? 2 : 1}
+                    strokeWidth={justWrote && gi === g ? 2 : 1}
                   />
-                  <RowLabel y={y} h={THIN_H} text={`size${sh.id} ${REUSE.outRow[lang]}`} />
+                  <RowLabel y={o.y} h={THIN_H} text={`size${o.i} ${REUSE.outRow[lang]}`} />
                 </g>
               );
             })}
@@ -252,71 +151,91 @@ export default function MemReuseViz({ lang = "zh" }: { lang?: Locale }) {
             <text x={BX1} y={TOP_BEFORE - 8} textAnchor="end" fontSize="8" fill="var(--ink-2)">
               {REUSE.totalBefore[lang]}
             </text>
-            <Axis lang={lang} />
           </svg>
         </div>
 
         <div className="bcg-bench-panel">
           <span className="bcg-bench-head">{REUSE.headAfter[lang]}</span>
           <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={REUSE.headAfter[lang]}>
-            <rect
-              x={winX(curG, curSeg)}
-              y={20}
-              width={WIN_W}
-              height={AXIS_Y - 20}
-              fill="color-mix(in srgb, var(--accent) 9%, transparent)"
-            />
-
-            {/* 中间结果:一条地址带,后来的 segment 覆写前一个 */}
+            {/* 一块共用 pool:上一段被擦掉,新的 seg 写在同一块地址上 */}
             <rect
               x={BX0}
-              y={AFTER_BAND}
-              width={BX1 - BX0}
+              y={AFTER_POOL}
+              width={BW}
               height={BAND_H}
               rx="3"
-              fill={BASE_FILL}
-              stroke={BASE_EDGE}
+              fill={ACT_FILL}
+              stroke={ACT_EDGE}
+              strokeWidth="1.5"
             />
-            {SHAPES.flatMap((sh, g) =>
-              SEGS.map((seg) => {
-                if (!isActive(g, seg) && !isPast(g, seg)) return null;
-                return (
-                  <Block
-                    key={`${sh.id}-${seg}`}
-                    x={winX(g, seg)}
-                    y={AFTER_BAND}
-                    h={BAND_H}
-                    state={isActive(g, seg) ? "active" : "gone"}
-                    label={isActive(g, seg) ? `seg${seg}` : undefined}
-                  />
-                );
-              }),
-            )}
-            <RowLabel y={AFTER_BAND} h={BAND_H} text={REUSE.poolRow[lang]} />
+            <text
+              x={BX0 + BW / 2}
+              y={AFTER_POOL + BAND_H / 2 + 3}
+              textAnchor="middle"
+              fontSize="8"
+              fill="var(--ink)"
+            >
+              {seg > 1 && (
+                <tspan fill="var(--muted)" textDecoration="line-through">
+                  seg{seg - 1}
+                </tspan>
+              )}
+              {seg > 1 && <tspan fill="var(--muted)"> → </tspan>}
+              <tspan>
+                seg{seg} {REUSE.running[lang]}
+              </tspan>
+            </text>
+            <RowLabel y={AFTER_POOL} h={BAND_H} text={REUSE.poolRow[lang]} />
 
-            {/* 输出:一块按最大 size 分配的 buffer,每次 replay 从第 0 行覆写 */}
+            {/* 一块输出 buffer:每次 replay 从第 0 行重写,尾部是旧数据 */}
             <rect
               x={BX0}
               y={AFTER_OUT}
-              width={BX1 - BX0}
+              width={BW}
               height={THIN_H}
               rx="3"
               fill={OUT_BASE}
               stroke={OUT_EDGE}
               strokeWidth={justWrote ? 2 : 1}
             />
-            {written >= 0 && (
+            {staleFrac > 0 && (
               <rect
                 x={BX0}
                 y={AFTER_OUT}
-                width={(BX1 - BX0) * SHAPES[written].frac}
+                width={BW * staleFrac}
                 height={THIN_H}
                 rx="3"
-                fill={OUT_FILL}
+                fill="color-mix(in srgb, var(--series-4) 18%, var(--surface))"
                 stroke={OUT_EDGE}
               />
             )}
+            {written && (
+              <>
+                <rect
+                  x={BX0}
+                  y={AFTER_OUT}
+                  width={BW * written.frac}
+                  height={THIN_H}
+                  rx="3"
+                  fill={OUT_FILL}
+                  stroke={OUT_EDGE}
+                />
+                <text
+                  x={BX0 + 5}
+                  y={AFTER_OUT + THIN_H / 2 + 3}
+                  fontSize="7"
+                  fill="var(--ink)"
+                >
+                  size{written.id}
+                </text>
+              </>
+            )}
             <RowLabel y={AFTER_OUT} h={THIN_H} text={REUSE.outMaxRow[lang]} />
+            {staleFrac > (written?.frac ?? 0) && (
+              <text x={BX1} y={AFTER_OUT - 5} textAnchor="end" fontSize="7" fill="var(--muted)">
+                {REUSE.stale[lang]}
+              </text>
+            )}
 
             <line
               x1={BX0}
@@ -330,13 +249,12 @@ export default function MemReuseViz({ lang = "zh" }: { lang?: Locale }) {
             <text x={BX1} y={TOP_BEFORE - 8} textAnchor="end" fontSize="8" fill="var(--muted)">
               {REUSE.refBefore[lang]}
             </text>
-            <line x1={200} y1={TOP_BEFORE + 3} x2={200} y2={TOP_AFTER - 3} stroke="var(--ink-2)" strokeWidth="1" />
-            <polygon points={`196.8,${TOP_BEFORE + 7} 203.2,${TOP_BEFORE + 7} 200,${TOP_BEFORE + 1}`} fill="var(--ink-2)" />
-            <polygon points={`196.8,${TOP_AFTER - 7} 203.2,${TOP_AFTER - 7} 200,${TOP_AFTER - 1}`} fill="var(--ink-2)" />
-            <text x={206} y={(TOP_BEFORE + TOP_AFTER) / 2 + 3} fontSize="8" fill="var(--ink-2)">
+            <line x1={190} y1={TOP_BEFORE + 3} x2={190} y2={TOP_AFTER - 3} stroke="var(--ink-2)" strokeWidth="1" />
+            <polygon points={`186.8,${TOP_BEFORE + 7} 193.2,${TOP_BEFORE + 7} 190,${TOP_BEFORE + 1}`} fill="var(--ink-2)" />
+            <polygon points={`186.8,${TOP_AFTER - 7} 193.2,${TOP_AFTER - 7} 190,${TOP_AFTER - 1}`} fill="var(--ink-2)" />
+            <text x={196} y={(TOP_BEFORE + TOP_AFTER) / 2 + 3} fontSize="8" fill="var(--ink-2)">
               {REUSE.saved[lang]}
             </text>
-            <Axis lang={lang} />
           </svg>
         </div>
       </div>

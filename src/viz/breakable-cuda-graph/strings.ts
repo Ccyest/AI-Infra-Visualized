@@ -288,60 +288,63 @@ export const BENCH = {
 export const REUSE = {
   title: { zh: "显存复用图示", en: "Memory-reuse diagram" },
   subtitle: {
-    zh: "左：优化前；右：优化后；时间轴走三次 replay",
-    en: "Left: before optimization; right: after; the timeline runs three replays",
+    zh: "左：优化前；右：优化后；方块的位置就是显存地址",
+    en: "Left: before optimization; right: after; a block's position is its address",
   },
   headBefore: { zh: "优化前", en: "Before optimization" },
   headAfter: { zh: "优化后", en: "After optimization" },
   segInt: { zh: "中间结果", en: "intermediates" },
   poolRow: { zh: "共用 pool", en: "shared pool" },
   outRow: { zh: "输出", en: "out" },
-  outMaxRow: { zh: "输出（max）", en: "out (max)" },
-  replayOf: { zh: "replay", en: "replay" },
+  outMaxRow: { zh: "输出 buffer", en: "output buffer" },
+  replayOf: { zh: "正在 replay", en: "replaying" },
+  running: { zh: "执行中", en: "running" },
+  idle: { zh: "闲置", en: "idle" },
+  empty: { zh: "空", en: "empty" },
+  stale: { zh: "上次留下的旧数据", en: "stale rows from the last replay" },
   totalBefore: { zh: "常驻总量", en: "resident total" },
   refBefore: { zh: "优化前的总量", en: "total before" },
   saved: { zh: "省下的显存", en: "memory saved" },
-  actTag: { zh: "当前使用中", en: "in use now" },
-  heldTag: { zh: "算完仍占着", en: "still held after running" },
-  goneTag: { zh: "已被覆写", en: "overwritten" },
-  outTag: { zh: "输出 buffer", en: "output buffer" },
-  axesNote: {
-    zh: "纵轴为显存地址，高度为示意",
-    en: "y is the memory address; heights are schematic",
+  actTag: { zh: "正在写入 / 使用", en: "being written / in use" },
+  heldTag: { zh: "占着但没在用", en: "held but idle" },
+  outTag: { zh: "输出 buffer 已写入的行", en: "rows written in the output buffer" },
+  contextNote: {
+    zh: "size1 / size2 / size3 是三个不同的 capture size，size3 = max；一次 replay 依次跑完三个 segment",
+    en: "size1 / size2 / size3 are three capture sizes, size3 = max; one replay runs the three segments in order",
   },
 } satisfies Record<string, Localized>;
 
 /** 时间轴:三次 replay(size3 / size1 / size2),每次三个 segment */
 export const REUSE_STEPS: Localized[] = [
   {
-    zh: "replay size3：seg1 执行。优化前三段各占一块，优化后三段共用一块。",
-    en: "Replay size3: seg1 runs. Before, each segment owns a block; after, all three share one.",
+    zh: "replay size3 的 seg1。优化前 seg1、seg2、seg3 各有一块地址，优化后只有一块共用 pool。",
+    en: "seg1 of the size3 replay. Before, seg1/seg2/seg3 each own an address; after, there is only one shared pool.",
   },
   {
-    zh: "seg2 执行。优化后在同一地址上覆写 seg1 留下的数据。",
-    en: "seg2 runs. After optimization it overwrites what seg1 left at the same address.",
+    zh: "seg2：优化后把共用 pool 里的 seg1 擦掉，在同一块地址上写 seg2。优化前 seg1 那块仍占着。",
+    en: "seg2: after optimization, seg1 is erased from the shared pool and seg2 is written at the same address. Before, seg1's block is still held.",
   },
   {
-    zh: "seg3 执行，输出写进 buffer 的前 max 行。",
-    en: "seg3 runs and writes its output into the first max rows of the buffer.",
+    zh: "seg3：共用 pool 再擦一次。这次 replay 的输出写进输出 buffer，size3 写满全部行。",
+    en: "seg3: the shared pool is erased once more. This replay's output goes into the output buffer — size3 fills every row.",
   },
   {
-    zh: "换 size1 再 replay：seg1 又一次覆写同一块 pool。",
-    en: "Replay size1: seg1 overwrites the same pool block again.",
+    zh: "换 size1 再 replay 的 seg1：共用 pool 又被擦掉重写。",
+    en: "seg1 of the size1 replay: the shared pool is erased and rewritten again.",
   },
-  { zh: "seg2 执行，同一块继续被覆写。", en: "seg2 runs; the same block is overwritten again." },
+  { zh: "seg2：同一块地址，再擦一次。", en: "seg2: same address, erased once more." },
   {
-    zh: "seg3 执行，输出仍从第 0 行写起，只用前几行。",
-    en: "seg3 runs; the output still starts at row 0 and uses only the first rows.",
+    zh: "seg3：输出仍从第 0 行写起，size1 只写前面一小截，后面是上次留下的旧数据。",
+    en: "seg3: the output still starts at row 0 — size1 writes only a short prefix, and the rest is stale data from last time.",
   },
   {
-    zh: "换 size2 再 replay：优化前此时已占着三块中间结果、三块输出。",
-    en: "Replay size2: before optimization, three intermediate blocks and three output buffers are held by now.",
+    zh: "换 size2 再 replay 的 seg1。优化前此时三块中间结果、三块输出都占着。",
+    en: "seg1 of the size2 replay. Before optimization, three intermediate blocks and three output buffers are all held by now.",
   },
-  { zh: "seg2 执行。", en: "seg2 runs." },
+  { zh: "seg2：共用 pool 再擦一次。", en: "seg2: the shared pool is erased once more." },
   {
-    zh: "seg3 执行，输出第三次从第 0 行覆写。全程只有一块 pool、一块输出 buffer。",
-    en: "seg3 runs and the output is overwritten from row 0 a third time — one pool and one output buffer throughout.",
+    zh: "seg3：输出第三次从第 0 行写起。全程只有一块 pool、一块输出 buffer。",
+    en: "seg3: the output is written from row 0 a third time. One pool and one output buffer throughout.",
   },
 ];
 
