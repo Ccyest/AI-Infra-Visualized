@@ -218,7 +218,9 @@ CUDA Graph 的显存与 activation 的显存性质不同。graph 显存是常驻
 分段 Backend 很容易让 graph 显存成倍增长：每个被捕获的 shape 都包含多个 graph
 segment，而每个 segment 的中间结果都必须在 replay 时保持有效。这里说的增长来自断点的数量：一次
 forward 打 N 个断点就有 N+1 个 segment，如果每个 segment 的中间结果各占一块显存、并各自长期保留，需要常驻的显存就从「一次
-forward 的峰值」变成「各 segment 峰值之和」，断点打得越多，常驻显存越高。BCG
+forward 的峰值」变成「各 segment 峰值之和」，断点打得越多，常驻显存越高。本质上这件事很简单：CUDA
+Graph 是按顺序 replay 的，同一时刻只有一个 segment
+在执行，因此并不需要时刻保住所有 segment 的中间结果，后一段直接覆写前一段留下的数据，就能共享同一块显存。BCG
 通过三种复用方式避免了这种增长。
 
 - **不同 segment 共享一个显存池。** 同一个 capture shape 的所有 segment 都使用同一个

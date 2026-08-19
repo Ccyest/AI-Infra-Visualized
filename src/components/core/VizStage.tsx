@@ -12,6 +12,8 @@ interface VizStageProps {
   lang?: Locale;
   /** 标题行右侧的额外控件(如场景切换) */
   headExtra?: ReactNode;
+  /** 追加到 .viz-stage 上的类名(如课程专用的字号变量) */
+  className?: string;
   children: ReactNode;
   footer?: ReactNode;
 }
@@ -26,12 +28,16 @@ export default function VizStage({
   player,
   lang = "zh",
   headExtra,
+  className,
   children,
   footer,
 }: VizStageProps) {
   const { t, total, playing } = player;
   return (
-    <figure className="viz-stage" style={{ margin: "1.6rem 0" }}>
+    <figure
+      className={`viz-stage${className ? ` ${className}` : ""}`}
+      style={{ margin: "1.6rem 0" }}
+    >
       <div className="viz-head">
         <span className="viz-title">{title}</span>
         {subtitle && <span className="viz-subtitle">{subtitle}</span>}

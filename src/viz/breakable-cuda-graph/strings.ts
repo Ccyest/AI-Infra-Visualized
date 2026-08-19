@@ -287,29 +287,59 @@ export const BENCH = {
 
 export const REUSE = {
   title: { zh: "显存复用图示", en: "Memory-reuse diagram" },
-  subtitle: { zh: "左：优化前；右：优化后", en: "Left: before optimization; right: after" },
+  subtitle: {
+    zh: "左：优化前；右：优化后；拖动时间轴看同一次 replay",
+    en: "Left: before optimization; right: after; drag the timeline through one replay",
+  },
   headBefore: { zh: "优化前", en: "Before optimization" },
   headAfter: { zh: "优化后", en: "After optimization" },
+  secTime: { zh: "中间结果（按时间）", en: "Intermediates (over time)" },
+  secOut: { zh: "输出 buffer（按 capture size）", en: "Output buffer (by capture size)" },
   segInt: { zh: "中间结果", en: "intermediates" },
-  breakTensor: { zh: "断点 tensor", en: "break tensor" },
-  outRow: { zh: "输出", en: "out" },
-  outMax: { zh: "输出（max）", en: "out (max)" },
   poolRow: { zh: "共用 pool", en: "shared pool" },
   boundaryRow: { zh: "boundary", en: "boundary" },
+  outRow: { zh: "输出", en: "out" },
+  outMaxRow: { zh: "输出（max）", en: "out (max)" },
   breakLabel: { zh: "断点", en: "break" },
   totalBefore: { zh: "常驻总量", en: "resident total" },
   refBefore: { zh: "优化前的总量", en: "total before" },
   saved: { zh: "省下的显存", en: "memory saved" },
-  weakRefAnnot: { zh: "断点 tensor 用弱引用", en: "break tensors held weakly" },
-  pinnedTag: { zh: "常驻占用", en: "pinned resident" },
-  activeTag: { zh: "当前 segment 使用中", en: "in use by the running segment" },
-  outTag: { zh: "输出 buffer", en: "output buffer" },
+  boundaryNote: { zh: "后一段按此地址 capture", en: "next segment captured against this address" },
+  outNoteBefore: { zh: "每张 graph 各自钉住输出", en: "each graph pins its own output" },
+  outNoteAfter: { zh: "弱引用交给 pool，按行切分", en: "weak-ref'd to the pool, sliced by rows" },
+  actTag: { zh: "当前 segment 使用中", en: "in use by the running segment" },
+  heldTag: { zh: "算完仍占着", en: "still held after running" },
+  goneTag: { zh: "已被覆写", en: "overwritten" },
   boundaryTag: { zh: "boundary，不可复用", en: "boundary, no reuse" },
   axesNote: {
-    zh: "横轴：一次 replay 的时间；纵轴：显存地址；高度为示意",
-    en: "x: time within one replay; y: memory address; heights schematic",
+    zh: "纵轴为显存地址，高度为示意",
+    en: "y is the memory address; heights are schematic",
   },
 } satisfies Record<string, Localized>;
+
+/** 时间轴 5 步:seg1 / 断点 / seg2 / 断点 / seg3 */
+export const REUSE_STEPS: Localized[] = [
+  {
+    zh: "seg1 执行。优化前三段各占一块，优化后三段共用一块。",
+    en: "seg1 runs. Before, each segment owns a block; after, all three share one.",
+  },
+  {
+    zh: "断点：eager function 的输出写回 boundary buffer。",
+    en: "Break: the eager function's output is written back into the boundary buffer.",
+  },
+  {
+    zh: "seg2 执行。优化后在同一地址上覆写 seg1 留下的数据。",
+    en: "seg2 runs. After optimization it overwrites what seg1 left at the same address.",
+  },
+  {
+    zh: "断点：eager function 的输出再次写回 boundary buffer。",
+    en: "Break: the eager function's output is written back into the boundary buffer again.",
+  },
+  {
+    zh: "seg3 执行，仍是同一块。优化前此时已占着三块。",
+    en: "seg3 runs in the same block. Before optimization, three blocks are held by now.",
+  },
+];
 
 /* ---------------- MemoryCeilingViz ---------------- */
 

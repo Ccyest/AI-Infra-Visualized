@@ -258,8 +258,11 @@ remain valid for replay. The growth in question comes from the number of
 breaks: N breaks in a forward mean N+1 segments, and if every segment's
 intermediates occupy their own memory and each is retained for the long term,
 resident memory goes from the peak of one forward to the sum of the peaks of
-all segments — the more breaks, the higher the resident memory. BCG avoids that
-growth through three forms of reuse.
+all segments — the more breaks, the higher the resident memory. The idea behind
+the fix is simple: a CUDA Graph replays in order, only one segment runs at a
+time, so there is no need to keep every segment's intermediates alive at once —
+a later segment can simply overwrite what an earlier one left behind and share
+the same memory. BCG avoids that growth through three forms of reuse.
 
 - **Segments share one memory pool.** Every segment of a captured shape uses
   the same CUDA Graph pool, so intermediate storage can be reused rather than
