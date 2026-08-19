@@ -288,60 +288,60 @@ export const BENCH = {
 export const REUSE = {
   title: { zh: "显存复用图示", en: "Memory-reuse diagram" },
   subtitle: {
-    zh: "左：优化前；右：优化后；拖动时间轴看同一次 replay",
-    en: "Left: before optimization; right: after; drag the timeline through one replay",
+    zh: "左：优化前；右：优化后；时间轴走三次 replay",
+    en: "Left: before optimization; right: after; the timeline runs three replays",
   },
   headBefore: { zh: "优化前", en: "Before optimization" },
   headAfter: { zh: "优化后", en: "After optimization" },
-  secTime: { zh: "中间结果（按时间）", en: "Intermediates (over time)" },
-  secOut: { zh: "输出 buffer（按 capture size）", en: "Output buffer (by capture size)" },
   segInt: { zh: "中间结果", en: "intermediates" },
   poolRow: { zh: "共用 pool", en: "shared pool" },
-  boundaryRow: { zh: "boundary", en: "boundary" },
   outRow: { zh: "输出", en: "out" },
   outMaxRow: { zh: "输出（max）", en: "out (max)" },
-  breakLabel: { zh: "断点", en: "break" },
+  replayOf: { zh: "replay", en: "replay" },
   totalBefore: { zh: "常驻总量", en: "resident total" },
   refBefore: { zh: "优化前的总量", en: "total before" },
   saved: { zh: "省下的显存", en: "memory saved" },
-  boundaryNote: { zh: "后一段按此地址 capture", en: "next segment captured against this address" },
-  outNoteBefore: { zh: "每张 graph 各自钉住一块输出", en: "each graph pins an output block of its own" },
-  outNoteAfter: {
-    zh: "同一块 buffer，都从第 0 行写起，逐次覆写",
-    en: "one buffer; every shape writes from row 0 and overwrites the last",
-  },
-  outPrefixNote: { zh: "每个 shape 用前几行", en: "each shape uses the first rows" },
-  actTag: { zh: "当前 segment 使用中", en: "in use by the running segment" },
+  actTag: { zh: "当前使用中", en: "in use now" },
   heldTag: { zh: "算完仍占着", en: "still held after running" },
   goneTag: { zh: "已被覆写", en: "overwritten" },
-  boundaryTag: { zh: "boundary，不可复用", en: "boundary, no reuse" },
+  outTag: { zh: "输出 buffer", en: "output buffer" },
   axesNote: {
     zh: "纵轴为显存地址，高度为示意",
     en: "y is the memory address; heights are schematic",
   },
 } satisfies Record<string, Localized>;
 
-/** 时间轴 5 步:seg1 / 断点 / seg2 / 断点 / seg3 */
+/** 时间轴:三次 replay(size3 / size1 / size2),每次三个 segment */
 export const REUSE_STEPS: Localized[] = [
   {
-    zh: "seg1 执行。优化前三段各占一块，优化后三段共用一块。",
-    en: "seg1 runs. Before, each segment owns a block; after, all three share one.",
-  },
-  {
-    zh: "断点：eager function 的输出写回 boundary buffer。",
-    en: "Break: the eager function's output is written back into the boundary buffer.",
+    zh: "replay size3：seg1 执行。优化前三段各占一块，优化后三段共用一块。",
+    en: "Replay size3: seg1 runs. Before, each segment owns a block; after, all three share one.",
   },
   {
     zh: "seg2 执行。优化后在同一地址上覆写 seg1 留下的数据。",
     en: "seg2 runs. After optimization it overwrites what seg1 left at the same address.",
   },
   {
-    zh: "断点：eager function 的输出再次写回 boundary buffer。",
-    en: "Break: the eager function's output is written back into the boundary buffer again.",
+    zh: "seg3 执行，输出写进 buffer 的前 max 行。",
+    en: "seg3 runs and writes its output into the first max rows of the buffer.",
   },
   {
-    zh: "seg3 执行，仍是同一块。优化前此时已占着三块。",
-    en: "seg3 runs in the same block. Before optimization, three blocks are held by now.",
+    zh: "换 size1 再 replay：seg1 又一次覆写同一块 pool。",
+    en: "Replay size1: seg1 overwrites the same pool block again.",
+  },
+  { zh: "seg2 执行，同一块继续被覆写。", en: "seg2 runs; the same block is overwritten again." },
+  {
+    zh: "seg3 执行，输出仍从第 0 行写起，只用前几行。",
+    en: "seg3 runs; the output still starts at row 0 and uses only the first rows.",
+  },
+  {
+    zh: "换 size2 再 replay：优化前此时已占着三块中间结果、三块输出。",
+    en: "Replay size2: before optimization, three intermediate blocks and three output buffers are held by now.",
+  },
+  { zh: "seg2 执行。", en: "seg2 runs." },
+  {
+    zh: "seg3 执行，输出第三次从第 0 行覆写。全程只有一块 pool、一块输出 buffer。",
+    en: "seg3 runs and the output is overwritten from row 0 a third time — one pool and one output buffer throughout.",
   },
 ];
 

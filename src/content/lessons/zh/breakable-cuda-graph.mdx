@@ -234,10 +234,9 @@ Graph 是按顺序 replay 的，同一时刻只有一个 segment
   共用一块按最大尺寸分配的输出 buffer，每个 shape 只切出自己需要的行，避免为每个
   shape 单独分配输出 buffer。
 
-这块 buffer 并不需要同时装下所有 shape 的输出。同一时刻只有一张 graph 在
-replay，每张 graph 在 capture 时都以「把结果写进这块 buffer 的前 n
-行」收尾，下一次 replay 再从第 0 行覆写；runner 按 shape 记下来的只是
-`buffer[:n]` 这个视图，真正的数据始终在同一块 buffer 里。
+这块 buffer 不需要同时装下所有 shape 的输出：同一时刻只有一张 graph 在
+replay，每次都从第 0 行写起，只用自己需要的前几行，下一次 replay
+直接覆写掉——和 segment 的中间结果是同一套覆写。
 
 有一个值不能这样处理：跨越 Eager 断点传递数据的 tensor。后一个 graph segment
 是基于它的地址完成 capture 的，因此这块 buffer 必须一直存活，并在每次 replay
