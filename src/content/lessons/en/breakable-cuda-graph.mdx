@@ -278,6 +278,12 @@ the same memory. BCG avoids that growth through three forms of reuse.
   maximum-sized output buffer, with each shape slicing only the rows it needs,
   instead of allocating an output buffer per shape.
 
+That buffer never has to hold every shape's output at once. Only one graph
+replays at a time, and each graph's capture ends by writing its result into the
+first n rows of the buffer, so the next replay overwrites it from row 0. What
+the runner keeps per shape is just the `buffer[:n]` view; the data itself always
+lives in that one buffer.
+
 One value cannot be treated this way: the tensor that carries data across an
 eager break. The next graph segment is captured against its address, so that
 buffer must stay alive and be updated in place on every replay.

@@ -302,9 +302,9 @@ export default function MemReuseViz({ lang = "zh" }: { lang?: Locale }) {
           <span className="bcg-bench-note">{REUSE.secOut[lang]}</span>
           <svg viewBox={`0 0 ${W} ${OH}`} role="img" aria-label={REUSE.secOut[lang]}>
             {[
-              { n: 1, y: 60, frac: 0.42 },
-              { n: 2, y: 38, frac: 0.7 },
-              { n: 3, y: 16, frac: 1 },
+              { n: 3, y: 20, frac: 1 },
+              { n: 2, y: 42, frac: 0.7 },
+              { n: 1, y: 64, frac: 0.42 },
             ].map((b) => (
               <g key={b.n}>
                 <rect
@@ -326,55 +326,38 @@ export default function MemReuseViz({ lang = "zh" }: { lang?: Locale }) {
         <div className="bcg-bench-panel">
           <span className="bcg-bench-note">{REUSE.secOut[lang]}</span>
           <svg viewBox={`0 0 ${W} ${OH}`} role="img" aria-label={REUSE.secOut[lang]}>
-            <line
-              x1={BX0}
-              y1={16}
-              x2={BX1}
-              y2={16}
-              stroke="var(--muted)"
-              strokeWidth="1"
-              strokeDasharray="4 3"
-            />
-            <text x={BX1} y={10} textAnchor="end" fontSize="8" fill="var(--muted)">
-              {REUSE.refBefore[lang]}
-            </text>
+            {/* 同一起点的嵌套前缀:每个 shape 都从第 0 行开始,只是长度不同 */}
+            {[
+              { n: 3, y: 20, frac: 1 },
+              { n: 2, y: 40, frac: 0.7 },
+              { n: 1, y: 56, frac: 0.42 },
+            ].map((p) => {
+              const end = BX0 + (BX1 - BX0) * p.frac;
+              return (
+                <g key={p.n}>
+                  <line x1={BX0} y1={p.y - 4} x2={BX0} y2={p.y + 4} stroke="var(--muted)" strokeWidth="1" />
+                  <line x1={BX0} y1={p.y} x2={end - 4} y2={p.y} stroke="var(--muted)" strokeWidth="1" />
+                  <polygon
+                    points={`${end - 5},${p.y - 3} ${end - 5},${p.y + 3} ${end},${p.y}`}
+                    fill="var(--muted)"
+                  />
+                  <RowLabel y={p.y - 6} h={12} text={`size${p.n}`} />
+                </g>
+              );
+            })}
             <rect
               x={BX0}
-              y={60}
+              y={68}
               width={BX1 - BX0}
               height={12}
               rx="3"
               fill={OUT_FILL}
               stroke={OUT_EDGE}
             />
-            <RowLabel y={60} h={12} text={REUSE.outMaxRow[lang]} />
-            {[0.42, 0.7].map((f) => (
-              <line
-                key={f}
-                x1={BX0 + (BX1 - BX0) * f}
-                y1={60}
-                x2={BX0 + (BX1 - BX0) * f}
-                y2={72}
-                stroke="var(--surface)"
-                strokeWidth="1.5"
-              />
-            ))}
-            {[
-              { n: 1, from: 0, to: 0.42 },
-              { n: 2, from: 0.42, to: 0.7 },
-              { n: 3, from: 0.7, to: 1 },
-            ].map((s) => (
-              <text
-                key={s.n}
-                x={BX0 + (BX1 - BX0) * ((s.from + s.to) / 2)}
-                y={84}
-                textAnchor="middle"
-                fontSize="7"
-                fill="var(--muted)"
-              >
-                size{s.n}
-              </text>
-            ))}
+            <RowLabel y={68} h={12} text={REUSE.outMaxRow[lang]} />
+            <text x={BX1} y={90} textAnchor="end" fontSize="7" fill="var(--muted)">
+              {REUSE.outPrefixNote[lang]}
+            </text>
           </svg>
           <span className="bcg-bench-note">{REUSE.outNoteAfter[lang]}</span>
         </div>
