@@ -1,6 +1,6 @@
 ---
 title: "SGLang 开源的 CUDA Graph 进阶用法"
-description: "本文介绍我们在 SGLang 里用到的两项 CUDA Graph 进阶技术。一是 Breakable CUDA Graph，由 SGLang 提出并率先开源，解决了传统编译器切图方案启动慢、兼容性差的问题。二是在此之上把 prefill 的 full CUDA Graph 做成了可能，用 token bucket 和 zero-length sentinel 让 prefill 能作为一整张图被捕获。"
+description: "本文介绍我们在 SGLang 里用到的两项 CUDA Graph 进阶技术。\n1. Breakable CUDA Graph，由 SGLang 提出并率先开源，解决了传统编译器切图方案启动慢、兼容性差的问题。\n2. 在此之上把 prefill 的 full CUDA Graph 做成了可能，用 token bucket 和 zero-length sentinel 让 prefill 能作为一整张图被捕获。"
 order: 4
 tryOnSglang: "https://github.com/sgl-project/sglang"
 references:
@@ -131,16 +131,18 @@ prefill 路径采用 BCG 的主要原因之一。最近，#27988 重新设计了
 attention metadata 的表示方式，让受支持的 attention backend 不必再放到 graph
 外执行。
 
-**解决办法。** SGLang 做两件事。一是用 token bucket 固定 token 维度：实时 batch
-pad 到最近的已捕获 token 数。二是单独处理 request 维度：每张 graph
-预留固定数量的 request slot，真实 request 占前面几个，剩下的重写成长度为 0 的
-sentinel。request 数超过预留的 slot 就回退到 eager。sentinel 和 attention
-metadata 都要在 graph 外、每次 replay 时重建，所以目前只有
-FlashAttention（fa4）和 FlashInfer 这两个按这种方式准备 extend-mode metadata 的
-backend 支持 prefill full capture。prefill full capture
-目前仍是实验性功能，必须显式开启；engine 会提示 full 处于实验阶段，并建议生产
-workload 使用 BCG 或 tc_piecewise。扩大 backend 支持范围、继续调整 bucket 和
-slot 的选择，仍是后续工作。
+**解决办法。** SGLang 做两件事。
+
+1. 用 token bucket 固定 token 维度：实时 batch pad 到最近的已捕获 token 数。
+2. 单独处理 request 维度：每张 graph 预留固定数量的 request slot，真实 request
+   占前面几个，剩下的重写成长度为 0 的 sentinel。
+
+request 数超过预留的 slot 就回退到 eager。sentinel 和 attention metadata 都要在
+graph 外、每次 replay 时重建，所以目前只有 FlashAttention（fa4）和 FlashInfer
+这两个按这种方式准备 extend-mode metadata 的 backend 支持 prefill full
+capture。prefill full capture 目前仍是实验性功能，必须显式开启；engine 会提示
+full 处于实验阶段，并建议生产 workload 使用 BCG 或 tc_piecewise。扩大 backend
+支持范围、继续调整 bucket 和 slot 的选择，仍是后续工作。
 
 如下图所示，图里展示了不同场景下 token 维和 request 维分别是怎么 pad 的：
 
@@ -167,10 +169,11 @@ attention；BCG 在该模型上相比 eager 快 1.60 倍。在 32 倍的 prompt
 
 前面讲的两件事都会影响显存：BCG 把 graph capture 切成多段，full capture
 又把更大的 prefill shape 捕进来。CUDA Graph 显存是常驻的，replay 要求中间 tensor
-的地址不变，capture 时分配下来就一直留到进程结束。所以有两个问题。一是 BCG
-切成多段之后，常驻显存不能跟着段数一起变多。二是常驻的 graph
-显存要能顶替最坏情况下的 activation 峰值，capture 就必须覆盖到最大的 prefill
-shape。
+的地址不变，capture 时分配下来就一直留到进程结束。所以有两个问题。
+
+1. BCG 切成多段之后，常驻显存不能跟着段数一起变多。
+2. 常驻的 graph 显存要能顶替最坏情况下的 activation 峰值，capture
+   就必须覆盖到最大的 prefill shape。
 
 ### 分段捕获内部的显存复用
 

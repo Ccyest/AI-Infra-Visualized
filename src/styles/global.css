@@ -443,6 +443,8 @@ main {
 .lesson-header .lesson-desc {
   color: var(--ink-2);
   margin: 0;
+  /* 摘要里的 1. / 2. 分行显示 */
+  white-space: pre-line;
 }
 
 .prose {

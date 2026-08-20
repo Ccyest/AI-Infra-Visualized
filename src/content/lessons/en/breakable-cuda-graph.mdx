@@ -1,6 +1,6 @@
 ---
 title: "Advanced CUDA Graph Techniques in SGLang"
-description: "In this article, we introduce two advanced CUDA Graph techniques we use in SGLang. 1. Breakable CUDA Graph, proposed and first open-sourced in SGLang, fixing the slow startup and poor compatibility of traditional compiler-based graph splitting. 2. Further, we make the full prefill CUDA Graph possible by using token buckets and zero-length sentinels to make prefill capturable as a single graph."
+description: "In this article, we introduce two advanced CUDA Graph techniques we use in SGLang.\n1. Breakable CUDA Graph, proposed and first open-sourced in SGLang, fixing the slow startup and poor compatibility of traditional compiler-based graph splitting.\n2. Further, we make the full prefill CUDA Graph possible by using token buckets and zero-length sentinels to make prefill capturable as a single graph."
 order: 4
 tryOnSglang: "https://github.com/sgl-project/sglang"
 references:
@@ -150,18 +150,22 @@ More recently, #27988 redesigned how request slots and attention metadata are
 represented, so supported attention backends no longer have to run outside the
 graph.
 
-**Solution.** SGLang does two things. 1. It fixes the token dimension with token
-buckets: a live batch is padded to the nearest captured token count. 2. It
-handles the request dimension separately: each graph reserves a fixed number of
-request slots, live requests take the first ones, and the rest are rewritten as
-zero-length sentinels. A batch carrying more requests than there are reserved
-slots falls back to eager. Sentinel and attention metadata both have to be
-rebuilt outside the graph on every replay, so full prefill capture currently
-works only on FlashAttention (fa4) and FlashInfer, the two backends that prepare
-extend-mode metadata this way. Full prefill capture is also still experimental
-and has to be enabled explicitly; the engine warns that full is experimental and
-points to BCG or tc_piecewise for production workloads. Broadening backend
-support and tuning the bucket and slot choices are still ahead of us.
+**Solution.** SGLang does two things.
+
+1. It fixes the token dimension with token buckets: a live batch is padded to
+   the nearest captured token count.
+2. It handles the request dimension separately: each graph reserves a fixed
+   number of request slots, live requests take the first ones, and the rest are
+   rewritten as zero-length sentinels.
+
+A batch carrying more requests than there are reserved slots falls back to
+eager. Sentinel and attention metadata both have to be rebuilt outside the graph
+on every replay, so full prefill capture currently works only on FlashAttention
+(fa4) and FlashInfer, the two backends that prepare extend-mode metadata this
+way. Full prefill capture is also still experimental and has to be enabled
+explicitly; the engine warns that full is experimental and points to BCG or
+tc_piecewise for production workloads. Broadening backend support and tuning the
+bucket and slot choices are still ahead of us.
 
 As shown below, the diagram covers how we pad both the token and the request
 dimension in different scenarios:
@@ -191,10 +195,12 @@ Both of the things above affect memory: BCG cuts a graph capture into segments,
 and full capture brings larger prefill shapes in. CUDA Graph memory is resident:
 replay requires intermediate tensors to keep their addresses, so whatever is
 allocated at capture time stays until the process exits. That leaves two
-questions. 1. With BCG cutting the forward into segments, resident memory must
-not grow with the number of segments. 2. For resident graph memory to stand in
-for the worst-case activation peak, capture has to cover the largest prefill
-shape.
+questions.
+
+1. With BCG cutting the forward into segments, resident memory must not grow
+   with the number of segments.
+2. For resident graph memory to stand in for the worst-case activation peak,
+   capture has to cover the largest prefill shape.
 
 ### Reuse inside a segmented capture
 
