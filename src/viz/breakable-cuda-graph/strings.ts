@@ -96,6 +96,27 @@ export const TC = {
   },
 } satisfies Record<string, Localized>;
 
+/* ---------------- ResultsViz ---------------- */
+
+export const RESULTS = {
+  title: { zh: "成果图示", en: "Results diagram" },
+  subtitle: {
+    zh: "左：实现同样分段执行的代码量；右：prefill 加速比",
+    en: "Lines of code for the same segmented execution on the left; prefill speedup on the right",
+  },
+  codeHead: { zh: "分段执行的实现代码量", en: "Code for segmented execution" },
+  speedHead: { zh: "prefill 加速比（对 eager）", en: "Prefill speedup over eager" },
+  lineUnit: { zh: " 行", en: " lines" },
+  buildNote: {
+    zh: "无需编译，构建 prefill graph 快 3.8–5.2×",
+    en: "no compilation: prefill graphs build 3.8–5.2× faster",
+  },
+  benchNote: {
+    zh: "gpt-oss-120b · TP4 · 4×GB300",
+    en: "gpt-oss-120b · TP4 · 4×GB300",
+  },
+} satisfies Record<string, Localized>;
+
 /* ---------------- LaunchRaceViz ---------------- */
 
 export const RACE = {

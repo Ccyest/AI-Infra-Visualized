@@ -26,6 +26,7 @@ import MemoryCeilingViz from "../../../viz/breakable-cuda-graph/MemoryCeilingViz
 import TimelineViz from "../../../viz/breakable-cuda-graph/TimelineViz";
 import TcPiecewiseViz from "../../../viz/breakable-cuda-graph/TcPiecewiseViz";
 import MemReuseViz from "../../../viz/breakable-cuda-graph/MemReuseViz";
+import ResultsViz from "../../../viz/breakable-cuda-graph/ResultsViz";
 
 ## Background
 
@@ -72,6 +73,8 @@ shipped first on the FA4 and FlashInfer attention backends reaches 1.93×. BCG i
 now SGLang's default for prefill, and memory reuse across shapes and graph
 segments is becoming an increasingly important part of SGLang's overall memory
 management: vs baseline加速图）
+
+<ResultsViz client:visible lang="en" />
 
 <TimelineViz client:visible lang="en" />
 
@@ -267,12 +270,14 @@ not how many shapes are captured.
 
 `chunked_prefill_size` is the upper bound on a single prefill forward, so
 capturing all the way up to it lets the largest prefill replay a graph and
-removes the worst-case activation peak. As the figure shows, the amount is small
-against a total footprint of a few hundred gigabytes, but it means CUDA Graph is
-saving memory rather than costing it. The other benefit is predictable memory: a
-peak that used to move with the workload becomes a fixed allocation established
-at capture time, which the engine can account for up front instead of reserving
-headroom for large prefills:
+removes the worst-case activation peak. On gpt-oss-120b that peak drops from
+0.56 GB to 0.001 GB, and on GLM-5.2 from 1.55 GB to 0.35 GB, putting total
+memory 0.51 GB and 1.10 GB below the no-graph baseline. As the figure shows, the
+amount is small against a total footprint of a few hundred gigabytes, but it
+means CUDA Graph is saving memory rather than costing it. The other benefit is
+predictable memory: a peak that used to move with the workload becomes a fixed
+allocation established at capture time, which the engine can account for up
+front instead of reserving headroom for large prefills:
 
 <MemoryCeilingViz client:visible lang="en" />
 

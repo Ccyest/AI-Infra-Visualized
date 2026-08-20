@@ -26,6 +26,7 @@ import MemoryCeilingViz from "../../../viz/breakable-cuda-graph/MemoryCeilingViz
 import TimelineViz from "../../../viz/breakable-cuda-graph/TimelineViz";
 import TcPiecewiseViz from "../../../viz/breakable-cuda-graph/TcPiecewiseViz";
 import MemReuseViz from "../../../viz/breakable-cuda-graph/MemReuseViz";
+import ResultsViz from "../../../viz/breakable-cuda-graph/ResultsViz";
 
 ## 背景
 
@@ -66,6 +67,8 @@ eager 快 1.70 倍，而我们随后率先在 FA4 和 FlashInfer attention backe
 prefill full CUDA Graph 达到 1.93 倍。BCG 现在是 SGLang prefill 的默认方案；不同
 shape、不同 graph segment 之间的显存复用，也正在成为 SGLang
 整体显存管理中越来越重要的一环：
+
+<ResultsViz client:visible />
 
 <TimelineViz client:visible />
 
@@ -234,8 +237,10 @@ eager，峰值一点没少，小 shape 的常驻显存却已经花掉了，总�
 还高。所以重点永远是 capture 的上限，不是捕了多少个 shape。
 
 `chunked_prefill_size` 是单次 prefill forward 的上限，一直捕到这个 size，最大的
-prefill 也走 replay，最坏情况的 activation
-峰值就被消除了。如图所示，虽然从整体几百GB的显存占用来说，这个数字不算大，但是它意味着CUDA
+prefill 也走 replay，最坏情况的 activation 峰值就被消除了。gpt-oss-120b 上从
+0.56 GB 降到 0.001 GB，GLM-5.2 从 1.55 GB 降到 0.35 GB，总显存分别比不开 graph
+的 baseline 低 0.51 GB 和 1.10
+GB。如图所示，虽然从整体几百GB的显存占用来说，这个数字不算大，但是它意味着CUDA
 Graph带来的是节省而非成本。另一个好处是显存变得可预测：原来跟着 workload
 波动的瞬时峰值，变成 capture 时定下的固定分配，engine 可以提前算进去，不用再为大
 prefill 留 headroom：
