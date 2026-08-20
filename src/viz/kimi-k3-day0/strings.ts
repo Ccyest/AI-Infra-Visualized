@@ -130,8 +130,8 @@ export const ATTN = {
     en: "Every layer shares one accumulated residual stream; shallow information reaches deep layers only through every addition along the way",
   },
   resCaption: {
-    zh: "选中的块用学到的 pseudo-query 对 embedding 和之前各块的输出算权重 α，按需取回",
-    en: "The selected block scores the embedding and every preceding block with a learned pseudo-query and retrieves by weight α",
+    zh: "图中是选中块第 1 层的取回：它用自己学到的 pseudo-query 对 embedding 和之前各块的摘要算权重 α；93 层每层都各做一次",
+    en: "Shown is the retrieval done by the selected block's first layer: its own learned pseudo-query scores the embedding and every preceding block summary by weight α. All 93 layers each do this once",
   },
   alphaNote: {
     zh: "线宽与数值 = α（取回权重，手工示意值）",
@@ -274,16 +274,16 @@ export const ARCH_DETAILS: ArchDetail[] = [
     id: "moe",
     label: { zh: "LatentMoE FFN", en: "LatentMoE FFN" },
     detail: {
-      zh: "除首层 dense FFN 外，其余层从 896 个 routed expert 中选 16 个，另有 2 个 shared expert；路由和 expert 计算都在 3584 维隐空间进行。",
-      en: "Except for the first dense FFN, each layer selects 16 of 896 routed experts plus 2 shared experts; routing and expert compute run in a 3584-d latent space.",
+      zh: "除首层 dense FFN 外，其余层从 896 个 routed expert 中选 16 个，另有 2 个 shared expert；路由在 7168 维 hidden 上打分，被选中的 expert 计算在 3584 维隐空间进行。",
+      en: "Except for the first dense FFN, each layer selects 16 of 896 routed experts plus 2 shared experts; routing scores the full 7168-d hidden state, while the selected experts compute in a 3584-d latent space.",
     },
   },
   {
     id: "attnres",
     label: { zh: "AttnRes", en: "AttnRes" },
     detail: {
-      zh: "每 12 层一组，组末用学到的 pseudo-query 对 embedding 和之前各组的输出算权重 α，按权重跨层取回。",
-      en: "Every 12 layers form a group; a learned pseudo-query scores the embedding and all preceding groups' outputs and retrieves them by weight α.",
+      zh: "93 层切成 8 组（前 7 组各 12 层，末组 9 层），每组存一份摘要。每一层都用自己学到的 pseudo-query 对 embedding、之前各组的摘要、以及本组到上一层的部分和算权重 α，按权重跨层取回。",
+      en: "The 93 layers split into 8 groups (12 layers each, 9 in the last), one summary per group. Every layer uses its own learned pseudo-query to score the embedding, each preceding group's summary, and its own group's partial sum so far, retrieving across depth by weight α.",
     },
   },
 ];
