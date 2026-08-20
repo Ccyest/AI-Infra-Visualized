@@ -35,17 +35,18 @@ import ServingFrontierViz from "../../../viz/kimi-k3-day0/ServingFrontierViz";
 
 K3 是一个 2.8T 参数的 MoE 模型，每个 token 激活 104B 参数。它原生支持 1M 上下文。K3
 一共有 93 层，其中 69 层是 KDA 线性注意力，24 层是带门控的全局 MLA；第一层使用 dense
-FFN，其余 92 层使用 Stable LatentMoE。并且，每 12 层组成一个 block，Attention
+FFN，其余 92 层使用 Stable LatentMoE。并且，93 层按每 12 层切成 8 个 block，Attention
 Residual 会跨 block 聚合。点击下图可以先看完整结构：
 
 <ArchViz client:visible />
 
 ### KV cache memory estimation
 
-先从显存看：无论 MLA 还是 MHA，KV cache 都会随上下文增长。在 Kimi K3 Day-0 Support
-博客中，我们看到，MLA 压缩后，K3 每层每个 token、每张 GPU 约需 1.1KB KV cache，24 层
-MLA 合计约 27KB。如果 93 层全部使用 MLA，单张 GPU 上的 1M-token 请求要占约
-110GB（1.1KB × 93 层 × 1M token）；未压缩的 MHA 还要再大一个数量级。
+先从显存看：无论 MLA 还是 MHA，KV cache 都会随上下文增长。Kimi K3 Day-0 Support
+博客给的口径是：MLA 压缩后，K3 每个 token、每张 GPU 约需 27KB KV cache（24 层 MLA
+合计），折算下来每层约 1.125KB。如果 93 层全部使用 MLA，单张 GPU 上的 1M-token
+请求要占约 105GB（1.125KB × 93 层 × 1M token）；同规模的未压缩 MHA，每层每 token
+要存 48KB（96 head × 128 维 × K/V × bf16），是 MLA latent 的 40 倍以上。
 把这部分显存降下来是必须先解决的问题，所以显然，K3 不能在大部分层保留随上下文增长的
 softmax attention。
 
@@ -61,11 +62,11 @@ KDA 的递归隐式提供。下图展示了全部使用 MLA 和 KDA+MLA 混合�
 
 ### attention 机制详解：传统 MHA
 
-在普通 MHA 中，解码到第 $t$ 个 token 时，它会读取 cache 里前面 $t-1$ 个历史 token，分三步计算：
+在普通 MHA 中，解码到第 $t$ 个 token 时，它自己的 KV 也会先写进 cache，然后读 cache 里的全部 $t$ 份，分三步计算：
 
-1. **打分**：对每个历史 token $i$ 计算分数 $z_{t,i} = \frac{q_t \cdot k_i}{\sqrt{d_k}}$。下标 $t,i$ 读作「第 $t$ 步的 query 对第 $i$ 个历史 key」。
-2. **归一化**：先求 $Z = \sum_{j=1}^{t-1} \exp(z_{t,j})$，再得到注意力权重 $a_{t,i} = \exp(z_{t,i}) / Z$。
-3. **汇总**：用这些权重对 value 加权求和，$o_t = \sum_{i=1}^{t-1} a_{t,i} \cdot v_i$。
+1. **打分**：对每个 $i \le t$ 计算分数 $z_{t,i} = \frac{q_t \cdot k_i}{\sqrt{d_k}}$。下标 $t,i$ 读作「第 $t$ 步的 query 对第 $i$ 个 key」。
+2. **归一化**：先求 $Z = \sum_{j=1}^{t} \exp(z_{t,j})$，再得到注意力权重 $a_{t,i} = \exp(z_{t,i}) / Z$。
+3. **汇总**：用这些权重对 value 加权求和，$o_t = \sum_{i=1}^{t} a_{t,i} \cdot v_i$。
 
 长度为 $N$ 的序列累计约有 $N^2/2$ 次点积，计算为 $O(N^2)$，cache 为 $O(N)$。
 如图所示，每一个 token 都和之前的所有 history token 有连线。
@@ -149,7 +150,7 @@ $\mathrm{Diag}(\alpha_t)$ 缩放旧状态的各条 channel，再执行 DeltaNet 
   <summary>数学细节：KDA 如何门控和改写同一个 S</summary>
   <p>完整更新为 $S_t = \big(I - \beta_t k_t k_t^{\top}\big)\,\mathrm{Diag}(\alpha_t)\, S_{t-1} + \beta_t k_t v_t^{\top}$。逐项看：$\alpha_t \in (0,1)^{d_k}$ 是由当前 hidden state 算出的向量门控，$\mathrm{Diag}(\alpha_t)$ 把 S 的第 $j$ 行整体缩放 $\alpha_t[j]$ 倍——同一行里所有历史贡献一起衰减，它不会直接选择 A 或 B，也不会把 key 旋转成正交；$\beta_t \in (0,1)$ 是标量写入强度。</p>
   <p>把一步更新拆开看。先门控：$\tilde S = \mathrm{Diag}(\alpha_t)\, S_{t-1}$；再沿当前 key 做 delta 改写：记 $r_{\text{old}} = \tilde S^{\top} k_t$（衰减后状态对当前 key 的预测），则 $S_t = \tilde S + \beta_t k_t (v_t - r_{\text{old}})^{\top}$。对单位 $k_t$，更新后沿同一 key 的读出为 $S_t^{\top} k_t = (1-\beta_t)\, r_{\text{old}} + \beta_t v_t$：$\beta_t = 1$ 完全替换，$\beta_t = 0$ 完全保留。</p>
-  <p>把递推展开可以看到位置信息的来源：$S_t = \sum_{s \le t} \Big[\prod_{u=s+1}^{t} \big(I - \beta_u k_u k_u^{\top}\big)\mathrm{Diag}(\alpha_u)\Big]\, \beta_s k_s v_s^{\top}$。越早的写入要穿过越多次门控与改写，衰减随距离自然累积——这正是 K3 可以不用 RoPE 的机制来源。K3 还给 $\alpha$ 设衰减下界、配 full-rank output gate，保证长序列下数值稳定。</p>
+  <p>把递推展开可以看到位置信息的来源：$S_t = \sum_{s \le t} \Big[\prod_{u=s+1}^{t} \big(I - \beta_u k_u k_u^{\top}\big)\mathrm{Diag}(\alpha_u)\Big]\, \beta_s k_s v_s^{\top}$。越早的写入要穿过越多次门控与改写，衰减随距离自然累积——这正是 K3 可以不用 RoPE 的机制来源。K3 还把 $\alpha$ 的 log-decay 用 scaled sigmoid 钉了个下界（$g_{\min} = -5$，即每步保留率 $> e^{-5} \approx 6.7\times10^{-3}$）：chunkwise 计算要按累积衰减的倒数重缩放 key，下界把这个数值范围限住之后，对角和非对角 tile 都能直接走 Tensor Core 稠密矩阵乘，省掉 Kimi Linear 里按 position-pair 处理对角块的那条路径。output gate 则从 Kimi Linear 的低秩参数化换成输入相关的全秩投影。</p>
   <p>下图把真实的 128 维 key 空间压成二维教学切片：$k_a = \tfrac{1}{\sqrt{2}}[1,1]^{\top}$、$k_b = \tfrac{1}{\sqrt{2}}[1,-1]^{\top}$，A/B 都横跨 $\mathrm{ch}_1$ 和 $\mathrm{ch}_2$。门控先缩放两行，delta rule 再沿完整 $k_a$ 写入到达目标值 4 所需的残差。</p>
 </details>
 
@@ -158,8 +159,8 @@ $\mathrm{Diag}(\alpha_t)$ 缩放旧状态的各条 channel，再执行 DeltaNet 
 由此可见，Kimi K3 不需要 RoPE，是因为 KDA 的状态更新本身就带有位置信息。越早出现的
 token，在传递到当前位置前会经历更多次衰减和状态变换；越近的 token 经历的变换更少，
 因此模型可以据此感知顺序和距离。相比 RoPE 用固定旋转显式编码位置，KDA 通过可学习、
-输入相关的衰减隐式建模位置。K3 还加入衰减下界约束和 full-rank output gate，
-以提升稳定性。
+输入相关的衰减隐式建模位置。K3 还给衰减加了下界约束，把 chunkwise 计算的数值范围限住，
+让 KDA kernel 的所有 causal tile 都能走 Tensor Core；output gate 则换成了全秩投影。
 
 ### Attention Residual
 
@@ -167,18 +168,19 @@ token，在传递到当前位置前会经历更多次衰减和状态变换；越
 每一层都会在上面继续修改。它保证信息能够向上传递，但到了第 90 多层，
 浅层细节已经和几十次更新叠在一起，深层无法单独翻回某个较早版本。
 
-Attention Residual 相当于额外保存几份「历史版本」。K3 把所有 layer 按 block 切开，
-每个 block 包含 12 层。block 内保留普通 residual，同时把每个 12-layer block
-的层输出累加成一份 block 表示。后续层不必只依赖当前草稿，而是用学到的 pseudo-query
-给 embedding 和这些历史摘要分配权重，把此刻最有用的几份表示混合取回：
+Attention Residual 相当于额外保存几份「历史版本」。K3 把 93 层切成 8 个 block（前 7
+个各 12 层，最后一个 9 层），每个 block 把自己的层输出累加成一份 block 表示。这样每一层
+都不必只依赖当前草稿：它用自己学到的 pseudo-query，给 embedding、之前各 block 的摘要、
+以及当前 block 到上一层为止的部分和分配权重，混合出的结果就是这一层的输入——原来那条
+一路累加的 residual，在 block 内由这份部分和接管：
 
 <AttnResViz client:visible />
 
 <details className="lesson-details">
   <summary>数学与成本：为什么 K3 每 12 层保存一份摘要</summary>
-  <p>记 $v_0$ 为 embedding，$v_i$（$i \ge 1$）为第 $i$ 个 block 的摘要（该 block 内 12 层输出的累加）。对后续 block $\ell$，学习到的 pseudo-query $q_\ell$ 给每份已保存的表示打分，$\alpha_{\ell,i} = \mathrm{softmax}_{i \lt \ell}\big(s(q_\ell, v_i)\big)$（$s$ 为点积型打分），再取回 $r_\ell = \sum_{i \lt \ell} \alpha_{\ell,i}\, v_i$，加入该 block 的输入。这是对历史表示的 softmax 加权混合：权重可以集中到某一份摘要上，但永远不是硬选择。</p>
-  <p>成本：full AttnRes 每 token 要存全部 $L$ 层输出，即 $O(Ld)$；block 版只存 $N = \lceil L/12 \rceil$ 份摘要加 embedding，即 $O(Nd)$。K3 取 $L = 93$、块大小 12，即 $N = 8$ 份摘要，每 token 保存 $9 \times 7168$ 个数。这些摘要还要随 activation 一起走 pipeline，所以 $N$ 直接进入通信量。</p>
-  <p>粒度与成本的折中：块越小（极端是一层一块），跨深度取回越精细，但状态、显存带宽和 pipeline 通信按 $N$ 线性变贵；块越大越便宜，但块内各层输出已经相加，无法再单独取回。优化实现下，K3 的典型推理延迟开销低于 2%，pipeline parallelism 下训练墙钟开销低于 4%。</p>
+  <p>记 $b_0$ 为 embedding，$b_n$ 为第 $n$ 个 block 的摘要（该 block 内各层输出的累加），$b_n^{\,i-1}$ 为 block $n$ 内前 $i-1$ 层输出的部分和。取回是<strong>逐层</strong>做的：block $n$ 里的第 $i$ 层有自己学到的 pseudo-query $q$，候选集在 $i = 1$ 时是 $\{b_0, b_1, \ldots, b_{n-1}\}$，$i \ge 2$ 时再加上 $b_n^{\,i-1}$；打分 $\alpha = \mathrm{softmax}\big(s(q, \cdot)\big)$（$s$ 为点积型打分），$h = \sum \alpha \cdot b$ 直接就是这一层的输入。注意 AttnRes 不是在 residual 上再加一项，而是用这个 softmax 混合替换掉「逐层累加」本身。权重可以集中到某一份摘要上，但永远不是硬选择。</p>
+  <p>成本：full AttnRes 每 token 要存全部 $L$ 层输出，即 $O(Ld)$；block 版只存 $N = \lceil L/12 \rceil$ 份摘要加 embedding，即 $O(Nd)$。K3 取 $L = 93$、块大小 12，即 $N = 8$ 份摘要，每 token 保存 $9 \times 7168$ 个数。这些摘要还要随 activation 一起走 pipeline，所以 $N$ 直接进入通信量。要注意 block 化省的是候选集的条目数（93 → 9），不是取回次数：93 层每层照样各查一次，只是 kernel 把跨 block 的读取按 block 批处理掉、每层再用 online softmax 合并自己那份块内部分和。</p>
+  <p>粒度与成本的折中：块越小（极端是一层一块），跨深度取回越精细，但状态、显存带宽和 pipeline 通信按 $N$ 线性变贵；块越大越便宜，但块内各层输出已经相加，无法再单独取回。AttnRes 论文报告的开销是：典型推理负载下端到端延迟开销低于 2%；训练侧不开 pipeline parallelism 时开销可忽略，开 pipeline parallelism 时实测端到端开销低于 4%。</p>
 </details>
 
 ### LatentMoE
@@ -188,8 +190,8 @@ Attention Residual 相当于额外保存几份「历史版本」。K3 把所有 
 $16/896 \approx 1.8\%$；整模型每 token 激活参数的另一个口径是
 $104\text{B}/2.8\text{T} \approx 3.7\%$。
 
-路由和 expert 计算会先从 7168 维 hidden 降到 3584 维隐空间，最后再升回原宽度。
-这使 16 份 dispatch 的 all-to-all 流量和 expert 权重体积都减半：
+路由仍然在 7168 维 hidden 上打分选人，但被选中的 expert 计算发生在降到 3584 维的隐空间
+里，算完再升回原宽度。这使 16 份 dispatch 的 all-to-all 流量和 expert 权重体积都减半：
 
 <MoeViz />
 
@@ -233,7 +235,9 @@ copy-on-write、snapshot、donate 和 checkpoint 淘汰等机制：
 原方案在启动时预先切出 KDA 区和 MLA 区。但 KDA 需求取决于并发数，MLA
 需求取决于总上下文长度，一旦负载偏离预估，就会出现一边耗尽、另一边空着的情况。
 其实解决方法非常直接，SGLang 把两者放进同一个池：KDA 固定块从左边分配，MLA
-页从右边分配，共用中间的空闲区，这样可以让显存尽量打满。Day-0 版本通过
+页从右边分配，共用中间的空闲区。请求结束、abort 或被 retract 时如果中间空出一个洞，
+就把末端的一块搬进去补上，保证空闲区始终连成一片、两端始终是紧实的，这样 54MB 的 KDA
+块和 27KB 的 MLA 页可以从同一批字节里取，不必被迫统一页大小。Day-0 版本通过
 `--enable-unified-memory` opt-in：
 
 <PoolViz client:visible />
@@ -272,8 +276,9 @@ latent，因此，就算增加 GPU 并行，也不会增加逻辑上下文容量
 <DcpViz client:visible />
 
 DCP 主要增加容量和并发，不是降低单条短请求的延迟。它让更多长会话留在 GPU，避免 host
-offload 和 re-prefill 造成吞吐坍塌。K3 上，DCP8 把逻辑容量从 1.5M 提到 12.2M
-tokens（7.9×），48 个 agent sessions 达到 541 tok/s。代价是每个 MLA 层多一次
+offload 和 re-prefill 造成吞吐坍塌。DCP 组是建在 TP 组内部的，所以 TP8 配 DCP8 仍然
+只是 8 张卡：K3 上逻辑容量从约 1.5M 提到 12.2M tokens（约 7.9×），48 个 agent
+sessions 达到 541 tok/s。代价是每个 MLA 层多一次
 all-to-all；当然，KDA 状态 S 不会随上下文增长，也没有 token 的位置轴，所以仍按
 TP/head 切分。
 

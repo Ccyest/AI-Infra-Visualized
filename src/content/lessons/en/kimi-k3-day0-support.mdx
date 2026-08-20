@@ -36,7 +36,7 @@ import ServingFrontierViz from "../../../viz/kimi-k3-day0/ServingFrontierViz";
 K3 is a 2.8T-parameter MoE model with 104B parameters active per token, and it
 supports a native 1M-token context. K3 has 93 layers: 69 use KDA linear
 attention and 24 use gated global MLA. The first layer is a dense FFN; the
-remaining 92 use Stable LatentMoE. Every 12 layers form one block, and
+remaining 92 use Stable LatentMoE. The 93 layers split into 8 blocks of 12, and
 Attention Residual aggregates across blocks. Click the diagram for the
 complete structure:
 
@@ -45,12 +45,13 @@ complete structure:
 ### KV cache memory estimation
 
 Start with memory: both MLA and MHA KV caches grow with context. The Kimi K3
-day-0 support blog puts K3's compressed MLA KV cache at about 1.1KB per layer
-per token on each GPU, so the 24 MLA layers come to roughly 27KB per token. If
-all 93 layers used MLA, a 1M-token request would need about 110GB on one GPU
-(1.1KB × 93 layers × 1M tokens); uncompressed MHA would cost another order of
-magnitude. Bringing that number down is the first problem to solve, which is
-why K3 cannot keep context-growing softmax attention in most layers.
+day-0 support blog puts K3's compressed MLA KV cache at about 27KB per token
+per GPU across all 24 MLA layers, which works out to roughly 1.125KB per layer.
+If all 93 layers used MLA, a 1M-token request would need about 105GB on one GPU
+(1.125KB × 93 layers × 1M tokens). Uncompressed MHA at the same shape would
+store 48KB per layer per token (96 heads × 128 dims × K/V × bf16), more than
+40× the MLA latent. Bringing that number down is the first problem to solve,
+which is why K3 cannot keep context-growing softmax attention in most layers.
 
 K3 therefore interleaves 3 KDA + 1 MLA. KDA is a linear-attention variant
 whose recurrent state has a fixed size and does not grow with context; the
@@ -67,11 +68,11 @@ variant.
 
 ### Attention mechanisms in detail: classic MHA
 
-In ordinary MHA, decoding token $t$ reads the $t-1$ cached history tokens in three steps:
+In ordinary MHA, decoding token $t$ first appends its own KV to the cache, then reads all $t$ entries in three steps:
 
-1. **Score:** compare against each earlier token $i$ with $z_{t,i} = \frac{q_t \cdot k_i}{\sqrt{d_k}}$. The subscript $t,i$ reads “step $t$'s query against history key $i$”.
-2. **Normalize:** compute $Z = \sum_{j=1}^{t-1} \exp(z_{t,j})$, then assign attention weight $a_{t,i} = \exp(z_{t,i}) / Z$.
-3. **Aggregate:** take the weighted sum of values, $o_t = \sum_{i=1}^{t-1} a_{t,i} \cdot v_i$.
+1. **Score:** compare against every token $i \le t$ with $z_{t,i} = \frac{q_t \cdot k_i}{\sqrt{d_k}}$. The subscript $t,i$ reads “step $t$'s query against key $i$”.
+2. **Normalize:** compute $Z = \sum_{j=1}^{t} \exp(z_{t,j})$, then assign attention weight $a_{t,i} = \exp(z_{t,i}) / Z$.
+3. **Aggregate:** take the weighted sum of values, $o_t = \sum_{i=1}^{t} a_{t,i} \cdot v_i$.
 
 A length-$N$ sequence therefore performs about $N^2/2$ dot products: $O(N^2)$
 compute and $O(N)$ cache. In the diagram, every token has a line to each of
@@ -170,7 +171,7 @@ performs the DeltaNet rewrite.
   <summary>Math details: how KDA gates and rewrites the same S</summary>
   <p>The full update is $S_t = \big(I - \beta_t k_t k_t^{\top}\big)\,\mathrm{Diag}(\alpha_t)\, S_{t-1} + \beta_t k_t v_t^{\top}$. Term by term: $\alpha_t \in (0,1)^{d_k}$ is a vector gate computed from the current hidden state, and $\mathrm{Diag}(\alpha_t)$ scales row $j$ of S by $\alpha_t[j]$ — every historical contribution in that row decays together; it neither picks A or B apart nor rotates keys toward orthogonality. $\beta_t \in (0,1)$ is a scalar write strength.</p>
   <p>Read one update in two steps. Gate first: $\tilde S = \mathrm{Diag}(\alpha_t)\, S_{t-1}$. Then delta-rewrite along the current key: with $r_{\text{old}} = \tilde S^{\top} k_t$ (the decayed state's prediction for this key), $S_t = \tilde S + \beta_t k_t (v_t - r_{\text{old}})^{\top}$. For a unit $k_t$, the post-update readout along the same key is $S_t^{\top} k_t = (1-\beta_t)\, r_{\text{old}} + \beta_t v_t$: $\beta_t = 1$ replaces fully, $\beta_t = 0$ keeps everything.</p>
-  <p>Unrolling the recurrence shows where position comes from: $S_t = \sum_{s \le t} \Big[\prod_{u=s+1}^{t} \big(I - \beta_u k_u k_u^{\top}\big)\mathrm{Diag}(\alpha_u)\Big]\, \beta_s k_s v_s^{\top}$. Earlier writes pass through more gates and rewrites, so decay accumulates with distance — the mechanism that lets K3 drop RoPE. K3 additionally lower-bounds the decay and adds a full-rank output gate for numerical stability on long sequences.</p>
+  <p>Unrolling the recurrence shows where position comes from: $S_t = \sum_{s \le t} \Big[\prod_{u=s+1}^{t} \big(I - \beta_u k_u k_u^{\top}\big)\mathrm{Diag}(\alpha_u)\Big]\, \beta_s k_s v_s^{\top}$. Earlier writes pass through more gates and rewrites, so decay accumulates with distance — the mechanism that lets K3 drop RoPE. K3 also pins a lower bound on $\alpha$'s log-decay with a scaled sigmoid ($g_{\min} = -5$, so every step's retention exceeds $e^{-5} \approx 6.7\times10^{-3}$): chunkwise computation has to rescale keys by the reciprocal cumulative decay, and bounding that numerical range lets both diagonal and off-diagonal tiles run as dense Tensor Core matmuls, removing the position-pair diagonal path Kimi Linear needed. The output gate moves from Kimi Linear's low-rank parameterization to an input-dependent full-rank projection.</p>
   <p>The diagram compresses the real 128-d key space into a 2D teaching slice: $k_a = \tfrac{1}{\sqrt{2}}[1,1]^{\top}$ and $k_b = \tfrac{1}{\sqrt{2}}[1,-1]^{\top}$, both spanning $\mathrm{ch}_1$ and $\mathrm{ch}_2$. The gate scales both rows first, then the delta rule writes along the full $k_a$ the residual needed to reach target value 4.</p>
 </details>
 
@@ -181,8 +182,9 @@ position. An earlier token passes through more decay steps and state
 transforms before it reaches the current position, while a nearer token passes
 through fewer, and the model reads order and distance from that. Where RoPE
 encodes position explicitly with a fixed rotation, KDA models it implicitly
-through learnable, input-dependent decay. K3 also adds a lower bound on the
-decay and a full-rank output gate for stability.
+through learnable, input-dependent decay. K3 also lower-bounds that decay to
+keep the chunkwise numerical range in check, so every causal tile in the KDA
+kernel can run on Tensor Cores; the output gate becomes a full-rank projection.
 
 ### Attention Residual
 
@@ -192,19 +194,20 @@ information moving upward, but by layer 90, shallow details are mixed with
 dozens of later updates; a deep layer cannot reopen an earlier version directly.
 
 Attention Residual keeps a few historical versions on the side. K3 splits its
-layers into blocks of 12. Inside a block the ordinary residual stays, and each
-12-layer block's layer outputs are summed into one block representation. A
-later block does not have to rely only on the current draft: a learned
-pseudo-query weights the embedding and these saved summaries, then mixes back
-the representations most useful at that moment:
+93 layers into 8 blocks — 12 layers each for the first seven, 9 for the last —
+and each block sums its own layer outputs into one block representation. No
+layer has to rely only on the current draft: each one uses its own learned
+pseudo-query to weight the embedding, every preceding block's summary, and its
+own block's partial sum so far, and the mixture is that layer's input — the
+once-accumulating residual is taken over inside a block by that partial sum:
 
 <AttnResViz client:visible lang="en" />
 
 <details className="lesson-details">
   <summary>Math and cost: why K3 saves one summary every 12 layers</summary>
-  <p>Let $v_0$ be the embedding and $v_i$ ($i \ge 1$) the summary of block $i$ (the accumulated outputs of its 12 layers). For a later block $\ell$, a learned pseudo-query $q_\ell$ scores every saved representation, $\alpha_{\ell,i} = \mathrm{softmax}_{i \lt \ell}\big(s(q_\ell, v_i)\big)$ with a dot-product-style score $s$, and retrieves $r_\ell = \sum_{i \lt \ell} \alpha_{\ell,i}\, v_i$, which joins the block's input. This is a softmax-weighted mixture over saved representations: weight can concentrate on one summary, but the choice is never hard.</p>
-  <p>Cost: full AttnRes stores every layer output — $L$ vectors of width $d$ per token, i.e. $O(Ld)$. The block version stores $N = \lceil L/12 \rceil$ summaries plus the embedding, i.e. $O(Nd)$. With $L = 93$ and block size 12, K3 keeps $N = 8$ summaries, i.e. $9 \times 7168$ numbers per token. These summaries also travel with activations through the pipeline, so $N$ enters communication volume directly.</p>
-  <p>Granularity vs. cost: smaller blocks (one layer per block in the limit) give finer depth-wise retrieval but grow state, memory bandwidth, and pipeline traffic linearly in $N$; larger blocks are cheaper, but layers inside a block are already summed and cannot be retrieved separately. In the optimized implementation, typical inference-latency overhead is below 2%, and training wall-clock overhead under pipeline parallelism is below 4%.</p>
+  <p>Let $b_0$ be the embedding, $b_n$ the summary of block $n$ (the accumulated outputs of its layers), and $b_n^{\,i-1}$ the partial sum over the first $i-1$ layers of block $n$. Retrieval is done <strong>per layer</strong>: layer $i$ of block $n$ has its own learned pseudo-query $q$, and its candidate set is $\{b_0, b_1, \ldots, b_{n-1}\}$ when $i = 1$, plus $b_n^{\,i-1}$ when $i \ge 2$. Scoring $\alpha = \mathrm{softmax}\big(s(q, \cdot)\big)$ with a dot-product-style score $s$, the mixture $h = \sum \alpha \cdot b$ <em>is</em> that layer's input. Note that AttnRes does not add a term on top of a residual; it replaces layer-by-layer accumulation itself. Weight can concentrate on one summary, but the choice is never hard.</p>
+  <p>Cost: full AttnRes stores every layer output — $L$ vectors of width $d$ per token, i.e. $O(Ld)$. The block version stores $N = \lceil L/12 \rceil$ summaries plus the embedding, i.e. $O(Nd)$. With $L = 93$ and block size 12, K3 keeps $N = 8$ summaries, i.e. $9 \times 7168$ numbers per token. These summaries also travel with activations through the pipeline, so $N$ enters communication volume directly. Note that blocking shrinks the candidate set (93 → 9), not the number of retrievals: all 93 layers still retrieve once each. The kernel just batches the cross-block reads per block and lets each layer merge in its own intra-block partial sum with an online softmax.</p>
+  <p>Granularity vs. cost: smaller blocks (one layer per block in the limit) give finer depth-wise retrieval but grow state, memory bandwidth, and pipeline traffic linearly in $N$; larger blocks are cheaper, but layers inside a block are already summed and cannot be retrieved separately. The AttnRes paper reports the cost as: end-to-end inference latency overhead below 2% on typical inference workloads; on the training side, negligible without pipeline parallelism and a measured end-to-end overhead below 4% with it.</p>
 </details>
 
 ### LatentMoE
@@ -214,9 +217,9 @@ experts, while 2 shared experts are always active. The routed-pool selection
 rate is therefore $16/896 \approx 1.8\%$; the separate whole-model ratio is
 $104\text{B}/2.8\text{T} \approx 3.7\%$ active parameters per token.
 
-Routing and expert compute project the 7168-d hidden state down to a 3584-d
-latent space, then project back to full width. This halves both the 16-way
-all-to-all dispatch traffic and expert weight volume:
+Routing still scores the full 7168-d hidden state, but the selected experts
+compute in a 3584-d latent space and project back to full width. This halves
+both the 16-way all-to-all dispatch traffic and expert weight volume:
 
 <MoeViz lang="en" />
 
@@ -268,8 +271,12 @@ region at startup. KDA demand follows concurrency while MLA demand follows
 total context length, so once the workload differs from the estimate, one
 region fills while the other sits idle. The fix is direct: SGLang puts both in
 one pool, with fixed KDA blocks allocated from the left, MLA pages from the
-right, and the free space in the middle shared, which keeps the pool as full
-as it can get. Day-0 makes this opt-in with `--enable-unified-memory`:
+right, and the free space in the middle shared. When a request finishes, aborts
+or is retracted and leaves a hole in the middle, a block from the end is moved
+into it, so the free region stays contiguous and both ends stay packed — which
+is what lets a 54MB KDA block and a 27KB MLA page draw from the same bytes with
+no common page size forced on them. Day-0 makes this opt-in with
+`--enable-unified-memory`:
 
 <PoolViz client:visible lang="en" />
 
@@ -314,8 +321,9 @@ diagram shows, then one packed all-to-all merges the result exactly:
 
 DCP primarily increases capacity and concurrency, not latency for one short
 request. Keeping more long sessions on the GPU avoids host offload,
-re-prefill, and throughput collapse. On K3, DCP8 raises logical capacity from
-1.5M to 12.2M tokens (7.9×) and reaches 541 tok/s at 48 agent sessions. It
+re-prefill, and throughput collapse. DCP groups are built inside the TP group,
+so TP8 with DCP8 is still just 8 GPUs: on K3 logical capacity goes from about
+1.5M to 12.2M tokens (roughly 7.9×) and reaches 541 tok/s at 48 agent sessions. It
 costs one all-to-all per MLA layer. The KDA state S, meanwhile, does not grow
 with context and has no token-position axis, so it stays TP/head-sharded.
 
