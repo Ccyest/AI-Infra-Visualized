@@ -26,7 +26,6 @@ export const POOL = {
     en: "MLA KV cache (appends page by page)",
   },
   legendFree: { zh: "空闲页", en: "free page" },
-  statActive: { zh: "在跑", en: "running" },
   activeRequests: { zh: "当前请求", en: "active requests" },
   requests: { zh: "请求", en: "requests" },
   mlaGrowth: { zh: "随 token 逐页累积", en: "accumulates page by page with tokens" },
@@ -122,59 +121,13 @@ export const ATTN = {
     zh: "Attention Residual 图示",
     en: "Attention Residual diagram",
   },
-  modeChain: { zh: "单一残差流", en: "One residual stream" },
-  modeRes: { zh: "AttnRes", en: "AttnRes" },
-  emb: { zh: "Emb", en: "Emb" },
-  chainCaption: {
-    zh: "所有层共用一条累加的残差流；浅层的信息要传到深层，要经过沿途每一层的相加",
-    en: "Every layer shares one accumulated residual stream; shallow information reaches deep layers only through every addition along the way",
-  },
-  resCaption: {
-    zh: "图中是选中块第 1 层的取回：它用自己学到的 pseudo-query 对 embedding 和之前各块的摘要算权重 α；93 层每层都各做一次",
-    en: "Shown is the retrieval done by the selected block's first layer: its own learned pseudo-query scores the embedding and every preceding block summary by weight α. All 93 layers each do this once",
-  },
-  alphaNote: {
-    zh: "线宽与数值 = α（取回权重，手工示意值）",
-    en: "line width and numbers = α (retrieval weights, hand-crafted for illustration)",
-  },
-  costNote: {
-    zh: "代价不大：训练约 +4%，推理约 +2%。",
-    en: "The cost is modest: roughly +4% training, +2% inference.",
-  },
 } satisfies Record<string, Localized>;
 
-export function attnBlockTooltip(locale: Locale, block: number): string {
-  const lo = (block - 1) * 12 + 1;
-  const hi = Math.min(block * 12, 93);
-  return locale === "zh"
-    ? `第 ${block} 块(第 ${lo}–${hi} 层)`
-    : `Block ${block} (layers ${lo}–${hi})`;
-}
 
 export const MOE = {
   title: {
     zh: "LatentMoE 图示",
     en: "LatentMoE diagram",
-  },
-  subtitle: {
-    zh: "饼图只统计 routed pool；2 个 shared expert 不在这个分母里",
-    en: "The pie covers only the routed pool; the 2 shared experts are outside this denominator",
-  },
-  routedActive: { zh: "每个 token 的 routed 选择", en: "Routed selection per token" },
-  routedPercent: { zh: "只占 routed pool 的 1.8%", en: "Just 1.8% of the routed pool" },
-  activeSlice: { zh: "本 token 选中的 routed experts", en: "routed experts selected for this token" },
-  idleSlice: { zh: "本 token 未选中的 routed experts", en: "routed experts not selected for this token" },
-  sharedTitle: { zh: "另有 2 个 shared experts", en: "Plus 2 shared experts" },
-  sharedNote: {
-    zh: "它们每个 token 都会经过，不参与 top-16 路由，也不属于 896 这个 routed pool。",
-    en: "Every token passes through them. They do not join top-16 routing and are not part of the 896-expert routed pool.",
-  },
-  statRouted: { zh: "routed 激活率（分母：896）", en: "routed activation (denominator: 896)" },
-  statParams: { zh: "整模型参数激活率（另一分母）", en: "whole-model parameter activation (different denominator)" },
-  statLatent: { zh: "expert 计算宽度", en: "expert compute width" },
-  verdict: {
-    zh: "每个 token 只选中 896 个 routed experts 中的 16 个。LatentMoE 在 3584 维隐空间中完成 expert 计算，再投影回 7168 维。",
-    en: "Each token selects only 16 of 896 routed experts. LatentMoE runs expert computation in a 3584-d latent space, then projects back to 7168-d.",
   },
 } satisfies Record<string, Localized>;
 
@@ -191,28 +144,6 @@ export const ARCH = {
   routedExpert: { zh: "routed expert", en: "routed expert" },
   blockPrev: { zh: "Block n−1", en: "Block n−1" },
   blockPrev2: { zh: "Block n−2", en: "Block n−2" },
-  vision: { zh: "视觉", en: "vision" },
-  projector: { zh: "投影", en: "projector" },
-  text: { zh: "文本 token", en: "text tokens" },
-  unitLabel: { zh: "4-layer unit（共四层）", en: "4-layer unit (4 layers total)" },
-  repeat: {
-    zh: "3 × 4-layer unit = 1 个 12-layer block",
-    en: "3 × 4-layer units = one 12-layer block",
-  },
-  attnresArc: {
-    zh: "AttnRes：pseudo-query 算出 α，跨 block 取回 embedding 与之前各 block 的输出",
-    en: "AttnRes: a pseudo-query derives α over the embedding and preceding block outputs",
-  },
-  attnresSource: { zh: "Emb", en: "Emb" },
-  attnresFeed: {
-    zh: "α 送回 unit 内每个子层",
-    en: "α feeds every sublayer in the unit",
-  },
-  blockCount: {
-    zh: "B1–B7：各 12 层 · B8：末尾 9 层 · 共 93 层",
-    en: "B1–B7: 12 layers each · B8: 9-layer tail · 93 layers total",
-  },
-  outLabel: { zh: "LM head", en: "LM head" },
 } satisfies Record<string, Localized>;
 
 export interface ArchDetail {
@@ -333,10 +264,6 @@ export const MHA = {
   statDot: { zh: "本步点积", en: "dot products this step" },
   statTotal: { zh: "累计", en: "cumulative" },
   times: { zh: "次", en: "" },
-  legendCell: {
-    zh: "cache 一格 = 一个 token 的 KV",
-    en: "one cache cell = one token's KV",
-  },
   legendLine: { zh: "连线 = 一次点积（线宽 = softmax 权重）", en: "line = one dot product (width = softmax weight)" },
   legendCurrent: { zh: "描边 = 当前 token", en: "outline = current token" },
 } satisfies Record<string, Localized>;
@@ -400,12 +327,6 @@ export const LINFLOW = {
   statCum: { zh: "累计", en: "cumulative" },
   statMha: { zh: "MHA 对照：cache", en: "MHA for comparison: cache" },
   statMhaCum: { zh: "格，累计点积", en: "cells, cumulative dot products" },
-  sLabel: { zh: "S（固定大小）", en: "S (fixed size)" },
-  legendToken: {
-    zh: "token（颜色仅用于看它们在 S 里混合）",
-    en: "token (colors only to watch them blend inside S)",
-  },
-  legendStripe: { zh: "S 的条纹 = 已叠加的历史", en: "stripes in S = superimposed history" },
   legendWrite: { zh: "实线 = 写入 S", en: "solid = write into S" },
   legendRead: { zh: "虚线 = 从 S 读出", en: "dashed = read from S" },
 } satisfies Record<string, Localized>;
