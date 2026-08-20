@@ -35,7 +35,6 @@ export default function ReplayBenchViz({ lang = "zh" }: { lang?: Locale }) {
     <figure className="viz-stage bcg-viz" style={{ margin: "1.6rem 0" }}>
       <div className="viz-head">
         <span className="viz-title">{BENCH.title[lang]}</span>
-        <span className="viz-subtitle">{BENCH.subtitle[lang]}</span>
       </div>
 
       <div className="bcg-bench">

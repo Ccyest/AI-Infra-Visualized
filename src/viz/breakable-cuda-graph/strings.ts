@@ -100,10 +100,6 @@ export const TC = {
 
 export const RESULTS = {
   title: { zh: "成果图示", en: "Results diagram" },
-  subtitle: {
-    zh: "左：实现同样分段执行的代码量；右：prefill 加速比",
-    en: "Lines of code for the same segmented execution on the left; prefill speedup on the right",
-  },
   codeHead: { zh: "分段执行的实现代码量", en: "Code for segmented execution" },
   speedHead: { zh: "prefill 加速比（对 eager）", en: "Prefill speedup over eager" },
   lineUnit: { zh: " 行", en: " lines" },
@@ -148,10 +144,6 @@ export function raceFinished(locale: Locale, t: number): string {
 
 export const BCG_STEP = {
   title: { zh: "BCG 断开与接上图示", en: "BCG break-and-resume diagram" },
-  subtitle: {
-    zh: "上：算子序列；下：boundary buffer。单步播放看每一步",
-    en: "Ops on top, boundary buffer below. Step through to follow",
-  },
   phaseCapture: { zh: "Capture", en: "Capture" },
   phaseReplay1: { zh: "Replay ①", en: "Replay ①" },
   phaseReplay2: { zh: "Replay ②", en: "Replay ②" },
@@ -283,10 +275,6 @@ export function padSlotLabel(locale: Locale, id: number, len: number): string {
 
 export const BENCH = {
   title: { zh: "Prefill replay 加速图示", en: "Prefill-replay speedup diagram" },
-  subtitle: {
-    zh: "左：加速比；右：延迟随 prompt 长度",
-    en: "Speedups on the left; latency vs prompt length on the right",
-  },
   barsHead: {
     zh: "gpt-oss-120b · TP4 · 4×GB300",
     en: "gpt-oss-120b · TP4 · 4×GB300",

@@ -103,7 +103,6 @@ export default function BcgStepViz({ lang = "zh" }: { lang?: Locale }) {
   return (
     <VizStage
       title={BCG_STEP.title[lang]}
-      subtitle={BCG_STEP.subtitle[lang]}
       player={player}
       lang={lang}
     >

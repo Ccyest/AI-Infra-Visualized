@@ -25,7 +25,6 @@ export default function ResultsViz({ lang = "zh" }: { lang?: Locale }) {
     <figure className="viz-stage bcg-viz" style={{ margin: "1.6rem 0" }}>
       <div className="viz-head">
         <span className="viz-title">{RESULTS.title[lang]}</span>
-        <span className="viz-subtitle">{RESULTS.subtitle[lang]}</span>
       </div>
 
       <div className="bcg-bench">
