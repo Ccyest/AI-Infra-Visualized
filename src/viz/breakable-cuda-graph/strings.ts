@@ -70,10 +70,7 @@ export const TIMELINE_ITEMS: TimelineItem[] = [
 
 export const TC = {
   title: { zh: "TC piecewise 断点图示", en: "TC-piecewise breakpoints diagram" },
-  subtitle: {
-    zh: "从左到右四步；橙色为不兼容算子",
-    en: "Four steps left to right; orange marks the incompatible op",
-  },
+  subtitle: { zh: "橙色为不兼容算子", en: "orange marks the incompatible op" },
   stage1: { zh: "一个 forward", en: "One forward" },
   stage1Badge: { zh: "E 依赖运行时信息", en: "E depends on runtime info" },
   stage2: { zh: "torch.compile trace", en: "torch.compile trace" },
@@ -117,10 +114,6 @@ export const RESULTS = {
 
 export const RACE = {
   title: { zh: "Launch 开销图示", en: "Launch-overhead diagram" },
-  subtitle: {
-    zh: "上 eager，中 BCG，下 full graph；每行上为 CPU、下为 GPU",
-    en: "Eager on top, BCG in the middle, full graph at the bottom; CPU row above GPU row",
-  },
   laneEager: { zh: "Eager", en: "Eager" },
   laneBcg: { zh: "Breakable CUDA Graph", en: "Breakable CUDA Graph" },
   laneFull: { zh: "Full CUDA Graph", en: "Full CUDA Graph" },
@@ -367,8 +360,8 @@ export const REUSE_STEPS: Localized[] = [
 export const MEM = {
   title: { zh: "Capture 天花板图示", en: "Capture-ceiling diagram" },
   subtitle: {
-    zh: "prefill 显存对 no-graph baseline 的增量；点按钮切换模型",
-    en: "Prefill memory vs the no-graph baseline; pick a model",
+    zh: "prefill 显存对 no-graph baseline 的增量",
+    en: "prefill memory vs the no-graph baseline",
   },
   modelsAria: { zh: "切换模型", en: "Switch model" },
   colBaseline: { zh: "无 graph", en: "no graphs" },

@@ -116,7 +116,6 @@ export default function LaunchRaceViz({ lang = "zh" }: { lang?: Locale }) {
   return (
     <VizStage
       title={RACE.title[lang]}
-      subtitle={RACE.subtitle[lang]}
       player={player}
       lang={lang}
       footer={
