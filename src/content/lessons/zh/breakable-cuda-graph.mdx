@@ -1,6 +1,6 @@
 ---
-title: "SGLang 的 CUDA Graph 进阶"
-description: "Breakable CUDA Graph 由 SGLang 提出并率先开源，通过在 capture 过程中直接插入 eager 断点，解决了靠编译器切图带来的启动慢、兼容性差的问题；prefill 的 full CUDA Graph 也一并展开，通过 token bucket 与 zero-length sentinel 钉死两个动态维度，解决了 prefill 无法整图捕获的问题。"
+title: "SGLang 开源的 CUDA Graph 进阶用法"
+description: "Breakable CUDA Graph 由 SGLang 提出并率先开源，通过在 capture 过程中直接插入 eager 断点，解决了传统编译器切图方案带来的启动慢、兼容性差的问题；prefill 的 full CUDA Graph 也一并展开，通过 token bucket 与 zero-length sentinel，有效解决了过去 prefill 无法整图捕获的问题。"
 order: 4
 tryOnSglang: "https://github.com/sgl-project/sglang"
 references:
@@ -29,48 +29,52 @@ import MemReuseViz from "../../../viz/breakable-cuda-graph/MemReuseViz";
 
 ## 背景
 
-一次推理并不是单个 kernel，而是由许多 GPU 操作组成的序列。在现代 LLM serving
-engine 中，CPU 反复发射这些操作会带来明显开销，尤其是在对延迟敏感的 workload
-中。CUDA Graph 会先记录一次 GPU workload，之后以低得多的 launch 开销反复
-replay，从而减少这部分成本。
+首先我们先要了解一下CUDA Graph的基本优化原理：一次推理并不是单个 kernel，而是由
+许多 GPU 操作组成的序列。在现代 LLM serving engine 中，CPU 反复launch kernel会带
+来明显开销，尤其是在对延迟敏感的 workload 中。CUDA Graph 会先记录一次 GPU
+workload，之后可以通过 replay 记录好的 workload 降低launch开销，从而减少这部分成
+本。
 
-下图对比同一段 forward 的三种执行方式：eager 模式下 CPU 逐个发射，GPU 在 kernel
-之间空等；full graph 一次发射 replay 整段；BCG（Breakable CUDA
-Graph）介于两者之间，大部分 kernel 在 graph 内，少数不兼容的操作在 graph 之间以
-eager 模式执行：
+但在维护 SGLang 的过程中，我们发现把 CUDA Graph 用好远不止「全部操作录一遍」就完
+事了。有很多操作和CUDA Graph并不兼容，比如：attention backend 要按活的 sequence
+length 做 planning，collective 涉及运行时协调，LoRA、MoE、PD disaggregation 各带
+动态逻辑。这些操作散落在中间，只要出现一个不兼容算子破坏，一大段 forward 就会没
+办法使用 CUDA Graph。
+
+因此，自然而然的，我们就会想到在中间不兼容操作处截断CUDA Graph的想法。下图对比同
+一段 forward 的三种执行方式：eager 模式下 CPU 逐个发射，GPU 在 kernel 之间空
+等；full graph 一次发射 replay 整段；BCG（Breakable CUDA Graph）介于两者之间，大
+部分 kernel 在 graph 内，少数不兼容的操作在 graph 之间以 eager 模式执行：
 
 <LaunchRaceViz client:visible />
 
-但在维护 SGLang 的过程中，我们发现把 CUDA Graph
-用好远不止「全部操作录一遍」。attention backend 要按活的 sequence length 做
-planning，collective 涉及运行时协调，LoRA、MoE、PD disaggregation
-各带动态逻辑——只要出现一个不兼容算子破坏，一大段 forward 就会没办法使用 CUDA
-Graph。我们最初的答案是借助 torch.compile：先让编译器 trace 完整
-forward，再在注册的切分点把图拆开。它能达成目标，但编译时间随模型复杂度增长，每个自定义
-kernel 都要为 tracing 写适配，图的边界也要迁就编译器能表示的类型。这条路线的流程如下：
+这个想法的理论直觉很简单，但是工程实现有很深的学问。我们最初的答案是借助
+torch.compile：先让编译器 trace 完整 forward，再在注册的切分点把图拆开。它能达成
+目标，但编译时间随模型复杂度增长，并且对我们的自定义的优化kernel适配并不友好。这
+条路线的流程如下：
 
 <TcPiecewiseViz client:visible />
 
-既然 capture 本身就是按顺序执行算子，断点为什么要靠编译器去找？顺着这个想法，我们做出了
-Breakable CUDA Graph：在 capture 进行当中直接插入 eager
-断点，不需要编译器理解 forward。BCG 由 SGLang
-提出、命名、实现并率先开源：同样的分段执行只用四分之一的代码量（521 行对 1771
-行）；因为无需编译，构建 prefill graph 快 3.8–5.2 倍；只测 prefill，BCG 相对
-eager 快 1.70 倍，而我们随后率先在 FA4 和 FlashInfer attention backend 上实现的
-prefill full CUDA Graph 达到 1.93 倍。BCG 现在是 SGLang prefill
-的默认方案；不同 shape、不同 graph segment 之间的显存复用，也正在成为 SGLang
-整体显存管理中越来越重要的一环：
+既然 capture 本身就是按顺序执行算子，断点为什么要靠编译器去找？顺着这个想法，我
+们做出了 Breakable CUDA Graph：在 capture 进行当中直接插入 eager 断点，不需要编
+译器理解 forward。BCG 由 SGLang 提出、命名、实现并率先开源：同样的分段执行只用四
+分之一的代码量（521 行对 1771 行）；因为无需编译，构建 prefill graph 快 3.8–5.2
+倍；只测 prefill，BCG 相对 eager 快 1.70 倍，而我们随后率先在 FA4 和 FlashInfer
+attention backend 上实现的 prefill full CUDA Graph 达到 1.93 倍。BCG 现在是
+SGLang prefill 的默认方案；不同 shape、不同 graph segment 之间的显存复用，也正在
+成为 SGLang 整体显存管理中越来越重要的一环：
 
 <TimelineViz client:visible />
 
+接下来，我们会具体讲解SGLang工程上如何实现BCG和Prefill CUDA Graph。
+
 ## Runner/Backend 解耦
 
-在重构之前，SGLang 的 CUDA Graph
-支持是围绕各条执行路径分别发展起来的：decode、prefill 和 speculative decoding
-各有自己的 runner，其中 capture shape、静态 buffer、replay 和 graph
-配置等逻辑高度重叠。重构 #23906 把这些职责拆成两层。runner 管理 capture 和
-replay 所需的执行路径相关状态，包括 capture shape、静态输入 buffer、attention
-metadata，以及把实时 batch pad 到已捕获的 shape；backend 决定如何捕获这次执行：
+在重构之前，SGLang 的 CUDA Graph 支持是围绕各条执行路径分别发展起来
+的：decode、prefill 和 speculative decoding 各有自己的 runner，其中逻辑高度重
+叠。重构 #23906 把这些职责拆成两层。runner 管理 capture 和 replay 所需的执行路径
+相关状态，包括 capture shape、静态输入 buffer、attention metadata，以及把实时
+batch pad 到已捕获的 shape；backend 决定如何捕获这次执行：
 
 | Backend | 分段方式 | 边界怎么定 |
 | --- | --- | --- |
@@ -78,202 +82,157 @@ metadata，以及把实时 batch pad 到已捕获的 shape；backend 决定如�
 | breakable（BCG） | capture 过程中直接分段，segment 由 eager region 分隔 | `@eager_on_graph` 标记，capture 时插入 |
 | tc_piecewise | torch.compile 先 trace 完整 forward，FX graph 在注册的切分点拆开 | 边界上的输入输出必须能被编译器表示 |
 
-由于 runner 只依赖统一的 backend
-接口，每条执行路径都能独立选择自己的捕获策略。prefill 和 decode 分别拥有独立的
-runner；speculative decoding 会增加更多：EAGLE draft、draft-extend 和 frozen-KV
-MTP draft 基于 decode runner 构建各自的 runner，target verify 直接复用 decode
-runner，但每个 request 会捕获多个 token。
+经过解耦，runner可以随意选择自己运行时的backend，可组合性体现在初始
+化：`resolve_prefill_backend` 和 `resolve_decode_backend` 各自从
+`cuda_graph_config` 里读出本 phase 的 backend 类型，prefill 走 BCG、decode 走
+full graph 就是常见搭配。这样，支持 N 条执行路径、M 种捕获策略的代价从 N×M 份实
+现降到 N+M 份。新增一种策略，所有执行路径立刻可用：BCG 从 decode 扩展到
+prefill（#22218）、diffusion stack 采用 BCG（#27436）。新增一条执行路径，三种策
+略同样立刻可用：speculative decoding 的 EAGLE draft、draft-extend 和 frozen-KV
+MTP draft 各加一个 runner 即可。
 
 ## Breakable CUDA Graph
 
 ### 设计与机制
 
-BCG 允许开发者用 `@eager_on_graph` 直接标记不兼容区域：capture
-执行到被标记函数时，当前 graph segment 结束；函数以 eager
-模式运行；随后开启新的 segment 继续 capture。forward 由此变成由 eager region
-分隔的一系列 CUDA Graph segment。
+BCG 允许开发者用 `@eager_on_graph` 直接标记不兼容区域：capture 执行到被标记函数
+时，当前 graph segment 结束；函数以 eager 模式运行；随后开启新的 segment 继续
+capture。forward 由此变成由 eager region 分隔的一系列 CUDA Graph segment。
 
-replay 时，已记录的 graph segment 和 eager function 按原来的顺序执行。capture
-阶段，被标记的函数会在两个 segment 之间运行一次，其返回的 tensor
-被保留为持久化的 boundary buffer，device address 固定不变；后一个 segment
-就是基于这个地址完成捕获的。每次 replay，eager function 正常执行并返回一个新的
-tensor，BCG 再把它复制到保留的 buffer 中，使后一个 segment 能从 capture
-时绑定的地址读到更新后的值。BCG 不会检查或 trace eager region
-内部的操作，只要求这些操作能够正确执行。下图按 capture 一次、replay
-两次演示这一机制：
+capture 阶段，被标记的函数会在两个 segment 之间运行一次，其返回的 tensor 被保留
+为持久化的 boundary buffer，device address 固定不变；接着后一个 segment 基于这个
+地址完成捕获。replay时，eager function正常执行并返回新的tensor，BCG再复制到保留
+的buffer中。下图按 capture 一次、replay 两次演示这一机制：
 
 <BcgStepViz client:visible />
 
 ### 优势
 
-**启动更快。** 对基于编译器的 piecewise graph，准备阶段的主要开销来自编译而不是
-capture：torch.compile 占 prefill graph 准备时间的
-78–86%，并随模型复杂度增长，在 235B MoE 上达到 90 秒，在 GLM-5.2 上达到 158
-秒。BCG 完全移除了编译阶段，只需一次 capture 就能得到分段执行结构，构建 prefill
-graph 的速度快 3.8–5.2 倍（每种配置捕获 42 个 shape，TP4，4×GB300）。
+**启动更快。** 对比传统基于编译器的 piecewise graph，准备阶段的主要开销来自编译
+而不是 capture：torch.compile 占 prefill graph 准备时间的 78–86%，并随模型复杂度
+增长。BCG 则完全移除了编译阶段，构建 prefill graph 的速度快 3.8–5.2 倍（每种配置
+捕获 42 个 shape，TP4，4×GB300）。
 
-**兼容范围更广。** SGLang 大量使用自定义 CUDA、Triton 和 JIT 编译
-kernel，它们并不是原生 PyTorch operator。为了让 torch.compile
-识别这些 kernel，通常需要通过 torch.library 封装，并提供用于 trace 的 fake
-implementation。更重要的是，编译器还会限制 graph boundary
-可以放在哪里：跨越已注册 operator
-边界的输入和输出必须能被编译器表示，当自然的切分边界涉及更特殊的运行时状态或返回类型时，有时不得不换一个切分点，或者扩大
-eager region，只为暴露一个编译器能够处理的接口。CUDA Graph 需要与 DP
-attention、MoE all-to-all backend、LoRA、PD disaggregation、hierarchical cache
-等快速发展的功能共存，过去要让 CUDA Graph 正常工作，越来越像是在维护一个
-torch.compile 集成项目。BCG 解除了 eager 断点处的这项限制：graph
-系统不需要理解被标记函数的实现，也不需要 trace 其内部，graph boundary
-可以遵循 serving 逻辑，而不是受编译器的 trace 和类型要求支配。同样的分段执行，BCG
-用 521 行实现，tc_piecewise 是 1771 行。
+**兼容范围更广。** SGLang 大量使用自定义 CUDA、Triton 和 JIT 编译 kernel优化，它
+们并不是原生 PyTorch operator。为了让 torch.compile 识别这些 kernel，通常需要通
+过 torch.library 封装，并提供用于 trace 的 fake implementation。更重要的是，断点
+位置也会被限制：跨过边界的输入输出必须是编译器能表示的类型，碰上特殊的运行时状态
+或返回值，就得挪切分点，或者把 eager region 划大，只为给编译器一个能看懂的接口。
+这导致过去要让 CUDA Graph 正常工作，越来越像是在维护一个 torch.compile 集成项
+目。BCG 解除了 eager 断点处的这项限制：并且也不需要单独维护编译器。同样的分段执
+行，BCG 用 521 行实现，vs 旧方案1771 行。
 
-**便于调试。** 捕获后的 CUDA Graph 会作为一个不透明整体 replay，普通 Python
-代码不会在内部执行，因此很难使用 print、assert 或逐步检查。BCG 自然保留了 eager
+**便于调试。** CUDA Graph 一旦捕获，replay 的时候就是个黑盒：普通 Python 代码不
+会在内部执行，因此很难使用 print、assert 或逐步检查。BCG 自然保留了 eager
 region，普通 Python 代码在每次 replay 时仍能执行。SGLang 还通过
-`--debug-cuda-graph` 扩展了这一思路：这个选项会把整个 forward 包在一个 eager
-断点中，模型以 eager 模式执行，但仍然经过 runner、静态 buffer、replay 路径和
-metadata 准备流程。这形成了一个很有用的调试边界：如果问题依然存在，原因很可能在模型或
-runner 路径中；如果问题消失，则应优先怀疑 capture 本身。
+`--debug-cuda-graph` 扩展了这一思路：这个选项会把整个 forward 包在一个 eager 断
+点中，模型以 eager 模式执行。这形成了一个很有用的调试边界：如果问题依然存在，原
+因很可能在模型或 runner 路径中；如果问题消失，则应优先怀疑 capture 本身。
 
-> BCG 也已用于 SGLang 的 diffusion stack（#27436）。diffusion 会在 denoising
-> 过程中反复执行同一套 DiT forward，当这些 forward 包含大量受 launch 开销限制的小
-> kernel 时，CUDA Graph 尤其有效：warmup 之后，单张 B200 上 512×512 的 Qwen-Image
-> 端到端延迟从 6.48 秒降至 2.45 秒，Z-Image 从 1.231 秒降至 0.662 秒。BCG
-> 消除的是 launch 开销，不会减少模型 FLOPs，也不会降低 compute-bound kernel
-> 的计算成本；当暴露出来的 launch gap 在总执行时间中占比较高时，它的优势最大。
+> BCG 也已用于 SGLang 的 diffusion stack（#27436）：单张 B200 上 512×512 的
+> Qwen-Image 端到端延迟从 6.48 秒降到 2.45 秒，Z-Image 从 1.231 秒降到 0.662
+> 秒。
 
 ## 基于 BCG 进一步优化：Prefill 的 full CUDA Graph
 
-前面提到，BCG 靠断开 CUDA Graph
-换来兼容性：不兼容算子留在图外，代价是每个断点处保留一小段 eager
-执行。而相对应的，full CUDA Graph 把整个 forward 捕成一张图，没有任何 eager
-region，replay 时的发射次数也最少。这一节要把同样的捕法推到 prefill 上。
+前面提到，BCG 靠断开 CUDA Graph 换来兼容性：不兼容算子留在图外，代价是每个断点处
+保留一小段 eager 执行。而相对应的，full CUDA Graph 把整个 forward 捕成一张图，没
+有任何 eager region，replay 时的发射次数也最少。这一节要把同样的捕法推到 prefill
+上。
 
 ### 让 prefill 静态化
 
-相比于 decode AR step 固定的大小，prefill 的捕捉难度在于：一个 prefill batch
-的总 token 数，以及这些 token 所属的 request 数是变化的。而 CUDA Graph
-要求这两个维度都保持固定。加之，部分 attention backend 依赖运行时
-metadata。因此，full CUDA Graph 一度很难应用于 prefill，这也是 prefill 路径采用
-BCG 的主要原因之一。最近，#27988 重新设计了 request slot 和 attention metadata
-的表示方式，让受支持的 attention backend 不必再放到 graph 外执行。
+相比于 decode AR step 固定的大小，prefill 的捕捉难度在于：一个 prefill的长度，以
+及token 所属的 request 数是变化的。而 CUDA Graph 要求这两个维度都保持固定。加
+之，部分 attention backend 依赖运行时 metadata。因此，full CUDA Graph 一度很难应
+用于 prefill阶段，这也是 prefill 路径采用 BCG 的主要原因之一。最近，#27988 重新
+设计了 request slot 和 attention metadata 的表示方式，让受支持的 attention
+backend 不必再放到 graph 外执行。
 
-SGLang 通过 token bucket 固定 token 维度：实时 batch 会 pad
-到最近的已捕获 token 数，与 decode 把 batch size pad 到已捕获 bucket
-的做法类似。request 维度单独处理：每张捕获的 graph 预留固定数量的 request
-slot，真实 request 占用前几个，未使用的 slot 被重写为长度为 0 的
-sentinel——sequence length 和 extend length 都设为 0，offset
-放到末尾的最后一个真实 token（非 padding）。如果 batch 中的 request
-数量超过 graph 预留的 slot 数，就回退到 eager 执行。由于捕获的 graph
-仍会读取完整的 request table，sentinel metadata 必须在每次 replay
-时重写；attention metadata 同样需要在 graph 外根据 pad 后的 batch
-重建。因此，目前只有按这种方式准备 extend-mode metadata 的 attention backend
-才能使用 prefill full capture，包括 FlashAttention（fa4）和 FlashInfer。
+SGLang 用 token bucket 固定 token 维度：实时 batch pad 到最近的已捕获 token
+数。request 维度单独处理：每张 graph 预留固定数量的 request slot，真实 request
+占前面几个，剩下的重写成长度为 0 的 sentinel。request 数超过预留的 slot 就回退到
+eager。sentinel 和 attention metadata 都要在 graph 外、每次 replay 时重建，所以
+目前只有 FlashAttention（fa4）和 FlashInfer 这两个按这种方式准备 extend-mode
+metadata 的 backend 支持 prefill full capture。 prefill full capture 目前仍是实
+验性功能，必须显式开启；engine 会提示 full 处于实验阶段，并建议生产 workload 使
+用 BCG 或 tc_piecewise。扩大 backend 支持范围、继续调整 bucket 和 slot 的选择，
+仍是后续工作。
 
 如图所示，一共展示两个维度：token 维和 request 维：
 
 <PrefillPadViz client:visible />
-
-### Padding 的代价
-
-两种 padding 的成本差异很大。padding token 会产生真实计算，而空 request slot
-的成本要低得多：FlashAttention 的变长调度根据每条 sequence
-的真实长度决定工作量，不会为每个 slot 分配固定计算，长度为 0 的 request
-基本不会产生 attention 计算，只会增加 metadata
-和少量调度开销。这种不对称性很重要：token padding 是昂贵的维度，request slot
-padding 则相对便宜。
-
-prefill full capture 目前仍是实验性功能，必须显式开启；engine 会提示 full
-处于实验阶段，并建议生产 workload 使用 BCG 或 tc_piecewise。扩大 backend
-支持范围、继续调整 bucket 和 slot 的选择，仍是后续工作。
 
 ### Prefill benchmark
 
 我们单独测量了 prefill：固定输入长度、只生成一个输出 token、每次处理一个
 request，并在所有对比项中关闭 decode graph。测试使用
 gpt-oss-120b（TP4，4×GB300），四条路径都能正常运行。结果显示，full capture 相比
-eager 快 1.93 倍，BCG 快 1.70 倍，tc_piecewise 快 1.45 倍。因此 BCG
-不只构建速度更快，replay 性能也比基于编译器的 backend 高
-17%。差距来自每次 forward 的执行方式：BCG 直接 replay 已经记录好的
-segment，tc_piecewise 每次都要重新调用 compiled callable，在执行自身捕获的
-piece 之前，先支付 Torch Dynamo 的 guard check 和 dispatch 开销。在 GLM-5.2
-上，只有 BCG 能完成 capture：tc_piecewise 无法 trace 它的 forward，full capture
-也不支持它的 sparse attention；BCG 在该模型上相比 eager 快 1.60 倍。在 32 倍的
-prompt 长度变化范围内，每条曲线都基本保持水平，这正是 launch
-开销主导而非计算主导的典型特征：
+eager 快 1.93 倍，BCG 快 1.70 倍，tc_piecewise 快 1.45 倍。因此 BCG 不只构建速度
+更快，replay 性能也比基于编译器的 backend 高 17%。差距来自每次 forward 的执行方
+式：BCG 直接 replay 已经记录好的 segment，tc_piecewise 每次都要重新调用 compiled
+callable，在执行自身捕获的 piece 之前，先支付 Torch Dynamo 的 guard check 和
+dispatch 开销。在 GLM-5.2 上，只有 BCG 能完成 capture：tc_piecewise 无法 trace
+它的 forward，full capture 也不支持它的 sparse attention；BCG 在该模型上相比
+eager 快 1.60 倍。在 32 倍的 prompt 长度变化范围内，每条曲线都基本保持水平，这正
+是 launch 开销主导而非计算主导的典型特征：
 
 <ReplayBenchViz client:visible />
 
 ## CUDA Graph 的显存占用
 
-CUDA Graph 的显存与 activation 的显存性质不同。graph 显存是常驻的：replay
-要求每个中间 tensor 的地址保持不变，因此这些存储在 capture
-时从专用的显存池分配，并在 server 的整个生命周期内保留。eager activation
-则是瞬时的：每次 forward 临时分配、算完即释放，其峰值由支持的最大 prefill
-决定。由此产生两个不同的挑战：一是把 forward 切成多段之后，常驻显存不能跟着段数
-一起变多；二是常驻的 graph 显存要真正顶替最坏情况下的 activation
-峰值，capture 就必须覆盖到最大的 prefill shape。
+前面讲的两件事都会影响显存：BCG 把 graph capture 切成多段，full capture 把更大的
+prefill shape 捕进来。CUDA Graph 显存是常驻的，replay 要求中间 tensor 的地址不
+变，capture 时分配下来就一直留到进程结束；所以有两个问题：一是BCG切成多段之后，
+需要保证常驻显存不跟着段数一起变多；二是常驻的 graph 显存要能够顶替最坏情况下的
+activation 峰值，capture 就必须覆盖到最大的 prefill shape。
 
 ### 分段捕获内部的显存复用
 
 分段 Backend 很容易让 graph 显存成倍增长：每个被捕获的 shape 都包含多个 graph
-segment，而每个 segment 的中间结果都必须在 replay 时保持有效。这里说的增长来自断点的数量：一次
-forward 打 N 个断点就有 N+1 个 segment，如果每个 segment 的中间结果各占一块显存、并各自长期保留，需要常驻的显存就从「一次
-forward 的峰值」变成「各 segment 峰值之和」，断点打得越多，常驻显存越高。本质上这件事很简单：CUDA
-Graph 是按顺序 replay 的，同一时刻只有一个 segment
-在执行，因此并不需要时刻保住所有 segment 的中间结果，后一段直接覆写前一段留下的数据，就能共享同一块显存。BCG
-通过三种复用方式避免了这种增长。
+segment，而每个 segment 的中间结果都必须在 replay 时保持有效。这里说的增长来自断
+点的数量：一次 forward 打 N 个断点就有 N+1 个 segment，如果每个 segment 的中间结
+果各占一块显存、并各自长期保留，需要常驻的显存就从「一次 forward 的峰值」变成
+「各 segment 峰值之和」，断点打得越多，常驻显存越高。本质上这件事解决方案很简
+单：CUDA Graph 是按顺序 replay 的，同一时刻只有一个 segment 在执行，因此并不需要
+时刻保住所有 segment 的中间结果，后一段直接覆写前一段留下的数据，就能共享同一块
+显存。BCG 通过三种复用方式避免了这种增长。
 
 - **不同 segment 共享一个显存池。** 同一个 capture shape 的所有 segment 都使用同一个
-  CUDA Graph pool，让中间存储可以复用，而不是由每个 segment 分别长期占用。
+CUDA Graph pool，让中间存储可以复用，而不是由每个 segment 分别长期占用。
 - **在 Eager 断点处使用弱引用。** 如果传入断点的 tensor storage 已由 graph pool
-  管理，就使用弱引用持有该 tensor，避免不必要的 Python reference 延长 tensor
-  生命周期。Tensor 弱引用技术来自 [vLLM PR #9724](https://github.com/vllm-project/vllm/pull/9724)；该
-  PR 引入这一技术，是为了让捕获的 graph 能够共享输出 buffer，而不是每张 graph
-  各自固定一块 buffer。
+管理，就使用弱引用持有该 tensor，避免不必要的 Python reference 延长 tensor
+生命周期。Tensor 弱引用技术来自 [vLLM PR
+#9724](https://github.com/vllm-project/vllm/pull/9724)；该
+PR 引入这一技术，是为了让捕获的 graph 能够共享输出 buffer，而不是每张 graph
+各自固定一块 buffer。
 - **不同 capture size 共享一个输出 buffer。** 所有 capture size
-  共用一块按最大尺寸分配的输出 buffer，每个 shape 只切出自己需要的行，避免为每个
-  shape 单独分配输出 buffer。
+共用一块按最大尺寸分配的输出 buffer，每个 shape 只切出自己需要的行，避免为每个
+shape 单独分配输出 buffer。
 
-这块 buffer 不需要同时装下所有 shape 的输出：同一时刻只有一张 graph 在
-replay，每次都从第 0 行写起，只用自己需要的前几行，下一次 replay
-直接覆写掉——和 segment 的中间结果是同一套覆写。
-
-有一个值不能这样处理：跨越 Eager 断点传递数据的 tensor。后一个 graph segment
-是基于它的地址完成 capture 的，因此这块 buffer 必须一直存活，并在每次 replay
-时原地更新。
-
-有了这些复用机制，即使 capture table 很大，显存开销仍然可控：在 GLM-5.2 上，为 78
-层 MoE 捕获 42 个 shape，只增加了 2.4 GB graph 显存。
+有了这些复用机制，即使 capture table 很大，显存开销仍然可控：在 GLM-5.2 上，为
+78 层 MoE 捕获 42 个 shape，只增加了 2.4 GB graph 显存。
 
 <MemReuseViz client:visible />
 
 ### Capture 覆盖整个 chunked-prefill size
 
-捕获一个 prefill shape，相当于把它的瞬时工作显存搬进常驻的 graph
-显存池。这笔交换只对真正走 graph replay 的 shape 成立：如果 capture
-只覆盖到某个中等 size，比它更大的 prefill 仍会回退到 eager 执行，原来的
-activation 峰值原封不动；与此同时，更小 shape 的常驻 graph
-显存已经付出去了。两头的成本都要承担，总显存反而高于不开 graph 的 baseline。
+捕一个 shape，等于用常驻显存换掉它的瞬时峰值，这笔交换只对真正 replay 的 shape
+成立。如果capture 停在某个 size n，更大的 prefill size (>n) 照旧回退 eager，峰值
+一点没少，小 shape 的常驻显存却已经花掉了，总显存比不开 graph 还高。所以重点永远
+是 capture 的上限，不是捕了多少个 shape。
 
-因此，capture 的上限比捕获了多少个 shape 更重要。`chunked_prefill_size`
-限制了单次 prefill forward 的最大规模——再长的 prompt
-也会被切成不超过这个 size 的 chunk 逐个处理——只要一直捕获到这个
-size，最大的 prefill 也走 graph replay，最坏情况下的 eager activation
-峰值就被消除：在 gpt-oss-120b 上几乎降为
-0（从 0.56 GB 降至 0.001 GB）；在 GLM-5.2 上则从 1.55 GB 降至 0.35 GB，因为它的
-sparse-attention indexer 仍然需要在断点处以 eager
-模式运行。总显存最终低于无 graph baseline：gpt-oss-120b 低 0.51 GB，GLM-5.2 低
-1.10 GB。与几百 GB 的整体显存占用相比，这个数字不算大，但它意味着 CUDA Graph
-带来的是节省，而不是额外成本。另一项收益是显存使用可预测：依赖 workload 的
-activation 瞬时峰值，变成了在 capture 阶段确定的固定分配，engine
-可以提前计入这部分显存，不必再为只在大规模 prefill
-时出现的瞬时峰值预留空间：
+`chunked_prefill_size` 是单次 prefill forward 的上限，一直捕到这个 size，最大的
+prefill 也走 replay，最坏情况的 activation 峰值就被消除了。如图所示，虽然从整体
+几百GB的显存占用来说，这个数字不算大，但是它意味着CUDA Graph带来的是节省而非成
+本。另一个好处是显存变得可预测：原来跟着 workload 波动的瞬时峰值，变成 capture
+时定下的固定分配，engine 可以提前算进去，不用再为大 prefill 留 headroom：
 
 <MemoryCeilingViz client:visible />
 
 ## 致谢
 
-这项工作由 SGLang 团队与 Meta 团队合作完成。SGLang：Yuwei An*、Cheng
-Wan、Xiaoyu Zhang、Mick Qian、Baizhou Zhang、Yusheng Su、Ke Bao；Meta：Shiyang
+这项工作由 SGLang 团队与 Meta 团队合作完成。SGLang：Yuwei An*、Cheng Wan、Xiaoyu
+Zhang、Mick Qian、Baizhou Zhang、Yusheng Su、Ke Bao；Meta：Shiyang
 Chen*、Lianmin Zheng（* 同等贡献）。同时感谢 NVIDIA、AMD、Thinking Machines Lab
 和 Meta PyTorch 团队在整个过程中给予的帮助。
