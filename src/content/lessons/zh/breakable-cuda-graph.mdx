@@ -52,16 +52,16 @@ kernel，而是由许多 GPU 操作组成的序列。CUDA Graph 会把 GPU workl
 
 <LaunchRaceViz client:visible />
 
+BCG 的直觉很简单，工程实现并不简单。我们最初的答案是借助
+torch.compile，下文称之为 tc_piecewise：先让编译器 trace 完整
+forward，再在注册的切分点把图拆开。它能达成目标，但编译时间随模型复杂度增长，而且适配我们自己的定制优化
+kernel 很别扭。这条路线的流程如下：
+
 | Backend | 分段方式 | 边界怎么定 |
 | --- | --- | --- |
 | full | 每个 shape 捕获一张完整 graph，无 eager region | 不需要边界 |
 | breakable（BCG） | capture 过程中直接分段，segment 由 eager region 分隔 | `@eager_on_graph` 标记，capture 时插入 |
 | tc_piecewise | torch.compile 先 trace 完整 forward，FX graph 在注册的切分点拆开 | 边界上的输入输出必须能被编译器表示 |
-
-BCG 的直觉很简单，工程实现并不简单。我们最初的答案是借助
-torch.compile，下文称之为 tc_piecewise：先让编译器 trace 完整
-forward，再在注册的切分点把图拆开。它能达成目标，但编译时间随模型复杂度增长，而且适配我们自己的定制优化
-kernel 很别扭。这条路线的流程如下：
 
 <TcPiecewiseViz client:visible />
 
@@ -91,8 +91,8 @@ segment。
 
 capture 阶段，被标记的函数会在两个 segment 之间运行一次，其返回的 tensor
 被保留为持久化的 boundary buffer，device address 固定不变；接着后一个 segment
-基于这个地址完成捕获。replay时，eager
-function正常执行并返回新的tensor，BCG再复制到保留的buffer中。下图按 capture
+基于这个地址完成捕获。replay 时，eager
+function 正常执行并返回新的 tensor，BCG 再复制到保留的 buffer 中。下图按 capture
 一次、replay 两次演示这一机制：
 
 <BcgStepViz client:visible />
@@ -105,13 +105,13 @@ graph，准备阶段的主要开销来自编译而不是 capture：torch.compile
 prefill graph 的速度快 3.8–5.2 倍（每种配置捕获 42 个 shape，TP4，4×GB300）。
 
 **兼容范围更广。** SGLang 大量使用自定义 CUDA、Triton 和 JIT 编译
-kernel优化，它们并不是原生 PyTorch operator。为了让 torch.compile 识别这些
+kernel 优化，它们并不是原生 PyTorch operator。为了让 torch.compile 识别这些
 kernel，通常需要通过 torch.library 封装，并提供用于 trace 的 fake
 implementation。更重要的是，断点位置也会被限制：跨过边界的输入输出必须是编译器能表示的类型，碰上特殊的运行时状态或返回值，就得挪切分点，或者把
 eager region 划大，只为给编译器一个能看懂的接口。这导致过去要让 CUDA Graph
 正常工作，越来越像是在维护一个 torch.compile 集成项目。BCG 解除了 eager
 断点处的这项限制：并且也不需要单独维护编译器。同样的分段执行，BCG 用 521
-行实现，vs 旧方案1771 行。
+行实现，vs 旧方案 1771 行。
 
 **调试更容易。** CUDA Graph 一旦捕获，replay 的时候就是个黑盒：普通 Python
 代码不会在内部执行，因此很难使用 print、assert 或逐步检查。BCG 自然保留了 eager
@@ -181,7 +181,7 @@ attention；BCG 在该模型上相比 eager 快 1.60 倍。在 32 倍的 prompt
 又把更大的 prefill shape 捕进来。CUDA Graph 显存是常驻的，replay 要求中间 tensor
 的地址不变，capture 时分配下来就一直留到进程结束。所以有两个问题。
 
-1.  BCG 切成多段之后，常驻显存不能跟着段数一起变多。
+1. BCG 切成多段之后，常驻显存不能跟着段数一起变多。
 2. 常驻的 graph 显存要能顶替最坏情况下的 activation 峰值，capture
    就必须覆盖到最大的 prefill shape。
 

@@ -28,7 +28,7 @@ import TcPiecewiseViz from "../../../viz/breakable-cuda-graph/TcPiecewiseViz";
 import MemReuseViz from "../../../viz/breakable-cuda-graph/MemReuseViz";
 import ResultsViz from "../../../viz/breakable-cuda-graph/ResultsViz";
 
-## introduction
+## Introduction
 
 "Getting the most out of the GPU" is what our team works on day to day, and that
 often means going back to optimizations that are already standard practice. CUDA
@@ -55,18 +55,18 @@ executing the same forward:
 
 <LaunchRaceViz client:visible lang="en" />
 
-| Backend | Segmentation | How boundaries are placed |
-| --- | --- | --- |
-| full | One graph per shape, no eager regions | No boundaries needed |
-| breakable (BCG) | Segmented directly during capture, segments separated by eager regions | Marked with `@eager_on_graph`, inserted at capture time |
-| tc_piecewise | torch.compile traces the full forward; the FX graph is split at registered points | Inputs and outputs crossing a boundary must be representable by the compiler |
-
 The intuition of BCG is simple; the engineering is not. Our first answer went
 through torch.compile, referred to as tc_piecewise in the rest of this article:
 let the compiler trace the full forward, then split the graph at registered
 points. It got the job done, but compilation time grew with model complexity,
 and it was awkward to adapt to our own custom optimized kernels. Here is that
 route in full:
+
+| Backend | Segmentation | How boundaries are placed |
+| --- | --- | --- |
+| full | One graph per shape, no eager regions | No boundaries needed |
+| breakable (BCG) | Segmented directly during capture, segments separated by eager regions | Marked with `@eager_on_graph`, inserted at capture time |
+| tc_piecewise | torch.compile traces the full forward; the FX graph is split at registered points | Inputs and outputs crossing a boundary must be representable by the compiler |
 
 <TcPiecewiseViz client:visible lang="en" />
 
