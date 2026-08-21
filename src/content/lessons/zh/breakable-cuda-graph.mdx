@@ -1,6 +1,6 @@
 ---
-title: "SGLang 开源的 CUDA Graph 进阶用法"
-description: "本文介绍我们在 SGLang 里用到的两项 CUDA Graph 进阶技术。\n1. Breakable CUDA Graph，由 SGLang 提出并率先开源，解决了传统编译器切图方案启动慢、兼容性差的问题。\n2. 在此之上把 prefill 的 full CUDA Graph 做成了可能，用 token bucket 和 zero-length sentinel 让 prefill 能作为一整张图被捕获。"
+title: "Breakable CUDA Graph：graph 构建快 5 倍，prefill 也能整图捕获"
+description: "本文介绍我们在 SGLang 里用到的两项 CUDA Graph 进阶技术，它们同时带来性能和可维护性的提升。\n1. Breakable CUDA Graph，由 SGLang 提出并率先开源，解决了传统编译器切图方案启动慢、兼容性差的问题。\n2. 在此之上，我们用 token bucket 和 zero-length sentinel 让 prefill 的 full CUDA Graph 成为可能，prefill 能作为一整张图被捕获。"
 order: 4
 tryOnSglang: "https://github.com/sgl-project/sglang"
 references:
@@ -28,29 +28,38 @@ import TcPiecewiseViz from "../../../viz/breakable-cuda-graph/TcPiecewiseViz";
 import MemReuseViz from "../../../viz/breakable-cuda-graph/MemReuseViz";
 import ResultsViz from "../../../viz/breakable-cuda-graph/ResultsViz";
 
+## 简介
+
+「把 GPU
+的性能用满」是我们团队每天在做的事，这常常意味着回头再看那些已经成为业界标准的优化方案。CUDA
+Graph 就是其中之一：它用得很广、效果也好，但传统 CUDA Graph
+确实有局限。本文讲的就是我们怎么补上这些缺口：**代码量降到 1/4**，构建 prefill
+graph 快 **3.8–5.2 倍**，prefill 本身相对 eager 最快 **1.93 倍**。
+
 ## 背景
 
 首先我们先要了解一下 CUDA Graph 的基本优化原理：一次推理并不是单个
-kernel，而是由许多 GPU 操作组成的序列。在现代 LLM serving engine 中，CPU 反复
-launch kernel 会带来明显开销。CUDA Graph 会先把一次 GPU workload
-记录下来，之后通过 replay 重放这份记录，用低得多的 launch 开销省下这部分成本。
+kernel，而是由许多 GPU 操作组成的序列。CUDA Graph 会把 GPU workload
+记录一次，之后一次性 replay 所有 kernel，省下 CPU 逐个 launch 小 kernel 的开销。
 
 但在维护 SGLang 的过程中，我们发现把 CUDA Graph
 用好远不止「全部操作录一遍」就完事了。有很多操作和 CUDA Graph
-并不兼容：attention backend 要按活的 sequence length 做 planning，LoRA、MoE、PD
-disaggregation 又各带动态逻辑。这些操作散落在 forward
-中间，只要出现一个不兼容的，一大段 forward 就用不上 CUDA Graph。
+并不兼容。这些操作散落在 forward 中间，只要出现一个不兼容的，一大段 forward
+就用不上 CUDA Graph。
 
-因此，自然而然就会想到在这些不兼容操作处把 CUDA Graph 截断。下图对比同一段
-forward 的三种执行方式：eager 模式是最原生、不做任何优化的方式，CPU 和 GPU
-依次工作；full graph 一次发射就重放整段；BCG（Breakable CUDA
-Graph）介于两者之间，大部分 kernel 在 graph 内，少数不兼容的操作在 graph 之间以
-eager 模式执行：
+因此，自然而然就会想到在这些不兼容操作前把 CUDA Graph
+截断、之后再接上。下图对比同一段 forward 的三种执行方式：
 
 <LaunchRaceViz client:visible />
 
+| Backend | 分段方式 | 边界怎么定 |
+| --- | --- | --- |
+| full | 每个 shape 捕获一张完整 graph，无 eager region | 不需要边界 |
+| breakable（BCG） | capture 过程中直接分段，segment 由 eager region 分隔 | `@eager_on_graph` 标记，capture 时插入 |
+| tc_piecewise | torch.compile 先 trace 完整 forward，FX graph 在注册的切分点拆开 | 边界上的输入输出必须能被编译器表示 |
+
 BCG 的直觉很简单，工程实现并不简单。我们最初的答案是借助
-torch.compile：先让编译器 trace 完整
+torch.compile，下文称之为 tc_piecewise：先让编译器 trace 完整
 forward，再在注册的切分点把图拆开。它能达成目标，但编译时间随模型复杂度增长，而且适配我们自己的定制优化
 kernel 很别扭。这条路线的流程如下：
 
@@ -62,13 +71,14 @@ Breakable CUDA Graph：在 capture 进行当中直接插入 eager 断点，不�
 forward。BCG 由 SGLang
 提出、命名、实现并率先开源：同样的分段执行只用四分之一的代码量（521 行对 1771
 行）；因为无需编译，构建 prefill graph 快 3.8–5.2 倍；只测 prefill，BCG 相对
-eager 快 1.70 倍。BCG 现在是 SGLang prefill 的默认方案。
+eager 快 1.70 倍。BCG 最先落在 decode 路径上（#19102），随后扩展到
+prefill（#22218），现在是 prefill 的默认方案。
 
 <ResultsViz client:visible />
 
 <TimelineViz client:visible />
 
-接下来，我们会具体讲解SGLang工程上如何实现BCG和Prefill CUDA Graph。
+接下来，我们会具体讲解 SGLang 工程上如何实现 BCG 和 Prefill CUDA Graph。
 
 ## Breakable CUDA Graph
 
@@ -91,8 +101,8 @@ function正常执行并返回新的tensor，BCG再复制到保留的buffer中。
 
 **启动更快。** 对比传统基于编译器的 piecewise
 graph，准备阶段的主要开销来自编译而不是 capture：torch.compile 占 prefill graph
-准备时间的 78–86%，并随模型复杂度增长。BCG 则完全移除了编译阶段，构建 prefill
-graph 的速度快 3.8–5.2 倍（每种配置捕获 42 个 shape，TP4，4×GB300）。
+准备时间的 78–86%，并随模型复杂度增长。BCG 把这 78–86% 的占比完全消除，构建
+prefill graph 的速度快 3.8–5.2 倍（每种配置捕获 42 个 shape，TP4，4×GB300）。
 
 **兼容范围更广。** SGLang 大量使用自定义 CUDA、Triton 和 JIT 编译
 kernel优化，它们并不是原生 PyTorch operator。为了让 torch.compile 识别这些
@@ -106,8 +116,8 @@ eager region 划大，只为给编译器一个能看懂的接口。这导致过�
 **调试更容易。** CUDA Graph 一旦捕获，replay 的时候就是个黑盒：普通 Python
 代码不会在内部执行，因此很难使用 print、assert 或逐步检查。BCG 自然保留了 eager
 region，普通 Python 代码在每次 replay 时仍能执行。SGLang 还通过
-`--debug-cuda-graph` 扩展了这一思路：这个选项会把整个 forward 包在一个 eager
-断点中，模型以 eager
+`--debug-cuda-graph` 扩展了这一思路：这个选项会把整个 decode forward 包在一个
+eager 断点中，模型以 eager
 模式执行。这形成了一个很有用的调试边界：如果问题依然存在，原因很可能在模型或
 runner 路径中；如果问题消失，则应优先怀疑 capture 本身。
 
@@ -171,7 +181,7 @@ attention；BCG 在该模型上相比 eager 快 1.60 倍。在 32 倍的 prompt
 又把更大的 prefill shape 捕进来。CUDA Graph 显存是常驻的，replay 要求中间 tensor
 的地址不变，capture 时分配下来就一直留到进程结束。所以有两个问题。
 
-1. BCG 切成多段之后，常驻显存不能跟着段数一起变多。
+1.  BCG 切成多段之后，常驻显存不能跟着段数一起变多。
 2. 常驻的 graph 显存要能顶替最坏情况下的 activation 峰值，capture
    就必须覆盖到最大的 prefill shape。
 
@@ -203,16 +213,16 @@ shape 单独分配输出 buffer。
 ### Capture 覆盖整个 chunked-prefill size
 
 捕一个 shape，等于用常驻显存换掉它的瞬时峰值，这笔交换只对真正 replay 的 shape
-成立。如果capture 停在某个 size n，更大的 prefill size (>n) 照旧回退
+成立。如果 capture 停在某个 size n，更大的 prefill size（>n）照旧回退
 eager，峰值一点没少，小 shape 的常驻显存却已经花掉了，总显存比不开 graph
 还高。所以重点永远是 capture 的上限，不是捕了多少个 shape。
 
 `chunked_prefill_size` 是单次 prefill forward 的上限，一直捕到这个 size，最大的
 prefill 也走 replay，最坏情况的 activation 峰值就被消除了。gpt-oss-120b 上从
 0.56 GB 降到 0.001 GB，GLM-5.2 从 1.55 GB 降到 0.35 GB，总显存分别比不开 graph
-的 baseline 低 0.51 GB 和 1.10
-GB。如图所示，虽然从整体几百GB的显存占用来说，这个数字不算大，但是它意味着CUDA
-Graph带来的是节省而非成本。另一个好处是显存变得可预测：原来跟着 workload
+的 baseline 低 0.51 GB 和 1.10 GB。如图所示，虽然从整体几百 GB
+的显存占用来说，这个数字不算大，但是它意味着 CUDA Graph
+带来的是节省而非成本。另一个好处是显存变得可预测：原来跟着 workload
 波动的瞬时峰值，变成 capture 时定下的固定分配，engine 可以提前算进去，不用再为大
 prefill 留 headroom：
 

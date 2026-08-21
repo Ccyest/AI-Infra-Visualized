@@ -1,6 +1,6 @@
 ---
-title: "Advanced CUDA Graph Techniques in SGLang"
-description: "In this article, we introduce two advanced CUDA Graph techniques we use in SGLang.\n1. Breakable CUDA Graph, proposed and first open-sourced in SGLang, fixing the slow startup and poor compatibility of traditional compiler-based graph splitting.\n2. Further, we make the full prefill CUDA Graph possible by using token buckets and zero-length sentinels to make prefill capturable as a single graph."
+title: "Breakable CUDA Graph: 5× faster graph builds and full-graph prefill"
+description: "In this article, we introduce two advanced CUDA Graph techniques we use in SGLang, which bring better performance and maintainability to the engine.\n1. Breakable CUDA Graph, proposed and first open-sourced in SGLang, fixes the slow startup and poor compatibility of traditional compiler-based graph splitting.\n2. Further, we make the full prefill CUDA Graph possible by using token buckets and zero-length sentinels to make prefill capturable as a single graph."
 order: 4
 tryOnSglang: "https://github.com/sgl-project/sglang"
 references:
@@ -28,35 +28,45 @@ import TcPiecewiseViz from "../../../viz/breakable-cuda-graph/TcPiecewiseViz";
 import MemReuseViz from "../../../viz/breakable-cuda-graph/MemReuseViz";
 import ResultsViz from "../../../viz/breakable-cuda-graph/ResultsViz";
 
+## introduction
+
+"Getting the most out of the GPU" is what our team works on day to day, and that
+often means going back to optimizations that are already standard practice. CUDA
+Graph is one of them. It is widely used and it works well, but traditional CUDA
+Graph does have limits. This post is about how we closed the gaps in traditional
+CUDA Graph: **lines of code down to 1/4**, prefill graphs that build
+**3.8–5.2×** faster, and prefill itself up to **1.93×** over eager.
+
 ## Background
 
 To start, the basic idea behind CUDA Graph: an inference step is not a single
-kernel but a sequence of many GPU operations. In a modern LLM serving engine,
-launching those kernels one by one from the CPU adds noticeable overhead. CUDA
-Graph records the GPU workload once and then replays the recording, cutting that
-cost with much lower launch overhead.
+kernel but a sequence of many GPU operations. CUDA Graph records the GPU
+workload once and then replays all the kernels at once, which reduces the CPU
+overhead of launching small kernels one by one.
 
 While maintaining SGLang, though, we found that using CUDA Graph well takes much
 more than recording every operation once. Plenty of operations are not
-graph-compatible: attention backends plan from live sequence lengths, and LoRA,
-MoE, and PD disaggregation each carry dynamic logic. These operations sit in the
-middle of the forward, and a single incompatible one is enough to keep a large
-stretch of it off CUDA Graph.
+graph-compatible. These operations sit in the middle of the forward, and a
+single incompatible one is enough to keep a large stretch of it off CUDA Graph.
 
-The natural idea, then, is to cut the CUDA Graph at those incompatible
-operations. The diagram below compares three ways of executing the same forward:
-eager mode is the most native way, with no optimization, where the CPU and GPU
-work in sequence; a full graph replays the whole span off a single launch; BCG
-(Breakable CUDA Graph) sits in between, with most kernels inside graphs and a
-few incompatible operations running eagerly between them:
+The natural idea, then, is to cut the CUDA Graph before those incompatible
+operations and resume afterward. The diagram below compares three ways of
+executing the same forward:
 
 <LaunchRaceViz client:visible lang="en" />
 
+| Backend | Segmentation | How boundaries are placed |
+| --- | --- | --- |
+| full | One graph per shape, no eager regions | No boundaries needed |
+| breakable (BCG) | Segmented directly during capture, segments separated by eager regions | Marked with `@eager_on_graph`, inserted at capture time |
+| tc_piecewise | torch.compile traces the full forward; the FX graph is split at registered points | Inputs and outputs crossing a boundary must be representable by the compiler |
+
 The intuition of BCG is simple; the engineering is not. Our first answer went
-through torch.compile: let the compiler trace the full forward, then split the
-graph at registered points. It got the job done, but compilation time grew with
-model complexity, and it was awkward to adapt to our own custom optimized
-kernels. Here is that route in full:
+through torch.compile, referred to as tc_piecewise in the rest of this article:
+let the compiler trace the full forward, then split the graph at registered
+points. It got the job done, but compilation time grew with model complexity,
+and it was awkward to adapt to our own custom optimized kernels. Here is that
+route in full:
 
 <TcPiecewiseViz client:visible lang="en" />
 
@@ -67,7 +77,8 @@ compiler needed to understand the forward. BCG was proposed, named, implemented,
 and first open-sourced in SGLang. It reaches the same segmented execution in
 roughly a quarter of the code (521 versus 1,771 lines); it builds prefill graphs
 3.8–5.2× faster because no compilation is involved; and measured on prefill
-alone it runs 1.70× over eager. BCG is now SGLang's default for prefill.
+alone it runs 1.70× over eager. BCG first landed on the decode path (#19102) and
+was later extended to prefill (#22218), where it is now the default.
 
 <ResultsViz client:visible lang="en" />
 
@@ -100,9 +111,8 @@ capture and two replays:
 **Faster startup.** Compared with the traditional compiler-based piecewise
 graph, setup is dominated by compilation rather than capture: torch.compile
 accounts for 78–86% of the time spent preparing prefill graphs, and it grows
-with model complexity. BCG removes the compilation phase entirely and builds
-prefill graphs 3.8–5.2× faster (42 captured shapes per configuration, TP4,
-4×GB300).
+with model complexity. BCG eliminates that 78–86% share entirely: prefill graphs
+build 3.8–5.2× faster (42 captured shapes per configuration, TP4, 4×GB300).
 
 **Broader compatibility.** SGLang relies heavily on custom CUDA, Triton, and
 JIT-compiled kernels, which are not native PyTorch operators. Making them
@@ -121,10 +131,10 @@ the old approach.
 ordinary Python does not execute inside it, which makes prints, assertions, and
 step-by-step inspection difficult. BCG naturally keeps eager regions where
 ordinary Python still runs on every replay. SGLang extends the idea with
-`--debug-cuda-graph`, which wraps the whole forward in a single eager break so
-the model executes eagerly. That gives a useful debugging boundary: if the
-problem persists, it most likely lives in the model or the runner path; if it
-disappears, capture itself is the first suspect.
+`--debug-cuda-graph`, which wraps the whole decode forward in a single eager
+break so the model executes eagerly. That gives a useful debugging boundary: if
+the problem persists, it most likely lives in the model or ouside the graph; if
+it disappears, capture itself is the first suspect.
 
 > BCG has also been adopted by SGLang's diffusion stack (#27436): on a single
 > B200, Qwen-Image at 512×512 drops from 6.48 s to 2.45 s end-to-end, and Z-Image

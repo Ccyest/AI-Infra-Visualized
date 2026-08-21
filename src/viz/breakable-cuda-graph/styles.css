@@ -511,6 +511,53 @@
   color: var(--muted);
 }
 
+/* ResultsViz:冷启动构建时间的堆叠条 */
+
+.bcg-build-legend {
+  float: right;
+  color: var(--muted);
+}
+
+.bcg-build-legend i + i,
+.bcg-build-legend :nth-child(3) {
+  margin-left: 0.7rem;
+}
+
+.bcg-build-group {
+  display: grid;
+  gap: 0.3rem;
+}
+
+.bcg-build-model {
+  font-size: var(--bcg-font-xs);
+  color: var(--ink-2);
+  margin-top: 0.3rem;
+}
+
+.bcg-build-model small {
+  color: var(--muted);
+}
+
+.bcg-build-bar {
+  display: flex;
+  height: 14px;
+  border-radius: 3px;
+  overflow: hidden;
+  min-width: 6px;
+}
+
+.bcg-build-bar i {
+  display: block;
+  height: 100%;
+}
+
+.bcg-build-slower {
+  display: block;
+  font-size: var(--bcg-font-xs);
+  color: var(--muted);
+  margin-top: 2px;
+}
+
 /* ---------------- MemoryCeilingViz ---------------- */
 
 .bcg-mem-models {

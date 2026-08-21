@@ -80,17 +80,6 @@ export const TC = {
   },
   stage3: { zh: "在切分点拆开", en: "Split at the registered points" },
   stage4: { zh: "逐 piece 编译 + capture", en: "Compile + capture each piece" },
-  timebarLabel: { zh: "构建时间构成", en: "Build-time breakdown" },
-  timebarCompile: { zh: "编译", en: "compile" },
-  timebarCapture: { zh: "capture", en: "capture" },
-  timebarNumbers: {
-    zh: "例：235B MoE 90 s · GLM-5.2 158 s",
-    en: "e.g. 90 s on a 235B MoE · 158 s on GLM-5.2",
-  },
-  replayNote: {
-    zh: "replay 每次先付 Dynamo guard check 与 dispatch",
-    en: "every replay first pays Dynamo guard checks and dispatch",
-  },
 } satisfies Record<string, Localized>;
 
 /* ---------------- ResultsViz ---------------- */
@@ -98,15 +87,20 @@ export const TC = {
 export const RESULTS = {
   title: { zh: "成果图示", en: "Results diagram" },
   codeHead: { zh: "分段执行的实现代码量", en: "Code for segmented execution" },
-  speedHead: { zh: "prefill 加速比（对 eager）", en: "Prefill speedup over eager" },
   lineUnit: { zh: " 行", en: " lines" },
-  buildNote: {
-    zh: "无需编译，构建 prefill graph 快 3.8–5.2×",
-    en: "no compilation: prefill graphs build 3.8–5.2× faster",
+  buildHead: {
+    zh: "prefill graph 冷启动构建时间（秒）",
+    en: "Cold-start prefill graph build time (s)",
   },
-  benchNote: {
-    zh: "gpt-oss-120b · TP4 · 4×GB300",
-    en: "gpt-oss-120b · TP4 · 4×GB300",
+  condNote: {
+    zh: "TP4 · 4×GB300 · 每配置 42 个 shape · 不含权重加载与 kernel JIT",
+    en: "TP4 · 4×GB300 · 42 shapes per configuration · weight loading and kernel JIT excluded",
+  },
+  legendCompile: { zh: "编译", en: "compile" },
+  legendCapture: { zh: "capture", en: "capture" },
+  buildFootnote: {
+    zh: "BCG 去掉的是编译阶段；单看 capture，BCG 反而比 tc_piecewise 的 capture 略慢",
+    en: "BCG removes the compiler phase; its graph capture alone is slightly slower than tc_piecewise capture",
   },
 } satisfies Record<string, Localized>;
 

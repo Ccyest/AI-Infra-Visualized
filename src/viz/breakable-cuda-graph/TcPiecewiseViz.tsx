@@ -3,7 +3,7 @@ import { TC } from "./strings";
 import "./styles.css";
 
 /* BCG 之前的编译器路线:trace 整个 forward → FX graph 切分 → 逐 piece 编译再 capture。
-   编译占准备时间 78–86%,replay 还要每次过 Dynamo guard/dispatch。 */
+   构建时间的量化对比在 ResultsViz 里。 */
 
 const OPS = ["A1", "A2", "A3", "E", "B1", "B2", "B3"];
 
@@ -51,22 +51,6 @@ export default function TcPiecewiseViz({ lang = "zh" }: { lang?: Locale }) {
         ))}
       </div>
 
-      <div className="bcg-tc-timebar">
-        <span>{TC.timebarLabel[lang]}</span>
-        <span className="bcg-tc-bar" aria-hidden="true">
-          <i className="compile" style={{ width: "82%" }}>
-            {TC.timebarCompile[lang]} 78–86%
-          </i>
-          <i className="capture" style={{ width: "18%" }}>
-            {TC.timebarCapture[lang]}
-          </i>
-        </span>
-        <small>{TC.timebarNumbers[lang]}</small>
-      </div>
-
-      <div className="viz-footer">
-        <span className="bcg-pad-note">{TC.replayNote[lang]}</span>
-      </div>
     </figure>
   );
 }
