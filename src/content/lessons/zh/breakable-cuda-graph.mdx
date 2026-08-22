@@ -1,6 +1,6 @@
 ---
 title: "Breakable CUDA Graph：graph 构建快 5 倍，prefill 也能整图捕获"
-description: "传统 CUDA Graph 已经是业界标准，但在生产环境里有它的局限。为了突破这些局限，我们做了两项 CUDA Graph 进阶技术：代码量降到 1/4，构建 prefill graph 快 3.8–5.2 倍，prefill 本身相对 eager 最快 1.93 倍。\n1. Breakable CUDA Graph，由 SGLang 提出并率先开源，解决了传统编译器切图方案启动慢、兼容性差的问题。\n2. 在此之上，我们用 token bucket 和 zero-length sentinel 让 prefill 的 full CUDA Graph 成为可能，prefill 能作为一整张图被捕获。"
+description: "传统 CUDA Graph 已经是业界标准，但在生产环境里有它的局限。为了突破这些局限，我们做了两项 CUDA Graph 进阶技术：**代码量降到 1/4**，构建 prefill graph 快 **3.8–5.2 倍**，prefill 本身相对 eager 最快 **1.93 倍**。\n1. Breakable CUDA Graph，由 SGLang 提出并率先开源，解决了传统编译器切图方案启动慢、兼容性差的问题。\n2. 在此之上，我们用 token bucket 和 zero-length sentinel 让 prefill 的 full CUDA Graph 成为可能，prefill 能作为一整张图被捕获。"
 order: 4
 tryOnSglang: "https://github.com/sgl-project/sglang"
 references:

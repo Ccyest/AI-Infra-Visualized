@@ -17,6 +17,13 @@ const { entry, locale } = Astro.props;
 const { Content } = await render(entry);
 const { title, description, concepts, references, tryOnSglang } = entry.data;
 
+// 摘要走 frontmatter,不经过 markdown 渲染。这里只认 **加粗** 一种标记:
+// 先转义 HTML,再把 ** ** 换成 <strong>,给 set:html 用。meta 标签里剥掉星号。
+const escapeHtml = (t: string) =>
+  t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+const descHtml = escapeHtml(description).replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+const descPlain = description.replace(/\*\*(.+?)\*\*/g, "$1");
+
 const all = await publishedLessons(locale);
 const idx = all.findIndex((l) => l.entry.id === entry.id);
 const prev = idx > 0 ? all[idx - 1] : null;
@@ -37,7 +44,7 @@ const altPath = twin
 
 <Base
   title={`${title} · ${SITE.title}`}
-  description={description}
+  description={descPlain}
   locale={locale}
   altPath={altPath}
   altIsTranslation={Boolean(twin)}
@@ -45,7 +52,7 @@ const altPath = twin
   <article>
     <header class="lesson-header reveal">
       <h1>{title}</h1>
-      <p class="lesson-desc">{description}</p>
+      <p class="lesson-desc" set:html={descHtml} />
       {
         concepts.length > 0 && (
           <div class="concept-chips">
