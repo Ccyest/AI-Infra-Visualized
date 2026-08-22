@@ -274,7 +274,7 @@ function ReplayInner({
         {toks.map((tok, idx) => {
           const st = chipState(req, t, idx + 1);
           return (
-            <span key={idx} className={`urc-chip ${st.cls}${st.cur ? " cur" : ""}`}>
+            <span key={idx} className={`urc-rt-chip ${st.cls}${st.cur ? " cur" : ""}`}>
               {tok}
             </span>
           );

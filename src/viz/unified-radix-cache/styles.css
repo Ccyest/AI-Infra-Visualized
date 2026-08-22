@@ -897,7 +897,7 @@
   margin-right: 0.25rem;
 }
 
-.urc-chip {
+.urc-rt-chip {
   width: 1.55rem;
   height: 1.55rem;
   display: inline-flex;
@@ -916,33 +916,33 @@
     opacity 0.25s;
 }
 
-.urc-chip.pend {
+.urc-rt-chip.pend {
   opacity: 0.55;
 }
 
-.urc-chip.walk {
+.urc-rt-chip.walk {
   border-color: var(--series-1);
   color: var(--ink);
 }
 
-.urc-chip.reuse {
+.urc-rt-chip.reuse {
   background: var(--series-3);
   border-color: var(--series-3);
   color: var(--surface);
 }
 
-.urc-chip.done {
+.urc-rt-chip.done {
   background: color-mix(in srgb, var(--muted) 28%, transparent);
   border-color: transparent;
   color: var(--ink);
 }
 
-.urc-chip.miss {
+.urc-rt-chip.miss {
   border-color: var(--series-8);
   color: var(--series-8);
 }
 
-.urc-chip.cur {
+.urc-rt-chip.cur {
   box-shadow: 0 0 0 2px var(--accent);
 }
 
