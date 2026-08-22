@@ -288,3 +288,19 @@ export const RUST_BENCH = {
     en: "The residual (total TTFT minus GPU prefill) mixes tree bookkeeping, scheduling, sampling, detokenization, and other uninstrumented work; it is not a direct CPU-time measurement",
   },
 } satisfies Record<string, Localized>;
+
+/* ---------------- TreeAnatomyViz ---------------- */
+
+export const TREE = {
+  title: { zh: "统一 radix 树解剖图", en: "Unified radix tree anatomy" },
+  subtitle: {
+    zh: "槽位:实心=有 payload;斜纹=tombstone(节点还在,payload 没了);虚线=从未存过(比如没留 checkpoint)",
+    en: "Slots: solid = payload present; hatched = tombstone (node stays, payload gone); dashed = never stored (e.g. no checkpoint)",
+  },
+  reqD: { zh: "请求 D 的路径", en: "request D's path" },
+  reqE: { zh: "请求 E 的路径", en: "request E's path" },
+  shared: { zh: "D、E 共享 n1、n2 的身份", en: "D and E share the identity of n1 and n2" },
+  legendF: { zh: "F = FULL KV", en: "F = FULL KV" },
+  legendS: { zh: "S = SWA 窗口槽", en: "S = SWA window slot" },
+  legendM: { zh: "M = MAMBA checkpoint", en: "M = MAMBA checkpoint" },
+} satisfies Record<string, Localized>;

@@ -873,3 +873,12 @@
   color: var(--axis);
   line-height: 1;
 }
+
+/* ---------------- TreeAnatomyViz ---------------- */
+
+.urc-tree svg {
+  width: 100%;
+  height: auto;
+  display: block;
+  margin: 0.4rem 0 0.2rem;
+}

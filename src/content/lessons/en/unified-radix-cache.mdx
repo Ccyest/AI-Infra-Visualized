@@ -1,6 +1,6 @@
 ---
-title: "Unified Radix Cache in SGLang: one tree for hybrid models, 98% cache hits across memory tiers"
-description: "Hybrid models mix full attention, sliding window attention, and recurrent layers, so one token prefix no longer has a single reusable boundary — and every combination used to become its own cache class. SGLang's Unified Radix Cache keeps one token-keyed tree and lets components vote out a safe boundary: multi-turn hit rates stay near **98%** with a Mooncake L3 tier, session-aware eviction cuts TTFT by up to **16.6%** on SWE-bench, and an experimental Rust tree core lowers SWA TTFT by up to **42%**.\n1. One radix topology replaces the cache class matrix: FULL, SWA, and MAMBA components enforce their own reuse, locking, and eviction semantics.\n2. HiCache tiers, session-aware eviction, and the Rust tree core all build on the same shared prefix identity."
+title: "Unified Radix Cache in SGLang: one tree for every hybrid model, up to 16.6% lower TTFT"
+description: "SGLang's Unified Radix Cache runs prefix caching for hybrid models on one radix tree: full attention KV, sliding window KV, and recurrent checkpoints attach to a shared token topology as components, and a reuse boundary is accepted only when every component votes yes. Multi-turn hit rates stay near **98%** with a Mooncake L3 tier, session-aware eviction cuts TTFT by up to **16.6%** on SWE-bench, and the experimental Rust tree core lowers SWA TTFT by up to **42%**.\n1. One tree replaces the per-combination cache classes: each component enforces its own reuse, locking, and eviction semantics.\n2. HiCache tiers, session-aware eviction, and the Rust tree core all build on the same shared prefix identity."
 order: 5
 concepts: []
 tryOnSglang: "https://github.com/sgl-project/sglang"
@@ -19,6 +19,7 @@ references:
 
 import ReuseRuleViz from "../../../viz/unified-radix-cache/ReuseRuleViz";
 import ComponentMatrixViz from "../../../viz/unified-radix-cache/ComponentMatrixViz";
+import TreeAnatomyViz from "../../../viz/unified-radix-cache/TreeAnatomyViz";
 import BoundaryVoteViz from "../../../viz/unified-radix-cache/BoundaryVoteViz";
 import TierFlowViz from "../../../viz/unified-radix-cache/TierFlowViz";
 import MultiTurnBenchViz from "../../../viz/unified-radix-cache/MultiTurnBenchViz";
@@ -55,28 +56,43 @@ insertion, locking, and eviction logic across cache variants.
 
 <ComponentMatrixViz client:visible lang="en" />
 
-## One tree, composable components
+## Unified Radix Cache
 
-Unified Radix Cache separates shared prefix identity from component-specific
-reuse validity. A single token-keyed radix topology gives every prefix one
-canonical coordinate, and each reuse rule attaches to it as a TreeComponent:
-UnifiedTreeCore runs the mechanics every tree needs — matching, splitting,
-insertion, locking, eviction — UnifiedRadixCache coordinates pool operations,
-and a component defines only the semantics that vary. FULL is always present;
-SWA and MAMBA join as the model requires. A new model family reuses an
-existing composition, and a reuse rule the current set cannot express becomes
-a new component, not another tree implementation.
+### Design and mechanism
 
-Concretely, FULL provides path reuse and protects the matched ancestor path.
-SWA provides window reuse: it requires a contiguous trailing window, while
-older window slots may be empty tombstones whose radix nodes remain in the
-shared topology. MAMBA provides checkpoint reuse: one recurrent checkpoint at
-the reusable frontier, copied into a private request slot before any mutation.
-Why that copy is mandatory — a recurrent state overwrites itself in place — is
-covered in the
-[Kimi K3 lesson](https://yichizhang.dev/AI-Infra-Visualized/en/lessons/kimi-k3-day0-support/).
+The tree itself is deliberately dumb about reuse. Its topology is keyed by
+token sequences alone, so it gives every prefix exactly one canonical
+coordinate — and that is all it does. Each reuse rule attaches to the nodes as
+a component payload: FULL KV sits on every node of a cached path, SWA window
+slots exist only near the tail and may be empty tombstones on older nodes, and
+MAMBA checkpoints exist only where a state was actually stored. An empty slot
+is a normal condition, not an error, and two requests that share a prefix
+share the same nodes regardless of which components their model runs.
 
-## Finding a safe reuse boundary
+<TreeAnatomyViz client:visible lang="en" />
+
+This is how one tree serves three reuse rules: the rules live in the
+components, not in the topology. The tree never answers "can this be reused" —
+it only provides the coordinate and the mounting points, and the reuse
+question is answered per component at match time, by the vote in the next
+section. That is also why a new model family costs no new tree: DeepSeek-V4
+mounts FULL and SWA payloads, Kimi-K3 mounts FULL and MAMBA, Inkling mounts
+all three, on identical topology.
+
+In code, UnifiedTreeCore runs the mechanics every tree needs — matching,
+splitting, insertion, locking, eviction — UnifiedRadixCache coordinates pool
+operations, and a TreeComponent defines only the semantics that vary. FULL is
+always present and protects the matched ancestor path. SWA requires a
+contiguous trailing window. MAMBA needs one more rule: a recurrent state
+overwrites itself in place as it reads tokens, so a state stored in the tree
+can never be handed to a request directly — two requests advancing one shared
+live state would corrupt it for each other. The tree therefore stores
+read-only checkpoints, and a hit first copies the checkpoint into the
+request's private slot; only the copy is mutated. The
+[Kimi K3 lesson](https://yichizhang.dev/AI-Infra-Visualized/en/lessons/kimi-k3-day0-support/)
+steps through this copy-on-write for KDA state in detail.
+
+### The safe reuse boundary
 
 During matching, the core walks the canonical FULL path and treats every
 visited node as a candidate boundary. A FULL match alone is not sufficient:
@@ -89,10 +105,10 @@ trailing window exists.
 <BoundaryVoteViz client:visible lang="en" />
 
 After traversal the core builds a MatchResult, and component finalizers
-prepare the selected values for reuse — including the copy that turns a shared
-MAMBA checkpoint into one request's private state.
+prepare the selected values for reuse — including the checkpoint copy
+described above.
 
-## Component hooks across the tree lifecycle
+### Lifecycle hooks
 
 The same component contract covers the rest of the tree lifecycle:
 
@@ -111,7 +127,7 @@ unnecessary. Because component semantics stay attached to one prefix identity,
 HiCache can extend payloads across memory tiers without introducing another
 tree.
 
-## Native HiCache across memory tiers
+## HiCache across memory tiers
 
 Components decide what can be reused; HiCache decides where the reusable
 payload lives. Unified Radix Cache carries the same component identity across
@@ -132,7 +148,7 @@ two following SWA.
 
 <TierFlowViz client:visible lang="en" />
 
-## Multi-turn benchmark results
+### Multi-turn benchmark
 
 Multi-turn workloads grow a reusable conversational prefix every round; the
 question is whether lower tiers preserve it after GPU capacity runs out. The
@@ -170,6 +186,8 @@ released references.
 
 <SessionEvictViz client:visible lang="en" />
 
+### SWE-bench results
+
 On SWE-bench agent trajectories with HiCache, the session-aware configuration
 lowers TTFT by 11.0% and 2.9% on DeepSeek-V4-Pro (batch 128 and 256) and by
 13.5% and 16.6% on Qwen3.5-397B-A17B (batch 32 and 64), with device hit ratios
@@ -180,7 +198,7 @@ an isolated ablation of session awareness.
 
 <SweBenchViz client:visible lang="en" />
 
-## Toward a Rust tree core
+## Rust tree core
 
 As shared prefixes grow, tree traversal, lock bookkeeping, LRU updates, and
 eviction scans all sit on the scheduler's critical path. Separating the tree

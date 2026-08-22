@@ -1,6 +1,6 @@
 ---
-title: "SGLang 里的 Unified Radix Cache：一棵树覆盖所有混合模型，跨层缓存命中率 98%"
-description: "混合模型把 full attention、滑动窗口注意力和递归层混进同一个模型，一个 token 前缀不再有唯一的复用边界——过去每种组合都得写一个专门缓存类。SGLang 的 Unified Radix Cache 只留一棵 token 树，由组件投票出安全边界：多轮对话在 Mooncake L3 层下命中率保持 **98%**，会话感知驱逐在 SWE-bench 上把 TTFT 最多降 **16.6%**，实验性 Rust 树核在滑窗负载上再降 **42%**。\n1. 一个 radix 拓扑替代缓存类矩阵：FULL、SWA、MAMBA 组件各管各的复用、加锁与驱逐语义。\n2. HiCache 分层、会话感知驱逐、Rust 树核都建立在同一个前缀身份上。"
+title: "SGLang 里的 Unified Radix Cache：一棵树支持所有混合模型，TTFT 最多降 16.6%"
+description: "SGLang 的 Unified Radix Cache 把混合模型的前缀缓存收回一棵 radix 树：full attention KV、滑动窗口 KV、递归 checkpoint 作为组件挂在共享的 token 拓扑上，复用边界只有在每个组件都投票同意时才成立。多轮对话在 Mooncake L3 层下命中率保持 **98%**，会话感知驱逐在 SWE-bench 上把 TTFT 最多降 **16.6%**，实验性 Rust 树核在滑窗负载上再降 **42%**。\n1. 一棵树替代每种组合一个的专门缓存类：各组件各管各的复用、加锁与驱逐语义。\n2. HiCache 分层、会话感知驱逐、Rust 树核都建立在同一个前缀身份上。"
 order: 5
 concepts: []
 tryOnSglang: "https://github.com/sgl-project/sglang"
@@ -19,6 +19,7 @@ references:
 
 import ReuseRuleViz from "../../../viz/unified-radix-cache/ReuseRuleViz";
 import ComponentMatrixViz from "../../../viz/unified-radix-cache/ComponentMatrixViz";
+import TreeAnatomyViz from "../../../viz/unified-radix-cache/TreeAnatomyViz";
 import BoundaryVoteViz from "../../../viz/unified-radix-cache/BoundaryVoteViz";
 import TierFlowViz from "../../../viz/unified-radix-cache/TierFlowViz";
 import MultiTurnBenchViz from "../../../viz/unified-radix-cache/MultiTurnBenchViz";
@@ -39,21 +40,27 @@ Prefix caching 在请求共享同一段 token 前缀时复用 KV。在 full atte
 
 <ComponentMatrixViz client:visible />
 
-## 一棵树，可组合的组件
+## Unified Radix Cache
 
-Unified Radix Cache 把「共享的前缀身份」和「各组件的复用有效性」拆开。一个以 token 为键的 radix 拓扑给每段前缀一个规范坐标，每种复用规则作为 TreeComponent 挂上来：UnifiedTreeCore 负责所有树都需要的公共机制——匹配、分裂、插入、加锁、驱逐——UnifiedRadixCache 负责池操作的编排，组件只定义真正因规则而异的语义。FULL 永远在场；SWA 和 MAMBA 按模型需要加入。新模型家族直接复用现有组合；现有组件表达不了的新复用规则，加一个组件即可，而不是再写一棵树。
+### 设计与机制
 
-具体来说：FULL 提供路径复用，保护匹配到的祖先路径。SWA 提供窗口复用：它要求一段连续的尾部窗口，更早的窗口槽位可以是空 tombstone，对应的 radix 节点仍留在共享拓扑里。MAMBA 提供 checkpoint 复用：在可复用前沿留一个递归 checkpoint，改动之前先拷贝进请求私有的槽位。为什么这次拷贝必不可少——递归状态会就地覆写自己——见 [Kimi K3 那一课](https://yichizhang.dev/AI-Infra-Visualized/lessons/kimi-k3-day0-support/)。
+这棵树在「能不能复用」这件事上是故意装傻的。它的拓扑只由 token 序列决定，给每段前缀一个唯一的规范坐标——它做的就只有这件事。每种复用规则以组件 payload 的形式挂到节点上：FULL KV 铺满缓存路径的每个节点；SWA 窗口槽只存在于尾部附近，更早的节点上可以是空 tombstone；MAMBA checkpoint 只出现在真正存过状态的节点上。空槽位是正常状态而不是错误，共享前缀的两个请求共享同样的节点，与它们的模型跑哪几种组件无关。
 
-## 找到安全的复用边界
+<TreeAnatomyViz client:visible />
+
+一棵树之所以能同时伺候三种复用规则，就是因为规则活在组件里、不活在拓扑里。树从不回答「这段能不能复用」——它只提供坐标和挂载点，复用与否由匹配时各组件逐一回答，也就是下一节的投票。这也是新模型不需要新树的原因：DeepSeek-V4 挂 FULL 和 SWA 的 payload，Kimi-K3 挂 FULL 和 MAMBA，Inkling 三种都挂，拓扑一模一样。
+
+落到代码上，UnifiedTreeCore 负责所有树都需要的公共机制——匹配、分裂、插入、加锁、驱逐——UnifiedRadixCache 负责池操作的编排，TreeComponent 只定义真正因规则而异的语义。FULL 永远在场，保护匹配到的祖先路径。SWA 要求一段连续的尾部窗口。MAMBA 还多一条规则：递归状态每读一个 token 就地覆写自己，树里存的状态不能直接交给请求用——两个请求推进同一份活状态会互相写坏。所以树里只存只读 checkpoint，命中后先把 checkpoint 拷贝进请求私有槽位，改动只发生在拷贝上。这套 copy-on-write 在 KDA 状态上的逐步走查见 [Kimi K3 那一课](https://yichizhang.dev/AI-Infra-Visualized/lessons/kimi-k3-day0-support/)。
+
+### 安全复用边界
 
 匹配时，core 沿 FULL 的规范路径走查，每个经过的节点都是候选边界。仅有 FULL 匹配并不够：每个在场组件都会创建一个 validator，只有所有 validator 都接受，边界才推进。某个节点被否决不会终止走查，因为组件可能接受更深的节点——SWA 可以否决窗口槽位已是 tombstone 的节点，又接受更深处、尾部窗口完整的那个。
 
 <BoundaryVoteViz client:visible />
 
-走查结束后 core 构建 MatchResult，各组件的 finalizer 把选中的值准备好供复用——包括把共享的 MAMBA checkpoint 拷贝成单个请求私有状态的那一步。
+走查结束后 core 构建 MatchResult，各组件的 finalizer 把选中的值准备好供复用——包括上面说的那次 checkpoint 拷贝。
 
-## 组件钩子贯穿树的生命周期
+### 生命周期钩子
 
 同一套组件契约覆盖树生命周期的其余部分：
 
@@ -67,7 +74,7 @@ Unified Radix Cache 把「共享的前缀身份」和「各组件的复用有效
 
 移除某个组件的 payload 不一定移除 radix 节点：剩下的拓扑还可以锚定其他组件，空槽位以 tombstone 的形式留着，直到 payload 恢复或节点不再需要。正因为组件语义始终挂在同一个前缀身份上，HiCache 才能把 payload 扩展到多级存储，而不用再引入一棵树。
 
-## 原生跨层的 HiCache
+## 跨层 HiCache
 
 组件决定「什么能复用」，HiCache 决定「可复用的 payload 放在哪」。Unified Radix Cache 让同一个组件身份贯穿 GPU L1、Host L2 和外部 L3 层，数据在层间搬运不改变前缀身份、也不改变复用规则。组件描述需要的传输，HybridCacheController 执行物理 I/O。
 
@@ -75,7 +82,7 @@ Unified Radix Cache 把「共享的前缀身份」和「各组件的复用有效
 
 <TierFlowViz client:visible />
 
-## 多轮对话基准结果
+### 多轮对话基准
 
 多轮负载每一轮都在增长可复用的对话前缀；问题是 GPU 容量耗尽后，更低的层能不能把前缀留住。博客在两个混合模型上比较三种配置：仅 GPU L1、L1 加 Host L2、以及再加一个 500 GiB Mooncake Store 作为外部 L3。
 
@@ -91,11 +98,13 @@ LRU 记得哪些条目最近被访问过，但不知道哪些前缀属于下一�
 
 <SessionEvictViz client:visible />
 
+### SWE-bench 结果
+
 在启用 HiCache 的 SWE-bench agent 轨迹上，会话感知配置把 DeepSeek-V4-Pro 的 TTFT 降低 11.0% 和 2.9%（batch 128 与 256），把 Qwen3.5-397B-A17B 降低 13.5% 和 16.6%（batch 32 与 64）；device 命中率最多从约 42% 升到 51%、从 5% 升到 34%。基线是普通 HiRadixCache 加 LRU，对照组同时启用 Unified Radix Cache 和 `--enable-session-radix-cache`，所以这些差值不是会话感知的单一变量消融。
 
 <SweBenchViz client:visible />
 
-## 走向 Rust 树核
+## Rust 树核
 
 随着共享前缀变长，树的走查、锁记账、LRU 更新和驱逐扫描都压在 scheduler 的关键路径上。把树状态机从缓存编排里拆出来之后，树核自然成了原生实现的目标。实验性 Rust 原型是 opt-in、仅 L1 的：Rust 拥有 radix 拓扑、每组件的锁记账、侵入式 LRU 链表和驱逐走查，Python 仍是 request 到 token 映射和物理 KV 分配的唯一所有者。树变更之后，Rust 返回 deferred actions，由 Python 应用到池上。
 
