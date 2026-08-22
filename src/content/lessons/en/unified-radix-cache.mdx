@@ -1,0 +1,234 @@
+---
+title: "Unified Radix Cache in SGLang: one tree for hybrid models, 98% cache hits across memory tiers"
+description: "Hybrid models mix full attention, sliding window attention, and recurrent layers, so one token prefix no longer has a single reusable boundary — and every combination used to become its own cache class. SGLang's Unified Radix Cache keeps one token-keyed tree and lets components vote out a safe boundary: multi-turn hit rates stay near **98%** with a Mooncake L3 tier, session-aware eviction cuts TTFT by up to **16.6%** on SWE-bench, and an experimental Rust tree core lowers SWA TTFT by up to **42%**.\n1. One radix topology replaces the cache class matrix: FULL, SWA, and MAMBA components enforce their own reuse, locking, and eviction semantics.\n2. HiCache tiers, session-aware eviction, and the Rust tree core all build on the same shared prefix identity."
+order: 5
+concepts: []
+tryOnSglang: "https://github.com/sgl-project/sglang"
+references:
+  - label: "LMSYS Blog: Unified Radix Cache: One Tree for Hybrid Model Prefix Caching"
+    url: "https://www.lmsys.org/blog/2026-08-11-unified-radix-cache/"
+  - label: "sglang#32710: Rust Tree Core with Full/SWA/Mamba Components"
+    url: "https://github.com/sgl-project/sglang/pull/32710"
+  - label: "sglang#20415: [Roadmap] Unified Hybrid Radix Cache Refactor"
+    url: "https://github.com/sgl-project/sglang/issues/20415"
+  - label: "sglang#21846: [Roadmap] SGLang Distributed KVCache System For Agentic Workload"
+    url: "https://github.com/sgl-project/sglang/issues/21846"
+  - label: "Mooncake: distributed KV cache store"
+    url: "https://github.com/kvcache-ai/Mooncake"
+---
+
+import ReuseRuleViz from "../../../viz/unified-radix-cache/ReuseRuleViz";
+import ComponentMatrixViz from "../../../viz/unified-radix-cache/ComponentMatrixViz";
+import BoundaryVoteViz from "../../../viz/unified-radix-cache/BoundaryVoteViz";
+import TierFlowViz from "../../../viz/unified-radix-cache/TierFlowViz";
+import MultiTurnBenchViz from "../../../viz/unified-radix-cache/MultiTurnBenchViz";
+import SessionEvictViz from "../../../viz/unified-radix-cache/SessionEvictViz";
+import SweBenchViz from "../../../viz/unified-radix-cache/SweBenchViz";
+import RustSplitViz from "../../../viz/unified-radix-cache/RustSplitViz";
+import RustBenchViz from "../../../viz/unified-radix-cache/RustBenchViz";
+
+## Background
+
+Prefix caching reuses KV when requests share a token prefix. Under full
+attention the rule is simple: KV only appends as tokens arrive, so once a
+shared prefix is computed it stays valid, and a later request with the same
+prefix skips that part of prefill. SGLang tracks the mapping with a radix tree
+keyed by token sequences; before prefill, the tree returns the longest
+reusable prefix and the locations of its KV.
+
+Hybrid models break the single rule. One request can carry full attention KV,
+sliding window attention KV, and recurrent states at the same time — the same
+token prefix, three notions of reuse. Full attention KV is reusable across the
+whole matched prefix. Sliding window KV covers only the trailing window. A
+recurrent state is valid only at an exact checkpoint, because it mutates in
+place as tokens are read. Forcing one boundary across all three either
+discards valid reuse or permits invalid reuse.
+
+<ReuseRuleViz client:visible lang="en" />
+
+These rules ship in different combinations: DeepSeek-V4 pairs FULL with SWA,
+Kimi-K3 pairs FULL with MAMBA for its KDA recurrent state, and Inkling runs
+all three. Encoding each combination as a specialized cache class produces a
+combinatorial matrix, and orthogonal capabilities such as HiCache multiply it
+further. Earlier implementations followed that pattern, duplicating matching,
+insertion, locking, and eviction logic across cache variants.
+
+<ComponentMatrixViz client:visible lang="en" />
+
+## One tree, composable components
+
+Unified Radix Cache separates shared prefix identity from component-specific
+reuse validity. A single token-keyed radix topology gives every prefix one
+canonical coordinate, and each reuse rule attaches to it as a TreeComponent:
+UnifiedTreeCore runs the mechanics every tree needs — matching, splitting,
+insertion, locking, eviction — UnifiedRadixCache coordinates pool operations,
+and a component defines only the semantics that vary. FULL is always present;
+SWA and MAMBA join as the model requires. A new model family reuses an
+existing composition, and a reuse rule the current set cannot express becomes
+a new component, not another tree implementation.
+
+Concretely, FULL provides path reuse and protects the matched ancestor path.
+SWA provides window reuse: it requires a contiguous trailing window, while
+older window slots may be empty tombstones whose radix nodes remain in the
+shared topology. MAMBA provides checkpoint reuse: one recurrent checkpoint at
+the reusable frontier, copied into a private request slot before any mutation.
+Why that copy is mandatory — a recurrent state overwrites itself in place — is
+covered in the
+[Kimi K3 lesson](https://yichizhang.dev/AI-Infra-Visualized/en/lessons/kimi-k3-day0-support/).
+
+## Finding a safe reuse boundary
+
+During matching, the core walks the canonical FULL path and treats every
+visited node as a candidate boundary. A FULL match alone is not sufficient:
+each active component creates a validator, and the boundary advances only when
+all validators accept the candidate. A rejection does not stop the traversal,
+because a component may accept a deeper node — SWA can reject a node whose
+window slots are tombstoned and still accept a deeper one where a complete
+trailing window exists.
+
+<BoundaryVoteViz client:visible lang="en" />
+
+After traversal the core builds a MatchResult, and component finalizers
+prepare the selected values for reuse — including the copy that turns a shared
+MAMBA checkpoint into one request's private state.
+
+## Component hooks across the tree lifecycle
+
+The same component contract covers the rest of the tree lifecycle:
+
+| Lifecycle | What the component decides |
+| --- | --- |
+| Match | `create_match_validator` accepts or rejects a candidate; the finalizers prepare the selected result |
+| Split | `redistribute_on_node_split` moves component data when a radix node divides |
+| Insert | `update_component_on_insert_overlap` and `commit_insert_component_data` decide which pool indices the component owns |
+| Lock | `acquire_component_lock` / `release_component_lock` protect a path, a trailing window, or one checkpoint |
+| Evict | `evict_device_start` / `next_node` / `end` pick device candidates; `evict_component` removes data; `drive_host_eviction` reclaims host memory |
+
+Removing one component's payload does not always remove the radix node: the
+remaining topology can still anchor other components, and the empty slot stays
+behind as a tombstone until the payload is restored or the node becomes
+unnecessary. Because component semantics stay attached to one prefix identity,
+HiCache can extend payloads across memory tiers without introducing another
+tree.
+
+## Native HiCache across memory tiers
+
+Components decide what can be reused; HiCache decides where the reusable
+payload lives. Unified Radix Cache carries the same component identity across
+GPU L1, Host L2, and an external L3 tier, so moving data between tiers changes
+neither its prefix identity nor its reuse rule. Components describe the
+required transfers, and HybridCacheController executes the physical I/O.
+
+Not every physical pool needs to be a component, either. An anchor defines
+reuse semantics or supplies the page indices that other pools follow; a
+sidecar stores a separate payload but reuses the exact indices of its declared
+source pool, moving with it without voting on the boundary or adding a slot to
+the topology. DeepSeek-V4 makes the distinction concrete: FULL and SWA are
+both components with independent device index spaces — in the blog's
+normalized six-page example the allocator maps the FULL tail slots F4, F5 to
+the SWA slots S0, S1 — while the C4 and C128 compressed-KV pools, indexer
+buffers, and compressor states register as sidecars, three following FULL and
+two following SWA.
+
+<TierFlowViz client:visible lang="en" />
+
+## Multi-turn benchmark results
+
+Multi-turn workloads grow a reusable conversational prefix every round; the
+question is whether lower tiers preserve it after GPU capacity runs out. The
+blog compares three configurations on two hybrid models: GPU L1 only, L1 plus
+Host L2, and L1 plus L2 plus a 500 GiB Mooncake Store as an external L3.
+
+<MultiTurnBenchViz client:visible lang="en" />
+
+In both workloads L1 loses reusable prefixes first, L2 delays the capacity
+limit, and L3 stays high after warmup: near 98% hit rate, sub-9-second TTFT,
+and 145.5K effective input tokens/s on DeepSeek-V4-Flash (versus 9.4K for L1
+only), 96.8% and 67.1K on Inkling-Small. One note on the metric: effective
+input-token throughput divides the sum of complete prompt lengths by
+wall-clock time, so it credits cache-hit prefix tokens — it measures serving
+progress under prefix reuse, not raw prefill compute.
+
+## Session-aware eviction
+
+LRU records which entries were touched recently, but not which prefixes belong
+to sessions that will come back on their next turn. Under memory pressure it
+can evict an active session's KV while keeping unrelated entries. Session-aware
+eviction adds the missing signal: applications attach a stable `session_id` to
+every request, and after a request finishes, Unified Radix Cache registers
+that session's reusable region — FULL tracks its prefix path, SWA its trailing
+window, MAMBA its reusable frontier.
+
+These references change eviction order; they never pin memory. FULL orders
+candidates by referenced state, session reference count, and base priority;
+SWA and MAMBA scan unreferenced entries first and fall back to referenced ones
+when more space is needed. The policy covers GPU L1 and Host L2, not the
+external L3. Calling `/close_session` removes a session's references without
+immediately deleting its entries, and session generations plus bounded
+closed-session tombstones keep stale late-finishing requests from restoring
+released references.
+
+<SessionEvictViz client:visible lang="en" />
+
+On SWE-bench agent trajectories with HiCache, the session-aware configuration
+lowers TTFT by 11.0% and 2.9% on DeepSeek-V4-Pro (batch 128 and 256) and by
+13.5% and 16.6% on Qwen3.5-397B-A17B (batch 32 and 64), with device hit ratios
+rising from about 42% to 51% and from 5% to 34% in the largest cases. The
+baseline is ordinary HiRadixCache with LRU while the comparison enables both
+Unified Radix Cache and `--enable-session-radix-cache`, so the deltas are not
+an isolated ablation of session awareness.
+
+<SweBenchViz client:visible lang="en" />
+
+## Toward a Rust tree core
+
+As shared prefixes grow, tree traversal, lock bookkeeping, LRU updates, and
+eviction scans all sit on the scheduler's critical path. Separating the tree
+state machine from cache orchestration makes the tree core a natural target
+for a native implementation. The experimental Rust prototype is opt-in and
+L1-only: Rust owns the radix topology, per-component lock accounting,
+intrusive LRU lists, and eviction walks, while Python remains the single owner
+of request-to-token mappings and physical KV allocation. After mutating the
+tree, Rust returns deferred actions for Python to apply to the pools.
+
+<RustSplitViz client:visible lang="en" />
+
+Against the Python tree over a 200-turn synthetic conversation, the prototype
+lowers TTFT most where tree overhead dominates: 38% on the SWA workload (42%
+over turns 176–200), 10% on full attention (18% over the last 25 turns), and
+5% on hybrid SSM (7%), where a larger GPU forward hides most of the change.
+The residual behind these numbers — total TTFT minus the CUDA-event-timed GPU
+prefill — also includes scheduling, sampling, detokenization, and other
+uninstrumented work, so it is not a direct CPU-time measurement. The follow-up
+RFC #32710 defines the target ownership boundary: orchestration and pool
+management stay in Python behind a replaceable tree core.
+
+<RustBenchViz client:visible lang="en" />
+
+## Future work
+
+Three parts of the system still need to converge on the shared prefix
+identity:
+
+- Complete the replaceable Rust tree core (roadmap #20415): extend it to SWA,
+  MAMBA, and HiCache while pool allocation and orchestration stay in Python.
+- Connect GPU L1 directly to external L3 tiers, making Host L2 an optional
+  staging tier. This needs coordinated admission, prefetch, transfer, and
+  eviction, not just another storage connector.
+- Coordinate agentic KV caching across the serving stack (roadmap #21846):
+  extend the same cache identity across routers, prefill and decode workers,
+  and HiCache, so sessions, subagents, and tool calls can share prefetch and
+  retention decisions.
+
+## Acknowledgments
+
+The original blog thanks the Alibaba Cloud TairKVCache team for co-leading the
+HiCache integration across hybrid models and validating large-scale production
+deployments; the Thinking Machines Lab team for validating under heavy load
+and fixing correctness issues across component combinations; the Clank.world
+team for validating Gemma 4 SWA HiCache in a high-concurrency production
+deployment; Mingjun Zhang for the session-aware eviction work; Tingwei Huang
+from the Ant Group SCT Inference team for the Mooncake integration; and
+Lianmin Zheng, Ishan Dhanani, Zhiqiang Xie, Chao Shi, Yanbo Yang, Shangming
+Cai, Hongjia Zhang, and the SGLang community for reviews, integration, and
+benchmarking.
