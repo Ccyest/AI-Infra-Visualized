@@ -294,8 +294,8 @@ export const RUST_BENCH = {
 export const REPLAY = {
   title: { zh: "统一 radix 树重放图示", en: "Unified radix tree replay" },
   subtitle: {
-    zh: "滑动窗口 W = 4;实心=有 payload;斜纹=tombstone(节点还在,payload 没了);虚线=从未存过/还在算",
-    en: "Sliding window W = 4; solid = payload present; hatched = tombstone (node stays, payload gone); dashed = never stored / still computing",
+    zh: "滑动窗口 W = 4",
+    en: "Sliding window W = 4",
   },
   req1: { zh: "请求 1", en: "Request 1" },
   req2: { zh: "请求 2", en: "Request 2" },

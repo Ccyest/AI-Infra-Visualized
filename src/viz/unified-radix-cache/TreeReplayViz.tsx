@@ -9,6 +9,7 @@ import "./styles.css";
    请求 1 = A B C S F A          冷启动建路径;收尾时 t1、t2 已在窗口外,S 槽记成 tombstone
    请求 2 = A B C S F A A P S D  走查 6 个 token,前缀 6 三票全过,复用边界推进到 6
    请求 3 = A B D W A            第 3 个 token 分裂节点,AB 末尾 S/M 否决,边界退回 root
+   树纵向生长:root 在顶上,深度往下;节点内 token 横排。分裂时 cells 3–6 下移分家。
    时间轴全部是确定性推演,没有随机数。 */
 
 type ReqKey = "r1" | "r2" | "r3";
@@ -24,17 +25,19 @@ const REQ_TOKENS: Record<ReqKey, string[]> = {
 };
 const TOTALS: Record<ReqKey, number> = { r1: 8, r2: 13, r3: 11 };
 
-/* ---- 几何:主路径 10 格 + 分支 3 格;分裂时第 3 格起整体右移 32 让出缝隙 ---- */
+/* ---- 几何:三层深度,分裂时 cells 3–6 平移 (-64, +78)、APSD 整体下移 78 ---- */
 const CW = 32;
-const MAIN_Y = 72;
-const BRANCH_Y = 176;
+const D1 = 40;
+const D2 = 118;
 const NODE_H = 52;
-const SPLIT_SHIFT = 32;
+const SPLIT_DX = -64;
+const SPLIT_DY = 78;
 const MAIN_TOKENS = ["A", "B", "C", "S", "F", "A", "A", "P", "S", "D"];
 const BRANCH_TOKENS = ["D", "W", "A"];
 
-const mainCellX = (k: number) => 68 + (k - 1) * CW + (k >= 7 ? 48 : 0);
-const branchCellX = (j: number) => 164 + (j - 1) * CW;
+const mainCellPos = (k: number) =>
+  k <= 6 ? { x: 32 + (k - 1) * CW, y: D1 + 8 } : { x: 32 + (k - 7) * CW, y: D2 + 8 };
+const branchCellPos = (j: number) => ({ x: 196 + (j - 1) * CW, y: D2 + 8 });
 
 /* ---- 每个格子在 (req, t) 下的状态 ---- */
 
@@ -78,7 +81,7 @@ function chipState(req: ReqKey, t: number, i: number): { cls: string; cur: boole
   if (req === "r2") {
     if (i <= 6) {
       const cls = t >= 7 ? "reuse" : t >= i ? "walk" : "pend";
-      return { cls, cur: t === i };
+      return { cls, cur: t === i && t <= 6 };
     }
     return { cls: t >= i + 1 ? "done" : "pend", cur: t === i + 1 };
   }
@@ -134,7 +137,7 @@ function Cell({
       <rect className={`urc-rt-f ${ghost ? "ghost" : "live"}`} x={2} y={20} width={11} height={9} rx={2} />
       <rect className={`urc-rt-s ${ghost ? "ghost" : s}`} x={15} y={20} width={11} height={9} rx={2} />
       {tag && (
-        <text className="urc-rt-tag" x={14} y={-8} textAnchor="middle">
+        <text className="urc-rt-tag" x={14} y={-11} textAnchor="middle">
           {tag}
         </text>
       )}
@@ -213,18 +216,29 @@ function ReplayInner({
   const apsdEnd: BadgeState = req === "r2" ? (t < 12 ? "hide" : t === 12 ? "dashed" : "filled") : req === "r3" ? "filled" : "hide";
   const dwaEnd: BadgeState = req === "r3" ? (t < 10 ? "hide" : t === 10 ? "dashed" : "filled") : "hide";
 
-  const flagX = boundary === 6 ? 260 : 44;
-  const rootShown = !(req === "r1" && t === 0);
+  /* 边 */
+  const edge12Shown = (req === "r2" && t >= 8) || req === "r3";
+  const edge23Shown = split;
+
+  const flagRoot = boundary === 0;
+  const rootEdgeShown = !(req === "r1" && t === 0);
 
   const ringFor = (row: Row, k: number): "cur" | "bad" | undefined => {
     if (!cur || cur.row !== row || cur.k !== k) return undefined;
     return mismatch ? "bad" : "cur";
   };
   const ptr = cur
-    ? {
-        x: (cur.row === "m" ? mainCellX(cur.k) : branchCellX(cur.k)) + (split && cur.row === "m" && cur.k >= 3 ? SPLIT_SHIFT : 0),
-        y: (cur.row === "m" ? MAIN_Y : BRANCH_Y) + NODE_H,
-      }
+    ? (() => {
+        if (cur.row === "b") return branchCellPos(cur.k);
+        const p = { ...mainCellPos(cur.k) };
+        if (split && cur.k >= 3 && cur.k <= 6) {
+          p.x += SPLIT_DX;
+          p.y += SPLIT_DY;
+        } else if (split && cur.k >= 7) {
+          p.y += SPLIT_DY;
+        }
+        return p;
+      })()
     : null;
 
   const toks = REQ_TOKENS[req];
@@ -246,7 +260,7 @@ function ReplayInner({
               className={`urc-scenario-btn${req === k ? " active" : ""}`}
               onClick={() => onPick(k)}
             >
-              {reqLabel[k][lang]}
+              {reqLabel[k][lang]} · {REQ_TOKENS[k].join("")}
             </button>
           ))}
         </span>
@@ -281,8 +295,8 @@ function ReplayInner({
         })}
       </div>
 
-      <div className="urc-tree">
-        <svg viewBox="0 0 512 252" role="img" aria-label={REPLAY.title[lang]}>
+      <div className="urc-tree urc-rt-tree">
+        <svg viewBox="0 -6 340 276" role="img" aria-label={REPLAY.title[lang]}>
           <defs>
             <pattern id="urc-rt-hatch" width="5" height="5" patternUnits="userSpaceOnUse">
               <path d="M0 5 L5 0" stroke="var(--axis)" strokeWidth="1" />
@@ -303,48 +317,67 @@ function ReplayInner({
           {/* 复用段绿底 */}
           <rect
             className="urc-rt-wash"
-            x={62}
-            y={MAIN_Y + 2}
-            width={196}
+            x={26}
+            y={D1 + 2}
+            width={200}
             height={NODE_H - 4}
             rx={8}
             style={{ opacity: boundary === 6 ? 0.13 : 0 }}
           />
 
           {/* root */}
-          <circle cx={30} cy={MAIN_Y + 26} r={5} fill="none" stroke="var(--axis)" strokeWidth={1.5} />
-          <text x={30} y={MAIN_Y + 44} textAnchor="middle" fontSize={10} fill="var(--muted)">
+          <circle cx={44} cy={16} r={5} fill="none" stroke="var(--axis)" strokeWidth={1.5} />
+          <text x={54} y={20} fontSize={10} fill="var(--muted)">
             root
           </text>
           <line
-            className={rootShown ? "urc-rt-edge" : "urc-rt-edge urc-rt-hide"}
-            x1={37}
-            y1={MAIN_Y + 26}
-            x2={54}
-            y2={MAIN_Y + 26}
+            className={rootEdgeShown ? "urc-rt-edge" : "urc-rt-edge urc-rt-hide"}
+            x1={44}
+            y1={23}
+            x2={44}
+            y2={34}
+            markerEnd="url(#urc-rt-arrow)"
+          />
+
+          {/* 深度间的边 */}
+          <line
+            className={edge12Shown ? "urc-rt-edge" : "urc-rt-edge urc-rt-hide"}
+            x1={44}
+            y1={94}
+            x2={44}
+            y2={112}
+            markerEnd="url(#urc-rt-arrow)"
+          />
+          <line
+            className={edge23Shown ? "urc-rt-edge" : "urc-rt-edge urc-rt-hide"}
+            x1={44}
+            y1={172}
+            x2={44}
+            y2={190}
+            markerEnd="url(#urc-rt-arrow)"
+          />
+          <path
+            className={dwaShown ? "urc-rt-edge" : "urc-rt-edge urc-rt-hide"}
+            d={`M88 ${D1 + NODE_H} V105 H242 V112`}
             markerEnd="url(#urc-rt-arrow)"
           />
 
           {/* 节点框:合并态 ABCSFA / 分裂态 AB */}
-          <rect className={mergedCls} x={60} y={MAIN_Y} width={204} height={NODE_H} rx={10} />
-          <rect className={abCls} x={60} y={MAIN_Y} width={76} height={NODE_H} rx={10} />
-          <MBadge cx={146} cy={MAIN_Y + 26} state={abEnd} />
+          <rect className={mergedCls} x={24} y={D1} width={204} height={NODE_H} rx={10} />
+          <rect className={abCls} x={24} y={D1} width={76} height={NODE_H} rx={10} />
+          <MBadge cx={112} cy={D1 + 26} state={abEnd} />
 
           {/* 分支 DWA */}
-          <path
-            className={dwaShown ? "urc-rt-edge" : "urc-rt-edge urc-rt-hide"}
-            d={`M98 ${MAIN_Y + NODE_H} V${BRANCH_Y + 26} H150`}
-            markerEnd="url(#urc-rt-arrow)"
-          />
-          <rect className={dwaCls} x={156} y={BRANCH_Y} width={108} height={NODE_H} rx={10} />
+          <rect className={dwaCls} x={188} y={D2} width={108} height={NODE_H} rx={10} />
           {BRANCH_TOKENS.map((tok, idx) => {
             const j = idx + 1;
             const st = branchCell(req, t, j);
+            const p = branchCellPos(j);
             return (
               <Cell
                 key={`b${j}`}
-                x={branchCellX(j)}
-                y={BRANCH_Y + 8}
+                x={p.x}
+                y={p.y}
                 label={tok}
                 present={st.present}
                 s={st.s}
@@ -352,40 +385,35 @@ function ReplayInner({
               />
             );
           })}
-          <MBadge cx={276} cy={BRANCH_Y + 26} state={dwaEnd} />
+          <MBadge cx={308} cy={D2 + 26} state={dwaEnd} />
           <text
             className={dwaShown ? undefined : "urc-rt-hide"}
-            x={292}
-            y={BRANCH_Y + 30}
+            x={242}
+            y={D2 + NODE_H + 16}
+            textAnchor="middle"
             fontSize={10.5}
             fill="var(--muted)"
           >
             {REPLAY.branchLabel[lang]}
           </text>
 
-          {/* 分裂时右移的部分:CSFA、APSD、两个 M 徽章、中间的边 */}
-          <g className="urc-rt-shift" style={{ transform: `translate(${split ? SPLIT_SHIFT : 0}px, 0)` }}>
-            <rect className={csfaCls} x={124} y={MAIN_Y} width={140} height={NODE_H} rx={10} />
-            <MBadge cx={276} cy={MAIN_Y + 26} state={csfaEnd} />
-            <line
-              className={apsdShown ? "urc-rt-edge" : "urc-rt-edge urc-rt-hide"}
-              x1={288}
-              y1={MAIN_Y + 26}
-              x2={294}
-              y2={MAIN_Y + 26}
-              markerEnd="url(#urc-rt-arrow)"
-            />
-            <rect className={apsdCls} x={300} y={MAIN_Y} width={140} height={NODE_H} rx={10} />
-            <MBadge cx={452} cy={MAIN_Y + 26} state={apsdEnd} />
+          {/* 分裂时下移分家的 CSFA(cells 3–6) */}
+          <g
+            className="urc-rt-shift"
+            style={{ transform: split ? `translate(${SPLIT_DX}px, ${SPLIT_DY}px)` : "translate(0px, 0px)" }}
+          >
+            <rect className={csfaCls} x={88} y={D1} width={140} height={NODE_H} rx={10} />
+            <MBadge cx={240} cy={D1 + 26} state={csfaEnd} />
             {MAIN_TOKENS.map((tok, idx) => {
               const k = idx + 1;
-              if (k < 3) return null;
+              if (k < 3 || k > 6) return null;
               const st = mainCell(req, t, k);
+              const p = mainCellPos(k);
               return (
                 <Cell
                   key={`m${k}`}
-                  x={mainCellX(k)}
-                  y={MAIN_Y + 8}
+                  x={p.x}
+                  y={p.y}
                   label={tok}
                   present={st.present}
                   s={st.s}
@@ -396,15 +424,42 @@ function ReplayInner({
             })}
           </g>
 
+          {/* 分裂时整体下移一层的 APSD(cells 7–10) */}
+          <g
+            className="urc-rt-shift"
+            style={{ transform: split ? `translate(0px, ${SPLIT_DY}px)` : "translate(0px, 0px)" }}
+          >
+            <rect className={apsdCls} x={24} y={D2} width={140} height={NODE_H} rx={10} />
+            <MBadge cx={176} cy={D2 + 26} state={apsdEnd} />
+            {MAIN_TOKENS.map((tok, idx) => {
+              const k = idx + 1;
+              if (k < 7) return null;
+              const st = mainCell(req, t, k);
+              const p = mainCellPos(k);
+              return (
+                <Cell
+                  key={`m${k}`}
+                  x={p.x}
+                  y={p.y}
+                  label={tok}
+                  present={st.present}
+                  s={st.s}
+                  ring={ringFor("m", k)}
+                />
+              );
+            })}
+          </g>
+
           {/* 不动的前两格 */}
           {MAIN_TOKENS.slice(0, 2).map((tok, idx) => {
             const k = idx + 1;
             const st = mainCell(req, t, k);
+            const p = mainCellPos(k);
             return (
               <Cell
                 key={`m${k}`}
-                x={mainCellX(k)}
-                y={MAIN_Y + 8}
+                x={p.x}
+                y={p.y}
                 label={tok}
                 present={st.present}
                 s={st.s}
@@ -414,9 +469,12 @@ function ReplayInner({
           })}
 
           {/* 复用边界旗标 */}
-          <g className="urc-rt-flag" style={{ transform: `translate(${flagX}px, 0)` }}>
-            <line x1={0} y1={42} x2={0} y2={132} />
-            <text x={0} y={34} textAnchor="middle">
+          <g
+            className="urc-rt-flag"
+            style={{ transform: flagRoot ? "translate(30px, 10px)" : "translate(224px, 36px)" }}
+          >
+            <line x1={0} y1={0} x2={0} y2={flagRoot ? 26 : 58} />
+            <text x={0} y={-4} textAnchor="middle">
               {REPLAY.flag[lang]}
             </text>
           </g>
@@ -426,7 +484,7 @@ function ReplayInner({
             <path
               className="urc-rt-ptr"
               d="M8 11 L20 11 L14 2 Z"
-              style={{ transform: `translate(${ptr.x}px, ${ptr.y + 3}px)` }}
+              style={{ transform: `translate(${ptr.x}px, ${ptr.y + 47}px)` }}
             />
           )}
         </svg>

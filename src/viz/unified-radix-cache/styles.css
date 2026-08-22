@@ -450,6 +450,7 @@
 
 .urc-scenarios {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.3rem;
 }
 
@@ -881,6 +882,12 @@
   height: auto;
   display: block;
   margin: 0.4rem 0 0.2rem;
+}
+
+.urc-rt-tree svg {
+  max-width: 420px;
+  margin-left: auto;
+  margin-right: auto;
 }
 
 .urc-rt-chips {
