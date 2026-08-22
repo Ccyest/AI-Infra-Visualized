@@ -19,7 +19,7 @@ references:
 
 import ReuseRuleViz from "../../../viz/unified-radix-cache/ReuseRuleViz";
 import ComponentMatrixViz from "../../../viz/unified-radix-cache/ComponentMatrixViz";
-import TreeAnatomyViz from "../../../viz/unified-radix-cache/TreeAnatomyViz";
+import TreeReplayViz from "../../../viz/unified-radix-cache/TreeReplayViz";
 import BoundaryVoteViz from "../../../viz/unified-radix-cache/BoundaryVoteViz";
 import TierFlowViz from "../../../viz/unified-radix-cache/TierFlowViz";
 import MultiTurnBenchViz from "../../../viz/unified-radix-cache/MultiTurnBenchViz";
@@ -44,11 +44,11 @@ Prefix caching 在请求共享同一段 token 前缀时复用 KV。在 full atte
 
 ### 设计与机制
 
-radix tree 的每个节点存一段 token，从根走到某个节点，沿途的 token 连起来就是一段前缀。匹配就是拿新请求的 token 从根往下走——走到哪里，前缀就匹配到哪里。开头相同的两个请求走的是同一串节点：下图里 D 和 E 在 n2 之后才分叉，所以 n1、n2 只存一份，不存两遍。
+radix tree 的每个节点存一段 token，从根走到某个节点，沿途的 token 连起来就是一段前缀。匹配就是拿新请求的 token 从根往下走——走到哪里，前缀就匹配到哪里。开头相同的请求走的是同一串节点：下图里三条请求依次到达，请求 1、2 的前 6 个 token 完全相同，请求 3 只共享开头的 A B——共享的部分都只存一份，不存两遍。
 
 Unified Radix Cache 在这个结构上只加了一件事：每个节点上给每种组件留一个槽位，槽位里存的是池索引。FULL 的槽存这段 token 的 KV 页号，缓存过的路径上每个节点都有；SWA 的槽存窗口槽号，只有落在尾部窗口内的节点才有，更早的节点上是一个空的 tombstone；MAMBA 的槽存 checkpoint 的位置——「读完到这个节点为止的全部 token」那一刻的递归状态——只有真正存过的节点上才有。槽位空着不算错，节点照样留给其他组件用。
 
-<TreeAnatomyViz client:visible />
+<TreeReplayViz client:visible />
 
 这就是三种复用规则不需要三棵树的原因。树只按 token 走：走到哪个节点，就说明前缀匹配到了哪里。这个节点上的数据能不能用，是各组件自己的问题，各自看自己的槽位——有数据就能用，是 tombstone 或者根本没存过就不能用。三种规则之间的全部差别，只是「自己的数据出现在哪些节点上」。新模型也改变不了走法：DeepSeek-V4 的节点上只有 F、S 两个槽，Kimi-K3 只有 F、M，Inkling 三个都有。
 

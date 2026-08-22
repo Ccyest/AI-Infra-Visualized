@@ -19,7 +19,7 @@ references:
 
 import ReuseRuleViz from "../../../viz/unified-radix-cache/ReuseRuleViz";
 import ComponentMatrixViz from "../../../viz/unified-radix-cache/ComponentMatrixViz";
-import TreeAnatomyViz from "../../../viz/unified-radix-cache/TreeAnatomyViz";
+import TreeReplayViz from "../../../viz/unified-radix-cache/TreeReplayViz";
 import BoundaryVoteViz from "../../../viz/unified-radix-cache/BoundaryVoteViz";
 import TierFlowViz from "../../../viz/unified-radix-cache/TierFlowViz";
 import MultiTurnBenchViz from "../../../viz/unified-radix-cache/MultiTurnBenchViz";
@@ -63,9 +63,10 @@ insertion, locking, and eviction logic across cache variants.
 Each node of a radix tree stores a run of tokens; reading the tokens from the
 root down to a node spells out a prefix. Matching is walking the new request's
 tokens down from the root — however far the walk gets is how much prefix is
-matched. Two requests that start with the same tokens walk the same nodes: in
-the figure below, D and E diverge only after n2, so n1 and n2 are stored once,
-not twice.
+matched. Requests that start with the same tokens walk the same nodes: in the figure
+below, three requests arrive one after another — requests 1 and 2 share their
+first 6 tokens, request 3 shares only the opening A B — and every shared span
+is stored once, not twice.
 
 Unified Radix Cache adds exactly one thing to this structure: every node
 carries one slot per component, and a slot holds pool indices. FULL's slot
@@ -76,7 +77,7 @@ MAMBA's slot holds the location of a checkpoint — the recurrent state as of
 "all tokens up to this node" — present only where one was actually stored. An
 empty slot is fine; the node stays for the other components.
 
-<TreeAnatomyViz client:visible lang="en" />
+<TreeReplayViz client:visible lang="en" />
 
 This is why three reuse rules do not need three trees. The tree walks by
 tokens alone: reaching a node means the prefix matched that far. Whether the
