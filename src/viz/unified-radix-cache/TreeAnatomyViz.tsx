@@ -10,17 +10,18 @@ type SlotState = "filled" | "tomb" | "none";
 
 interface Node {
   id: string;
+  tokens: string;
   x: number;
   y: number;
   slots: [SlotState, SlotState, SlotState]; // F / S / M
 }
 
 const NODES: Node[] = [
-  { id: "n1", x: 20, y: 96, slots: ["filled", "tomb", "filled"] },
-  { id: "n2", x: 200, y: 96, slots: ["filled", "tomb", "none"] },
-  { id: "n3", x: 380, y: 20, slots: ["filled", "filled", "none"] },
-  { id: "n4", x: 560, y: 20, slots: ["filled", "filled", "filled"] },
-  { id: "n5", x: 380, y: 172, slots: ["filled", "filled", "none"] },
+  { id: "n1", tokens: "t1 t2 t3", x: 20, y: 96, slots: ["filled", "tomb", "filled"] },
+  { id: "n2", tokens: "t4 t5 t6", x: 200, y: 96, slots: ["filled", "tomb", "none"] },
+  { id: "n3", tokens: "t7 t8 t9", x: 380, y: 20, slots: ["filled", "filled", "none"] },
+  { id: "n4", tokens: "t10 t11 t12", x: 560, y: 20, slots: ["filled", "filled", "filled"] },
+  { id: "n5", tokens: "t7′ t8′ t9′", x: 380, y: 172, slots: ["filled", "filled", "none"] },
 ];
 
 const EDGES: [string, string][] = [
@@ -143,13 +144,22 @@ export default function TreeAnatomyViz({ lang = "zh" }: { lang?: Locale }) {
               />
               <text
                 x={n.x + 12}
-                y={n.y + 20}
-                fontSize={12}
+                y={n.y + 17}
+                fontSize={11.5}
                 fontWeight={650}
                 fill="var(--ink)"
                 fontFamily="var(--font-mono, ui-monospace, monospace)"
               >
                 {n.id}
+              </text>
+              <text
+                x={n.x + 40}
+                y={n.y + 17}
+                fontSize={10}
+                fill="var(--muted)"
+                fontFamily="var(--font-mono, ui-monospace, monospace)"
+              >
+                {n.tokens}
               </text>
               {n.slots.map((s, i) => (
                 <Slot key={SLOT_NAMES[i]} state={s} idx={i} x={n.x + 12 + i * 38} y={n.y + 34} />

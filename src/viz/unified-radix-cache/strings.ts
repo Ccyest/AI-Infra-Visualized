@@ -299,7 +299,7 @@ export const TREE = {
   },
   reqD: { zh: "请求 D 的路径", en: "request D's path" },
   reqE: { zh: "请求 E 的路径", en: "request E's path" },
-  shared: { zh: "D、E 共享 n1、n2 的身份", en: "D and E share the identity of n1 and n2" },
+  shared: { zh: "D、E 在 n2 之后才分叉,n1、n2 只存一份", en: "D and E diverge only after n2; n1 and n2 are stored once" },
   legendF: { zh: "F = FULL KV", en: "F = FULL KV" },
   legendS: { zh: "S = SWA 窗口槽", en: "S = SWA window slot" },
   legendM: { zh: "M = MAMBA checkpoint", en: "M = MAMBA checkpoint" },

@@ -60,35 +60,42 @@ insertion, locking, and eviction logic across cache variants.
 
 ### Design and mechanism
 
-The tree itself is deliberately dumb about reuse. Its topology is keyed by
-token sequences alone, so it gives every prefix exactly one canonical
-coordinate — and that is all it does. Each reuse rule attaches to the nodes as
-a component payload: FULL KV sits on every node of a cached path, SWA window
-slots exist only near the tail and may be empty tombstones on older nodes, and
-MAMBA checkpoints exist only where a state was actually stored. An empty slot
-is a normal condition, not an error, and two requests that share a prefix
-share the same nodes regardless of which components their model runs.
+Each node of a radix tree stores a run of tokens; reading the tokens from the
+root down to a node spells out a prefix. Matching is walking the new request's
+tokens down from the root — however far the walk gets is how much prefix is
+matched. Two requests that start with the same tokens walk the same nodes: in
+the figure below, D and E diverge only after n2, so n1 and n2 are stored once,
+not twice.
+
+Unified Radix Cache adds exactly one thing to this structure: every node
+carries one slot per component, and a slot holds pool indices. FULL's slot
+holds the KV page numbers for the node's tokens, present on every node of a
+cached path. SWA's slot holds window-slot numbers, present only on nodes that
+fall inside the trailing window; on older nodes it is an empty tombstone.
+MAMBA's slot holds the location of a checkpoint — the recurrent state as of
+"all tokens up to this node" — present only where one was actually stored. An
+empty slot is fine; the node stays for the other components.
 
 <TreeAnatomyViz client:visible lang="en" />
 
-This is how one tree serves three reuse rules: the rules live in the
-components, not in the topology. The tree never answers "can this be reused" —
-it only provides the coordinate and the mounting points, and the reuse
-question is answered per component at match time, by the vote in the next
-section. That is also why a new model family costs no new tree: DeepSeek-V4
-mounts FULL and SWA payloads, Kimi-K3 mounts FULL and MAMBA, Inkling mounts
-all three, on identical topology.
+This is why three reuse rules do not need three trees. The tree walks by
+tokens alone: reaching a node means the prefix matched that far. Whether the
+node's data is usable is each component's own question, answered by looking at
+its own slot — data there means usable, a tombstone or nothing means not. The
+entire difference between the three rules is which nodes carry their data.
+New models change nothing about the walk: a DeepSeek-V4 node carries only the
+F and S slots, Kimi-K3 only F and M, Inkling all three.
 
-In code, UnifiedTreeCore runs the mechanics every tree needs — matching,
-splitting, insertion, locking, eviction — UnifiedRadixCache coordinates pool
-operations, and a TreeComponent defines only the semantics that vary. FULL is
-always present and protects the matched ancestor path. SWA requires a
-contiguous trailing window. MAMBA needs one more rule: a recurrent state
-overwrites itself in place as it reads tokens, so a state stored in the tree
-can never be handed to a request directly — two requests advancing one shared
-live state would corrupt it for each other. The tree therefore stores
-read-only checkpoints, and a hit first copies the checkpoint into the
-request's private slot; only the copy is mutated. The
+In code, UnifiedTreeCore owns the walk — matching, splitting, insertion,
+locking, eviction; UnifiedRadixCache turns slot indices into actual pool
+operations; each rule is one TreeComponent.
+
+The MAMBA slot has one extra rule. A recurrent state overwrites itself in
+place as it reads tokens, so the checkpoint in the tree cannot be handed to a
+request directly: two requests advancing one shared state would corrupt it for
+each other. Checkpoints in the tree are therefore read-only; a hit first
+copies the checkpoint into the request's own state slot, and only the copy is
+mutated. The
 [Kimi K3 lesson](https://yichizhang.dev/AI-Infra-Visualized/en/lessons/kimi-k3-day0-support/)
 steps through this copy-on-write for KDA state in detail.
 
