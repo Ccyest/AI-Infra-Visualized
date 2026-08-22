@@ -1,6 +1,6 @@
 ---
-title: "Breakable CUDA Graph: 5× faster graph builds and full-graph prefill"
-description: "The traditional CUDA Graph is an industry standard, but it has limits in production. To break those limits, we introduced two advanced CUDA Graph techniques, bringing us **1/4 the lines of code**, prefill graphs that build **3.8–5.2× faster**, and prefill itself up to **1.93× over eager**.\n1. Breakable CUDA Graph, proposed and first open-sourced in SGLang, fixes the slow startup and poor compatibility of traditional compiler-based graph splitting.\n2. Further, we make the full prefill CUDA Graph possible by using token buckets and zero-length sentinels to make prefill capturable as a single graph."
+title: "Breakable CUDA Graph in SGLang: 5× faster graph builds, 1.93× faster prefill"
+description: "SGLang now ships two CUDA Graph techniques that reach where traditional CUDA Graph could not: prefill graphs build **3.8–5.2× faster**, prefill itself runs up to **1.93× faster than eager**, and the whole thing takes **a quarter of the code**. Breakable CUDA Graph was proposed, named, and first open-sourced in SGLang, and is already the default on SGLang's prefill path.\n1. Breakable CUDA Graph (BCG) fixes the slow startup and poor compatibility of compiler-based graph splitting.\n2. Further, SGLang makes prefill capturable as one full CUDA Graph, with token buckets and zero-length sentinels."
 order: 4
 tryOnSglang: "https://github.com/sgl-project/sglang"
 references:
@@ -64,12 +64,12 @@ route in full:
 Since capture already executes operators in order, why should a compiler be the
 one to find the break points? Following that idea, we built Breakable CUDA
 Graph: eager breaks inserted directly while capture is in progress, with no
-compiler needed to understand the forward. BCG was proposed, named, implemented,
-and first open-sourced in SGLang. It reaches the same segmented execution in
-roughly a quarter of the code (521 versus 1,771 lines); it builds prefill graphs
-3.8–5.2× faster because no compilation is involved; and measured on prefill
-alone it runs 1.70× over eager. BCG first landed on the decode path (#19102) and
-was later extended to prefill (#22218), where it is now the default.
+compiler needed to understand the forward. It reaches the same segmented
+execution in roughly a quarter of the code (521 versus 1,771 lines); it builds
+prefill graphs 3.8–5.2× faster because no compilation is involved; and measured
+on prefill alone it runs 1.70× over eager. BCG first landed on the decode path
+(#19102) and was later extended to prefill (#22218), where it is now the
+default.
 
 <ResultsViz client:visible lang="en" />
 

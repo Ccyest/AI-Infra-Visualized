@@ -1,6 +1,6 @@
 ---
-title: "Breakable CUDA Graph：graph 构建快 5 倍，prefill 也能整图捕获"
-description: "传统 CUDA Graph 已经是业界标准，但在生产环境里有它的局限。为了突破这些局限，我们做了两项 CUDA Graph 进阶技术：**代码量降到 1/4**，构建 prefill graph 快 **3.8–5.2 倍**，prefill 本身相对 eager 最快 **1.93 倍**。\n1. Breakable CUDA Graph，由 SGLang 提出并率先开源，解决了传统编译器切图方案启动慢、兼容性差的问题。\n2. 在此之上，我们用 token bucket 和 zero-length sentinel 让 prefill 的 full CUDA Graph 成为可能，prefill 能作为一整张图被捕获。"
+title: "SGLang 里的 Breakable CUDA Graph：graph 构建快 5 倍，prefill 快 1.93 倍"
+description: "SGLang 现在有两项 CUDA Graph 技术，做到了传统 CUDA Graph 在生产环境里做不到的事：构建 prefill graph 快 **3.8–5.2 倍**，prefill 本身相对 eager 最快 **1.93 倍**，而实现只用了 **1/4 的代码量**。Breakable CUDA Graph 由 SGLang 提出、命名并率先开源，现在已经是 SGLang prefill 路径上的默认方案。\n1. Breakable CUDA Graph（BCG）解决了编译器切图方案启动慢、兼容性差的问题。\n2. 在此之上，SGLang 用 token bucket 和 zero-length sentinel 让 prefill 能作为一整张 full CUDA Graph 被捕获。"
 order: 4
 tryOnSglang: "https://github.com/sgl-project/sglang"
 references:
@@ -60,8 +60,7 @@ kernel 很别扭。这条路线的流程如下：
 既然 capture
 本身就是按顺序执行算子，断点为什么要靠编译器去找？顺着这个想法，我们做出了
 Breakable CUDA Graph：在 capture 进行当中直接插入 eager 断点，不需要编译器理解
-forward。BCG 由 SGLang
-提出、命名、实现并率先开源：同样的分段执行只用四分之一的代码量（521 行对 1771
+forward。同样的分段执行只用四分之一的代码量（521 行对 1771
 行）；因为无需编译，构建 prefill graph 快 3.8–5.2 倍；只测 prefill，BCG 相对
 eager 快 1.70 倍。BCG 最先落在 decode 路径上（#19102），随后扩展到
 prefill（#22218），现在是 prefill 的默认方案。
