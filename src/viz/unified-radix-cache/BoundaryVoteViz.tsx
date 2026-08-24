@@ -36,6 +36,30 @@ const COMP_LABEL: Record<CompKey, string> = {
   mamba: "MAMBA",
 };
 
+/* 勾/叉/待定点画成 SVG:unicode 字符的墨迹在字符框里偏下,place-items 居中救不了 */
+const MARK_ACCEPT = (
+  <svg viewBox="0 0 16 16" width={11} height={11} aria-hidden="true" style={{ display: "block" }}>
+    <path
+      d="M3.2 8.6 6.4 11.6 12.8 4.6"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+  </svg>
+);
+const MARK_REJECT = (
+  <svg viewBox="0 0 16 16" width={10} height={10} aria-hidden="true" style={{ display: "block" }}>
+    <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
+  </svg>
+);
+const MARK_PENDING = (
+  <svg viewBox="0 0 16 16" width={10} height={10} aria-hidden="true" style={{ display: "block" }}>
+    <circle cx="8" cy="8" r="2" fill="currentColor" />
+  </svg>
+);
+
 /** 已访问 upto(1-based)个节点时,全员接受的最深节点(0 表示还没有) */
 function boundaryAt(comps: CompKey[], upto: number): number {
   let deepest = 0;
@@ -123,7 +147,7 @@ export default function BoundaryVoteViz({ lang = "zh" }: { lang?: Locale }) {
                     className={`urc-vote-mark ${voted ? (ok ? "accept" : "reject") : "pending"}`}
                     title={voted ? (ok ? VOTE.accept[lang] : VOTE.reject[lang]) : undefined}
                   >
-                    {voted ? (ok ? "✓" : "✗") : "·"}
+                    {voted ? (ok ? MARK_ACCEPT : MARK_REJECT) : MARK_PENDING}
                   </span>
                 </span>
               );
