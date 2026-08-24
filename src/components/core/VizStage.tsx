@@ -5,6 +5,50 @@ import type { SimPlayer } from "./useSimPlayer";
 
 const SPEEDS = [0.5, 1, 2, 4];
 
+/* 控件图标一律内联 SVG:unicode 三角(◀ ▶ ⏮)的墨迹在字符框里不居中,
+   且随平台字体漂移,flex 居中救不了;SVG 按 viewBox 几何中心画,永远居中。 */
+function Icon({ children }: { children: ReactNode }) {
+  return (
+    <svg className="viz-icon" viewBox="0 0 16 16" width={13} height={13} aria-hidden="true">
+      {children}
+    </svg>
+  );
+}
+
+const ICON_PLAY = (
+  <Icon>
+    <path d="M4.8 2.6 13.2 8 4.8 13.4Z" fill="currentColor" />
+  </Icon>
+);
+const ICON_PAUSE = (
+  <Icon>
+    <rect x="3.6" y="2.9" width="3.1" height="10.2" rx="0.8" fill="currentColor" />
+    <rect x="9.3" y="2.9" width="3.1" height="10.2" rx="0.8" fill="currentColor" />
+  </Icon>
+);
+const ICON_REPLAY = (
+  <Icon>
+    <path d="M8 3A5 5 0 1 0 13 8" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+    <path d="M8.6 0.8 4.8 3l3.8 2.2Z" fill="currentColor" />
+  </Icon>
+);
+const ICON_STEP_BACK = (
+  <Icon>
+    <path d="M11.4 2.9 4.6 8l6.8 5.1Z" fill="currentColor" />
+  </Icon>
+);
+const ICON_STEP_FWD = (
+  <Icon>
+    <path d="M4.6 2.9 11.4 8 4.6 13.1Z" fill="currentColor" />
+  </Icon>
+);
+const ICON_TO_START = (
+  <Icon>
+    <rect x="3.4" y="2.9" width="1.7" height="10.2" rx="0.6" fill="currentColor" />
+    <path d="M12.6 2.9 5.8 8l6.8 5.1Z" fill="currentColor" />
+  </Icon>
+);
+
 interface VizStageProps {
   title: string;
   subtitle?: string;
@@ -53,38 +97,49 @@ export default function VizStage({
           onClick={player.toggle}
           aria-label={playing ? PLAYER_UI.pause[lang] : PLAYER_UI.play[lang]}
         >
-          {playing
-            ? PLAYER_UI.pause[lang]
-            : t >= total
-              ? PLAYER_UI.replay[lang]
-              : PLAYER_UI.play[lang]}
+          {playing ? (
+            <>
+              {ICON_PAUSE}
+              {PLAYER_UI.pause[lang]}
+            </>
+          ) : t >= total ? (
+            <>
+              {ICON_REPLAY}
+              {PLAYER_UI.replay[lang]}
+            </>
+          ) : (
+            <>
+              {ICON_PLAY}
+              {PLAYER_UI.play[lang]}
+            </>
+          )}
         </button>
         <button
           type="button"
-          className="viz-btn"
+          className="viz-btn icon"
           onClick={() => player.stepBy(-1)}
           disabled={t === 0}
           aria-label={PLAYER_UI.stepBack[lang]}
         >
-          ◀
+          {ICON_STEP_BACK}
         </button>
         <button
           type="button"
-          className="viz-btn"
+          className="viz-btn icon"
           onClick={() => player.stepBy(1)}
           disabled={t >= total}
           aria-label={PLAYER_UI.stepForward[lang]}
         >
-          ▶
+          {ICON_STEP_FWD}
         </button>
         <button
           type="button"
-          className="viz-btn"
+          className="viz-btn icon"
           onClick={player.reset}
           disabled={t === 0}
           aria-label={PLAYER_UI.toStart[lang]}
         >
-          ⏮
+          {ICON_TO_START}
         </button>
         <input
           type="range"

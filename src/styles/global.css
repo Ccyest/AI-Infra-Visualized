@@ -647,6 +647,7 @@ main {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  gap: 0.35rem;
   border: 1px solid var(--border);
   background: transparent;
   color: var(--ink);
@@ -659,6 +660,16 @@ main {
   line-height: 1;
   transition: transform 0.2s ease, background 0.2s ease, border-color 0.2s ease,
     color 0.2s ease;
+}
+
+.viz-btn.icon {
+  width: 2.1rem;
+  padding: 0;
+}
+
+.viz-icon {
+  display: block;
+  flex: none;
 }
 
 .viz-btn:hover:not(:disabled) {

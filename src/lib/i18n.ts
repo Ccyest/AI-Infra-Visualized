@@ -47,9 +47,9 @@ export const CHROME = {
 
 /** 播放器控件(VizStage)文案 */
 export const PLAYER_UI = {
-  play: { zh: "▶ 播放", en: "▶ Play" },
-  pause: { zh: "⏸ 暂停", en: "⏸ Pause" },
-  replay: { zh: "↻ 重播", en: "↻ Replay" },
+  play: { zh: "播放", en: "Play" },
+  pause: { zh: "暂停", en: "Pause" },
+  replay: { zh: "重播", en: "Replay" },
   stepBack: { zh: "上一步", en: "Step back" },
   stepForward: { zh: "下一步", en: "Step forward" },
   toStart: { zh: "回到开头", en: "Back to start" },
