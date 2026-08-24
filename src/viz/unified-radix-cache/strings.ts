@@ -88,26 +88,6 @@ export const VOTE = {
   recomputeZone: { zh: "从这里重算", en: "Recomputed from here" },
   accept: { zh: "接受", en: "accept" },
   reject: { zh: "否决", en: "reject" },
-  stepStart: {
-    zh: "沿 FULL 的规范路径开始走查,每个经过的节点都是候选边界。",
-    en: "The walk starts along the canonical FULL path; every visited node is a candidate boundary.",
-  },
-  stepAdvanceTpl: {
-    zh: "{node} 处所有 validator 都接受,安全边界推进到 {node}。",
-    en: "Every validator accepts at {node}; the safe boundary advances to {node}.",
-  },
-  stepRejectedTpl: {
-    zh: "{node} 被 {list} 否决,边界不动;但走查继续——更深的节点仍可能被全员接受。",
-    en: "{node} is rejected by {list}, so the boundary stays put; the walk continues, since a deeper node may still be accepted by everyone.",
-  },
-  stepFinalTpl: {
-    zh: "走查到达 n4,最终边界是 {node}:边界之内的值直接复用,之后的 token 从 {node} 接着重算。",
-    en: "The walk reached n4; the final boundary is {node}. Values inside it are reused directly, and later tokens are recomputed from {node}.",
-  },
-  stepFinalNone: {
-    zh: "走查到达 n4,没有任何节点被全员接受:这条前缀完全不可复用,从头重算。",
-    en: "The walk reached n4 and no node was accepted by every validator: nothing is reusable and prefill starts from scratch.",
-  },
 } satisfies Record<string, Localized>;
 
 /* ---------------- TierFlowViz ---------------- */
@@ -307,6 +287,7 @@ export const REPLAY = {
   legendF: { zh: "F = FULL KV 页", en: "F = FULL KV pages" },
   legendS: { zh: "S = SWA 窗口槽", en: "S = SWA window slot" },
   legendM: { zh: "M = MAMBA checkpoint", en: "M = MAMBA checkpoint" },
+  legendTomb: { zh: "斜纹 = tombstone", en: "hatched = tombstone" },
   legendReuse: { zh: "绿底 = 投票通过的复用段", en: "green band = reused span (all-pass)" },
 } satisfies Record<string, Localized>;
 
@@ -325,101 +306,3 @@ export const REPLAY_VOTE = {
     en: "S and M reject · boundary stays at root; all 5 tokens recompute",
   },
 } satisfies Record<string, Localized>;
-
-export const REPLAY_STEPS: Record<"r1" | "r2" | "r3", Localized[]> = {
-  r1: [
-    {
-      zh: "树是空的:请求 1 的 6 个 token 没有前缀可复用,全部进 prefill。",
-      en: "The tree is empty: request 1's 6 tokens have no prefix to reuse, so all of them go through prefill.",
-    },
-    {
-      zh: "计算 A(第 1 个)。树里没有节点可走,复用边界停在 root。",
-      en: "Compute A (token 1). There is no node to walk, so the reuse boundary stays at root.",
-    },
-    { zh: "计算 B(第 2 个)。", en: "Compute B (token 2)." },
-    { zh: "计算 C(第 3 个)。", en: "Compute C (token 3)." },
-    { zh: "计算 S(第 4 个)。", en: "Compute S (token 4)." },
-    {
-      zh: "计算 F(第 5 个)。窗口只有 4 格,第 1 个 token 已经滑出窗口。",
-      en: "Compute F (token 5). The window holds only 4 slots, so token 1 has already slid out.",
-    },
-    {
-      zh: "计算 A(第 6 个)。窗口现在盖住 C S F A。",
-      en: "Compute A (token 6). The window now covers C S F A.",
-    },
-    {
-      zh: "请求结束,6 个 token 作为一个节点插进树:F 槽存 KV 页号;S 槽只有窗口内的 t3–t6 有槽号,t1、t2 记成 tombstone。",
-      en: "The request ends and its 6 tokens are inserted as one node: F slots hold KV page numbers; only t3–t6 inside the window get S slot numbers, and t1, t2 are recorded as tombstones.",
-    },
-    {
-      zh: "把「读完 6 个 token」那一刻的递归状态存进节点末尾的 checkpoint,M 槽实心。",
-      en: "Store the recurrent state as of reading all 6 tokens into a checkpoint at the node's end; the M slot turns solid.",
-    },
-  ],
-  r2: [
-    {
-      zh: "树里是请求 1 留下的状态:F 页 1–6 全在,S 槽只剩 t3–t6,checkpoint 在 t6。请求 2 的前 6 个 token 与请求 1 相同。",
-      en: "The tree holds what request 1 left: F pages 1–6 all present, S slots only at t3–t6, a checkpoint at t6. Request 2's first 6 tokens are identical to request 1.",
-    },
-    {
-      zh: "从 root 往下走:A 对上节点里的第 1 个 token。",
-      en: "Walk down from root: A matches the node's first token.",
-    },
-    { zh: "走到 B,对上。", en: "Walk to B — match." },
-    { zh: "走到 C,对上。", en: "Walk to C — match." },
-    { zh: "走到 S,对上。", en: "Walk to S — match." },
-    { zh: "走到 F,对上。", en: "Walk to F — match." },
-    {
-      zh: "走到 A,对上——节点走完,节点末尾是一个候选边界。",
-      en: "Walk to A — match. The node is exhausted; its end is a candidate boundary.",
-    },
-    {
-      zh: "三个 validator 在前缀 6 投票:F ✓ 页全在;S ✓ 窗口只看最后 4 个,t3–t6 完整,t1、t2 的 tombstone 不在窗口里;M ✓ 请求 1 正好在这里存过 checkpoint。全票通过,复用边界推进到 6,前 6 个 token 跳过 prefill。",
-      en: "Three validators vote at prefix 6: F ✓ all pages present; S ✓ the window only needs the last 4 tokens and t3–t6 are intact — the tombstones at t1, t2 sit outside it; M ✓ request 1 stored a checkpoint exactly here. All pass: the reuse boundary advances to 6, and the first 6 tokens skip prefill.",
-    },
-    { zh: "计算 A(第 7 个)。", en: "Compute A (token 7)." },
-    { zh: "计算 P(第 8 个)。", en: "Compute P (token 8)." },
-    { zh: "计算 S(第 9 个)。", en: "Compute S (token 9)." },
-    { zh: "计算 D(第 10 个)。", en: "Compute D (token 10)." },
-    {
-      zh: "新算的 4 个 token 作为子节点插进树,F、S 槽实心。",
-      en: "The 4 freshly computed tokens are inserted as a child node; their F and S slots are solid.",
-    },
-    {
-      zh: "收尾:窗口滑到 t7–t10,t3–t6 的 S 槽变 tombstone;t10 末尾存新 checkpoint,t6 的旧 checkpoint 还留着。",
-      en: "Wrap-up: the window slides to t7–t10, so the S slots at t3–t6 become tombstones; a new checkpoint is stored at t10, and the old one at t6 stays.",
-    },
-  ],
-  r3: [
-    {
-      zh: "树里是请求 1、2 留下的状态:S 槽只剩 t7–t10,t1–t6 全是 tombstone;checkpoint 在 t6 和 t10。请求 3 开头也是 A B。",
-      en: "The tree holds what requests 1 and 2 left: S slots only at t7–t10, t1–t6 are all tombstones; checkpoints at t6 and t10. Request 3 also starts with A B.",
-    },
-    { zh: "走到 A,对上。", en: "Walk to A — match." },
-    { zh: "走到 B,对上。", en: "Walk to B — match." },
-    {
-      zh: "第 3 个 token 是 D,节点里这个位置是 C——走查停在节点中间,节点从这里分裂成 AB 和 CSFA。F 页、S 槽跟着各自的 token 分家;t6 的 checkpoint 留在 CSFA 末尾,AB 的新末尾从未存过 checkpoint。",
-      en: "Token 3 is D but the node holds C here — the walk stops mid-node, and the node splits into AB and CSFA. F pages and S slots go with their own tokens; the checkpoint at t6 stays at CSFA's end, while AB's new end has never stored one.",
-    },
-    {
-      zh: "validator 在前缀 2 投票:F ✓ 页 1–2 在;S ✗ 窗口要 t1、t2,都是 tombstone;M ✗ AB 末尾没有 checkpoint。边界留在 root:走查到了 2,能复用的是 0。",
-      en: "Validators vote at prefix 2: F ✓ pages 1–2 present; S ✗ the window needs t1 and t2, both tombstones; M ✗ no checkpoint at AB's end. The boundary stays at root: the walk reached 2, the reusable prefix is 0.",
-    },
-    {
-      zh: "重算 A(第 1 个)——树里有它的 F 页,但复用边界是三组件共用的一条线,过不了票就整段重算。",
-      en: "Recompute A (token 1) — its F page is in the tree, but the reuse boundary is one line shared by all components; failing the vote means recomputing the whole span.",
-    },
-    { zh: "重算 B(第 2 个)。", en: "Recompute B (token 2)." },
-    { zh: "计算 D(第 3 个)。", en: "Compute D (token 3)." },
-    { zh: "计算 W(第 4 个)。", en: "Compute W (token 4)." },
-    { zh: "计算 A(第 5 个)。", en: "Compute A (token 5)." },
-    {
-      zh: "D W A 作为 AB 的第二个子节点插进树;A、B 与已有节点重叠,F 页不重复存。",
-      en: "D W A is inserted as AB's second child; A and B overlap the existing node, so their F pages are not stored twice.",
-    },
-    {
-      zh: "收尾:这条路径的窗口盖住 B D W A——t2 的 S 槽从 tombstone 恢复成实心(payload 恢复,节点一直没动),t1 还在窗口外保持 tombstone;新分支末尾存 checkpoint。",
-      en: "Wrap-up: this path's window covers B D W A — the S slot at t2 is restored from tombstone to solid (the payload came back; the node never moved), while t1 stays outside the window as a tombstone; a checkpoint is stored at the new branch's end.",
-    },
-  ],
-};

@@ -644,6 +644,9 @@ main {
 }
 
 .viz-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border: 1px solid var(--border);
   background: transparent;
   color: var(--ink);

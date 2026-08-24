@@ -61,25 +61,6 @@ export default function BoundaryVoteViz({ lang = "zh" }: { lang?: Locale }) {
     { key: "all", label: VOTE.scenarioAll[lang] },
   ];
 
-  let desc: string;
-  if (t === 0) {
-    desc = VOTE.stepStart[lang];
-  } else if (t <= 4) {
-    const i = t - 1;
-    const rejectors = comps.filter((c) => !VOTES[c][i]);
-    desc =
-      rejectors.length === 0
-        ? VOTE.stepAdvanceTpl[lang].replaceAll("{node}", NODES[i])
-        : VOTE.stepRejectedTpl[lang]
-            .replaceAll("{node}", NODES[i])
-            .replaceAll("{list}", rejectors.map((c) => COMP_LABEL[c]).join(" + "));
-  } else {
-    desc =
-      boundary === 0
-        ? VOTE.stepFinalNone[lang]
-        : VOTE.stepFinalTpl[lang].replaceAll("{node}", NODES[boundary - 1]);
-  }
-
   return (
     <VizStage
       title={VOTE.title[lang]}
@@ -182,8 +163,6 @@ export default function BoundaryVoteViz({ lang = "zh" }: { lang?: Locale }) {
           </span>
         </div>
       </div>
-
-      <div className="urc-step-desc">{desc}</div>
     </VizStage>
   );
 }

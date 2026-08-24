@@ -2,7 +2,7 @@ import { useState } from "react";
 import VizStage from "../../components/core/VizStage";
 import { useSimPlayer } from "../../components/core/useSimPlayer";
 import type { Locale } from "../../lib/i18n";
-import { REPLAY, REPLAY_STEPS, REPLAY_VOTE } from "./strings";
+import { REPLAY, REPLAY_VOTE } from "./strings";
 import "./styles.css";
 
 /* 三条请求依次到达同一棵树(W = 4),每个 tab 重放一条,树的初态 = 前面请求留下的状态:
@@ -276,6 +276,12 @@ function ReplayInner({
           <span className="urc-swatch" style={{ background: "var(--series-4)" }} />
           {REPLAY.legendM[lang]}
           {"　"}
+          <span
+            className="urc-swatch"
+            style={{ background: "var(--urc-hatch)", border: "1px solid var(--series-2)" }}
+          />
+          {REPLAY.legendTomb[lang]}
+          {"　"}
           <span className="urc-swatch" style={{ background: "var(--series-3)" }} />
           {REPLAY.legendReuse[lang]}
         </span>
@@ -510,8 +516,6 @@ function ReplayInner({
           </>
         )}
       </div>
-
-      <div className="urc-step-desc">{REPLAY_STEPS[req][t][lang]}</div>
     </VizStage>
   );
 }
