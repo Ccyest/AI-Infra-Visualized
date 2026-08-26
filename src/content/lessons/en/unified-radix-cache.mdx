@@ -222,13 +222,15 @@ so the deltas are not an isolated ablation of session awareness.
 ## Rust tree core
 
 The tree core runs on the scheduler's CPU critical path: every request pays
-for traversal, lock bookkeeping, LRU updates, and eviction scans. Python makes
-each step expensive. Every node is a heap object; every visit costs
-interpreter dispatch, attribute lookups, and reference counting; one LRU
-update juggles several separate container objects. Rust compiles the same
-step to a few instructions over compact structs, and the LRU links live
-inside the node itself, so an update is two pointer writes and no allocation.
-The experimental prototype therefore rebuilds the same state machine in Rust,
+for traversal, lock bookkeeping, LRU updates, and eviction scans. As an
+interpreted language, Python resolves types and attributes at runtime: every
+node is a heap object, every visit pays for interpreter dispatch, attribute
+lookups, and reference counting, and one LRU update juggles several separate
+container objects. Rust, in contrast, is compiled: types and field offsets
+are fixed at compile time, so the same step becomes a few instructions over
+compact structs, and the LRU links live inside the node itself, making an
+update two pointer writes with no allocation. The experimental prototype
+therefore rebuilds the same state machine in Rust,
 opt-in and L1-only: Rust owns the radix topology, lock accounting, intrusive
 LRU lists, and eviction walks, while Python keeps request-to-token mappings
 and physical KV allocation, applying the deferred actions Rust returns.
