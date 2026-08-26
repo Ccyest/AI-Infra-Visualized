@@ -95,7 +95,6 @@ export default function MultiTurnBenchViz({ lang = "zh" }: { lang?: Locale }) {
       </div>
 
       <div className="viz-footer">
-        <span className="urc-note">{MULTI.rowNote[lang]}</span>
       </div>
     </figure>
   );

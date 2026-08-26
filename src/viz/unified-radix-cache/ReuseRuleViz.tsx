@@ -35,7 +35,6 @@ export default function ReuseRuleViz({ lang = "zh" }: { lang?: Locale }) {
           {tokens.map((i) => (
             <span className="urc-reuse-cell covered full" key={i} />
           ))}
-          <span className="urc-reuse-side">{REUSE.fullNote[lang]}</span>
         </div>
 
         <div className="urc-reuse-row">
@@ -51,7 +50,6 @@ export default function ReuseRuleViz({ lang = "zh" }: { lang?: Locale }) {
               <span className="urc-reuse-cell tomb" key={i} />
             ),
           )}
-          <span className="urc-reuse-side">{REUSE.swaNote[lang]}</span>
         </div>
 
         <div className="urc-reuse-row">
@@ -63,7 +61,6 @@ export default function ReuseRuleViz({ lang = "zh" }: { lang?: Locale }) {
               title={i === CKPT ? REUSE.checkpoint[lang] : undefined}
             />
           ))}
-          <span className="urc-reuse-side">{REUSE.mambaNote[lang]}</span>
         </div>
       </div>
     </figure>

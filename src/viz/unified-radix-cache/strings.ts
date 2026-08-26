@@ -17,20 +17,8 @@ export const REUSE = {
   },
   prefixLabel: { zh: "匹配到的 token 前缀", en: "Matched token prefix" },
   fullLabel: { zh: "FULL · 整条路径", en: "FULL · whole path" },
-  fullNote: {
-    zh: "每个 token 的 KV 都在,匹配到哪里就能复用到哪里",
-    en: "KV exists for every token; reuse reaches wherever the match reaches",
-  },
   swaLabel: { zh: "SWA · 尾部窗口", en: "SWA · trailing window" },
-  swaNote: {
-    zh: "只有最近一个窗口的 KV 有意义,更早的槽位可以是 tombstone",
-    en: "Only the trailing window's KV is meaningful; older slots may be tombstones",
-  },
   mambaLabel: { zh: "MAMBA · 单点 checkpoint", en: "MAMBA · exact checkpoint" },
-  mambaNote: {
-    zh: "递归状态就地覆写,只有存过 checkpoint 的位置能接着算",
-    en: "The recurrent state mutates in place; only stored checkpoints can resume",
-  },
   checkpoint: { zh: "checkpoint", en: "checkpoint" },
   window: { zh: "窗口", en: "window" },
 } satisfies Record<string, Localized>;
@@ -47,10 +35,6 @@ export const MATRIX = {
     zh: "现在:一棵树 + 可插拔组件",
     en: "After: one tree plus pluggable components",
   },
-  beforeNote: {
-    zh: "matching / insert / lock / evict 逻辑在每个类里各复制一份",
-    en: "Matching, insert, lock, and evict logic is duplicated in every class",
-  },
   afterCore: {
     zh: "UnifiedTreeCore:匹配 · 分裂 · 插入 · 加锁 · 驱逐的公共机制",
     en: "UnifiedTreeCore: shared matching, split, insert, lock, evict mechanics",
@@ -63,13 +47,19 @@ export const MATRIX = {
     zh: "HiCache:同一生命周期原生跨 L1/L2/L3",
     en: "HiCache: native to the same lifecycle across L1/L2/L3",
   },
-  afterNote: {
-    zh: "新模型 = 选一组组件;新复用规则 = 加一个组件,而不是加一棵树",
-    en: "A new model picks components; a new reuse rule adds a component, not a tree",
-  },
-  ellipsis: { zh: "…每加一个能力,类数量翻倍", en: "…every new capability doubles the classes" },
   components: { zh: "组件", en: "Components" },
 } satisfies Record<string, Localized>;
+
+export const MATRIX_COUNT = {
+  before: {
+    zh: (n: number) => `${n} 个专门缓存类`,
+    en: (n: number) => `${n} specialized cache classes`,
+  },
+  after: {
+    zh: (m: number) => `还是 1 棵树 · ${m} 个组件`,
+    en: (m: number) => `still one tree · ${m} components`,
+  },
+};
 
 /* ---------------- BoundaryVoteViz ---------------- */
 
@@ -142,11 +132,6 @@ export const IDX = {
   swaRow: { zh: "SWA 窗口槽(组件)", en: "SWA window slots (component)" },
   swaSide: { zh: "sidecar ×2 跟随 SWA", en: "sidecars ×2 follow SWA" },
   xlate: { zh: "分配器翻译", en: "allocator translates" },
-  legendCopy: { zh: "sidecar 直接抄来源池的页号", en: "sidecars copy the source pool's page numbers" },
-  legendXlate: {
-    zh: "组件之间索引空间独立,F4、F5 翻译成 S0、S1",
-    en: "components own index spaces; F4, F5 translate to S0, S1",
-  },
 } satisfies Record<string, Localized>;
 
 export const IDX_NOTE = {
@@ -184,10 +169,6 @@ export const MULTI = {
     zh: "FULL+SWA+MAMBA · 8×H200 TP8 · 64 客户端 · 30 轮 · 每轮 1216 入 + 64 出",
     en: "FULL+SWA+MAMBA · 8×H200 TP8 · 64 clients · 30 rounds · 1,216 in + 64 out per turn",
   },
-  rowNote: {
-    zh: "两个模型的负载与规模不同,只在各自行内比较;逐轮命中率曲线见原文 Figure 4",
-    en: "The two models differ in workload and scale; compare tiers only within a row. Per-round curves are in the blog's Figure 4",
-  },
 } satisfies Record<string, Localized>;
 
 /* ---------------- SessionEvictViz ---------------- */
@@ -195,8 +176,8 @@ export const MULTI = {
 export const SESSION = {
   title: { zh: "会话感知驱逐图示", en: "Session-aware eviction diagram" },
   subtitle: {
-    zh: "左右两栏的缓存内容完全相同,只有驱逐顺序不同;引用只改顺序,不 pin 内存",
-    en: "Both panes hold identical cache content and differ only in eviction order; references reorder, they do not pin",
+    zh: "两栏缓存内容完全相同;引用只改驱逐顺序,不 pin 内存",
+    en: "Both panes hold identical cache content; references reorder eviction, they do not pin",
   },
   lruHead: { zh: "普通 LRU", en: "Ordinary LRU" },
   sessHead: { zh: "会话感知驱逐", en: "Session-aware eviction" },
@@ -240,10 +221,6 @@ export const SESSION_STEPS: Localized[] = [
 
 export const SWE = {
   title: { zh: "SWE-bench 会话感知结果图示", en: "SWE-bench session-aware results diagram" },
-  subtitle: {
-    zh: "基线为 HiRadixCache + LRU;对照组同时启用 Unified Radix Cache 与 --enable-session-radix-cache,并非单一变量消融",
-    en: "Baseline is HiRadixCache + LRU; the comparison enables both Unified Radix Cache and --enable-session-radix-cache, so this is not an isolated ablation",
-  },
   ttftHead: { zh: "TTFT 相对基线的降幅", en: "TTFT reduction vs baseline" },
   hitHead: { zh: "命中率变化", en: "Hit-ratio change" },
   bs: { zh: "batch", en: "batch" },

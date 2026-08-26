@@ -82,7 +82,6 @@ export default function SweBenchViz({ lang = "zh" }: { lang?: Locale }) {
       </div>
 
       <div className="viz-footer">
-        <span className="urc-note">{SWE.subtitle[lang]}</span>
       </div>
     </figure>
   );

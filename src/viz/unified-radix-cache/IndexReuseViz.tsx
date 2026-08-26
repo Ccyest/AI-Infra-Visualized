@@ -42,7 +42,7 @@ export default function IndexReuseViz({ lang = "zh" }: { lang?: Locale }) {
         <div className="urc-pagerow">
           <span className="urc-pagerow-label">{IDX.fullSide[lang]}</span>
           {COLS.map((i) => cell(i, "sidecar", `${i}`, i === sel))}
-          <span className="urc-pagemap-note">{IDX.legendCopy[lang]}</span>
+          <span className="urc-pagemap-note" />
         </div>
         <div className="urc-pagerow urc-idx-xlate">
           <span className="urc-pagerow-label" />
@@ -62,7 +62,7 @@ export default function IndexReuseViz({ lang = "zh" }: { lang?: Locale }) {
               cell(i, "swa", `S${i - 4}`, i === sel)
             ),
           )}
-          <span className="urc-pagemap-note">{IDX.legendXlate[lang]}</span>
+          <span className="urc-pagemap-note" />
         </div>
         <div className="urc-pagerow">
           <span className="urc-pagerow-label">{IDX.swaSide[lang]}</span>
@@ -73,7 +73,7 @@ export default function IndexReuseViz({ lang = "zh" }: { lang?: Locale }) {
               cell(i, "sidecar", `${i - 4}`, i === sel)
             ),
           )}
-          <span className="urc-pagemap-note">{IDX.legendCopy[lang]}</span>
+          <span className="urc-pagemap-note" />
         </div>
       </div>
 
