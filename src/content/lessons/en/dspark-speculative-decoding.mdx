@@ -1,6 +1,6 @@
 ---
-title: "DSpark in SGLang: confidence-sized verification, 383.7 tok/s single-user decode"
-description: "Speculative decoding trades one target forward for a batch of drafted tokens, and the trade sours under load: at batch size B with K drafted tokens the target checks B×K tokens every step, and past a point the checking costs more than it saves. DSpark drafts a whole block per forward and scores each token's survival with a calibrated confidence head; SGLang turns those scores into a per-request verify budget every step and replays the trimmed, front-packed batch as a genuinely smaller CUDA graph. Verify windows contract from **5.24** to **2.91** tokens as workloads get harder, holding **0.88–0.97** of the acceptance ceiling, and batch-1 decode reaches **383.7 tok/s** on DeepSeek-V4-Pro."
+title: "DFlash to DSpark in SGLang: 4.3× faster decode, 383.7 tok/s single-user on DeepSeek-V4"
+description: "Speculative decoding has two ways to lose: an autoregressive drafter emits tokens one by one, and once the batch fills the GPU, verifying every drafted token costs B×K tokens per step. DFlash fixes the drafting side with a block-diffusion drafter that emits a whole block in one forward, fed by KV injection from the target — **4.3×** the non-speculative baseline. DSpark fixes the verify side: a sequential head counters suffix decay, and SGLang turns calibrated survival scores into a per-request verify budget, replayed as a genuinely smaller CUDA graph. Windows contract from **5.24** to **2.91** tokens at **0.88–0.97** of the ceiling; batch-1 decode reaches **383.7 tok/s** on DeepSeek-V4-Pro."
 order: 6
 tryOnSglang: "https://github.com/sgl-project/sglang"
 references:

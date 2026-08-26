@@ -1,6 +1,6 @@
 ---
-title: "DSpark in SGLang：按置信度定验证预算，单请求解码 383.7 tok/s"
-description: "投机解码用一次 target forward 换一串草稿 token，但这笔交易在高负载下会变亏：batch 为 B、每请求 K 个草稿时，target 每步要验证 B×K 个 token，过了某个点，验证的开销反而超过省下的。DSpark 让 drafter 一次 forward 起草一整块，再用校准过的 confidence head 给每个草稿打存活分；SGLang 每步把这些分数换算成逐请求的验证预算，并把裁剪后的批次 front-pack 成一张真正更小的 CUDA graph 回放。负载越难，验证窗口从 **5.24** 收缩到 **2.91** 个 token，同时保持接受上限的 **0.88–0.97**；DeepSeek-V4-Pro 上 batch 1 解码达到 **383.7 tok/s**。"
+title: "DFlash 到 DSpark in SGLang：解码提速 4.3×，DeepSeek-V4 单请求 383.7 tok/s"
+description: "投机解码有两处会亏：自回归 drafter 逐 token 起草，快不起来；批次填满 GPU 后，每步还要为 B×K 个草稿 token 付验证开销。DFlash 解决起草侧：块扩散 drafter 一次 forward 出整块，靠 KV injection 从 target 拿上下文，解码达到非投机基线的 **4.3×**。DSpark 解决验证侧：sequential head 压住 suffix decay，SGLang 把校准过的存活分换算成逐请求的验证预算，再回放成真正更小的 CUDA graph。窗口随负载从 **5.24** 收缩到 **2.91** 个 token，保持接受上限的 **0.88–0.97**；DeepSeek-V4-Pro 上 batch 1 解码达到 **383.7 tok/s**。"
 order: 6
 tryOnSglang: "https://github.com/sgl-project/sglang"
 references:
