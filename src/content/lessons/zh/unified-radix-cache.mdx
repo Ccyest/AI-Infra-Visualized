@@ -13,8 +13,6 @@ references:
     url: "https://github.com/sgl-project/sglang/issues/20415"
   - label: "sglang#21846：[Roadmap] SGLang Distributed KVCache System For Agentic Workload"
     url: "https://github.com/sgl-project/sglang/issues/21846"
-  - label: "Mooncake：分布式 KV 缓存存储"
-    url: "https://github.com/kvcache-ai/Mooncake"
 ---
 
 import ReuseRuleViz from "../../../viz/unified-radix-cache/ReuseRuleViz";
@@ -113,11 +111,11 @@ LRU 记得哪些条目最近被访问过，但不知道哪些前缀属于下一�
 
 ## Rust 树核
 
-随着共享前缀变长，树的走查、锁记账、LRU 更新和驱逐扫描都压在 scheduler 的关键路径上。把树状态机从缓存编排里拆出来之后，树核自然成了原生实现的目标。实验性 Rust 原型是 opt-in、仅 L1 的。Rust 拥有 radix 拓扑、每组件的锁记账、侵入式 LRU 链表和驱逐走查。Python 仍是 request 到 token 映射和物理 KV 分配的唯一所有者。树变更之后，Rust 返回 deferred actions，由 Python 应用到池上。
+树核跑在 scheduler 的 CPU 关键路径上：每个请求都要付出走查、锁记账、LRU 更新和驱逐扫描的开销。逻辑本身不复杂，贵的是 Python 本身。每一步都是指针追逐和记账，解释器分发和对象开销占大头，而且前缀越长账单越大。所以实验性原型用 Rust 把同一套状态机重写一遍，opt-in、仅 L1。Rust 拥有 radix 拓扑、锁记账、侵入式 LRU 链表和驱逐走查。Python 保留 request 到 token 映射和物理 KV 分配，按 Rust 返回的 deferred actions 操作池。
 
 <RustSplitViz client:visible />
 
-在 200 轮合成对话上对比 Python 树，原型在树开销占比越高的地方降得越多。SWA 负载 TTFT 降 38%（第 176–200 轮降 42%），全注意力降 10%（最后 25 轮降 18%），混合 SSM 降 5%（7%）。混合 SSM 上更大的 GPU forward 把变化盖住了大半。这些数字背后的残差，是总 TTFT 减去 CUDA event 计时的 GPU prefill。残差还包含调度、采样、detokenize 等未打点的工作，所以不是 CPU 时间的直接测量。后续的 RFC #32710 定义了目标所有权边界：编排和池管理留在 Python，树核可替换。
+在 200 轮合成对话上对比 Python 树，树开销占比越高的地方 TTFT 降得越多：SWA 负载降 38%（第 176–200 轮降 42%），全注意力降 10%（最后 25 轮降 18%），混合 SSM 降 5%（7%），后者更大的 GPU forward 把变化盖住了大半。后续的 RFC #32710 把编排和池管理留在 Python，树核可替换。
 
 <RustBenchViz client:visible />
 

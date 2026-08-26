@@ -13,8 +13,6 @@ references:
     url: "https://github.com/sgl-project/sglang/issues/20415"
   - label: "sglang#21846: [Roadmap] SGLang Distributed KVCache System For Agentic Workload"
     url: "https://github.com/sgl-project/sglang/issues/21846"
-  - label: "Mooncake: distributed KV cache store"
-    url: "https://github.com/kvcache-ai/Mooncake"
 ---
 
 import ReuseRuleViz from "../../../viz/unified-radix-cache/ReuseRuleViz";
@@ -223,27 +221,24 @@ so the deltas are not an isolated ablation of session awareness.
 
 ## Rust tree core
 
-As shared prefixes grow, tree traversal, lock bookkeeping, LRU updates, and
-eviction scans all sit on the scheduler's critical path. Separating the tree
-state machine from cache orchestration makes the tree core a natural target
-for a native implementation. The experimental Rust prototype is opt-in and
-L1-only. Rust owns the radix topology, per-component lock accounting,
-intrusive LRU lists, and eviction walks. Python remains the single owner of
-request-to-token mappings and physical KV allocation. After mutating the tree,
-Rust returns deferred actions for Python to apply to the pools.
+The tree core runs on the scheduler's CPU critical path: every request pays
+for traversal, lock bookkeeping, LRU updates, and eviction scans. The logic is
+simple; the cost is Python itself. Each step is pointer chasing and
+bookkeeping, where interpreter dispatch and object overhead dominate, and the
+bill grows with prefix length. So the experimental prototype reimplements the
+same state machine in Rust, opt-in and L1-only. Rust owns the radix topology,
+lock accounting, intrusive LRU lists, and eviction walks. Python keeps
+request-to-token mappings and physical KV allocation, applying the deferred
+actions Rust returns.
 
 <RustSplitViz client:visible lang="en" />
 
-Against the Python tree over a 200-turn synthetic conversation, the prototype
-lowers TTFT most where tree overhead dominates. TTFT drops 38% on the SWA
-workload (42% over turns 176–200), 10% on full attention (18% over the last
-25 turns), and 5% on hybrid SSM (7%). On hybrid SSM a larger GPU forward hides
-most of the change. The residual behind these numbers is total TTFT minus the
-CUDA-event-timed GPU prefill. It also includes scheduling, sampling,
-detokenization, and other uninstrumented work, so it is not a direct CPU-time
-measurement. The follow-up RFC #32710 defines the target ownership boundary:
-orchestration and pool management stay in Python behind a replaceable tree
-core.
+Against the Python tree over a 200-turn synthetic conversation, TTFT drops
+most where tree overhead dominates: 38% on the SWA workload (42% over turns
+176–200), 10% on full attention (18% over the last 25 turns), and 5% on
+hybrid SSM (7%), where a larger GPU forward hides most of the change. The
+follow-up RFC #32710 keeps orchestration and pool management in Python behind
+a replaceable tree core.
 
 <RustBenchViz client:visible lang="en" />
 
