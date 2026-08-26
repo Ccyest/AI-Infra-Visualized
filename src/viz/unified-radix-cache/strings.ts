@@ -52,12 +52,12 @@ export const MATRIX = {
 
 export const MATRIX_COUNT = {
   before: {
-    zh: (n: number) => `${n} 个专门缓存类`,
-    en: (n: number) => `${n} specialized cache classes`,
+    zh: (n: number) => `共 ${n} 个`,
+    en: (n: number) => `${n} in total`,
   },
   after: {
-    zh: (m: number) => `还是 1 棵树 · ${m} 个组件`,
-    en: (m: number) => `still one tree · ${m} components`,
+    zh: (m: number) => `组件 ×${m}`,
+    en: (m: number) => `components ×${m}`,
   },
 };
 
