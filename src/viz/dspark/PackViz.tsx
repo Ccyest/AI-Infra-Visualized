@@ -87,7 +87,7 @@ export default function PackViz({ lang = "zh" }: { lang?: Locale }) {
       <div className="viz-grid-wrap" ref={wrapRef}>
         <svg
           className="viz-grid"
-          style={{ minWidth: 420 }}
+          style={{ minWidth: 420, maxWidth: 470 }}
           viewBox={`0 0 ${width} ${height}`}
           role="img"
           aria-label={PACK[mode === "padded" ? "paddedToggle" : "packedToggle"][lang]}

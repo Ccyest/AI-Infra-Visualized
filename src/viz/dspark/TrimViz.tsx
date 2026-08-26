@@ -73,7 +73,7 @@ export default function TrimViz({ lang = "zh" }: { lang?: Locale }) {
       <div className="viz-grid-wrap" ref={wrapRef}>
         <svg
           className="viz-grid"
-          style={{ minWidth: 460 }}
+          style={{ minWidth: 300, maxWidth: 340 }}
           viewBox={`0 0 ${width} ${height}`}
           role="img"
           aria-label={TRIM.title[lang]}

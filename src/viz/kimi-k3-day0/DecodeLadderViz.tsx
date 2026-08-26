@@ -55,7 +55,7 @@ export default function DecodeLadderViz({ lang = "zh" }: { lang?: Locale }) {
       </div>
       <div className="serving-source-grid serving-source-single">
         <section className="serving-source-card serving-kernel-card">
-          <svg className="serving-kernel-chart" viewBox="0 0 430 184" role="img" aria-label={copy.kernelGain}>
+          <svg className="serving-kernel-chart" style={{ maxWidth: 680 }} viewBox="0 0 430 184" role="img" aria-label={copy.kernelGain}>
             <title>{copy.kernelGain}</title>
             {[40, 80, 120].map((tick) => (
               <g key={tick}>
