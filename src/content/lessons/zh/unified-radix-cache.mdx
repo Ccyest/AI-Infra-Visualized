@@ -81,7 +81,7 @@ MAMBA 的槽位多一条规则。递归状态每读一个 token 就地覆写自�
 
 ## 跨层 HiCache
 
-组件决定「什么能复用」，HiCache 决定 payload 放在 GPU L1、Host L2 还是外部 L3。节点槽位里存的是池内页号，节点的键是 token 序列本身。L1 吃紧时，HybridCacheController 把页拷到下一层，释放设备页，把新位置记到节点上。节点不删，树仍然知道这段前缀存在、在哪一层。匹配只读树，能不能复用和数据在哪层无关。真正复用时才读槽位。还在 L1 的页直接用。在更低层的页，先从分配器申请新的设备页，controller 把数据拷进来，再把新页号写回槽位。地址每搬一次就换一次，前缀身份从头到尾不变。
+组件决定「什么能复用」，HiCache 决定「可复用的 payload 放在哪」。Unified Radix Cache 让同一个组件身份贯穿 GPU L1、Host L2 和外部 L3 层。数据在层间搬运，不改变前缀身份，也不改变复用规则。组件描述需要的传输，HybridCacheController 执行物理 I/O。
 
 <TierFlowViz client:visible />
 

@@ -140,17 +140,11 @@ another tree.
 
 ## HiCache across memory tiers
 
-Components decide what can be reused; HiCache decides where the payload
-lives, across GPU L1, Host L2, and an external L3 tier. A node's slot stores
-page numbers inside a pool; the node's key is the token sequence itself. When
-L1 fills up, HybridCacheController copies the pages down one tier, frees the
-device pages, and records the new location on the node. The node is not
-deleted, so the tree still knows the prefix exists and on which tier. Matching
-reads only the tree; reusability never depends on where the data sits. On
-actual reuse the cache reads the slot. Pages still in L1 are used in place.
-Pages on a lower tier get freshly allocated device pages, the controller
-copies the data in, and the new page numbers are written back to the slot.
-Addresses change on every move; the prefix identity never does.
+Components decide what can be reused; HiCache decides where the reusable
+payload lives. Unified Radix Cache carries the same component identity across
+GPU L1, Host L2, and an external L3 tier. Moving data between tiers changes
+neither its prefix identity nor its reuse rule. Components describe the
+required transfers, and HybridCacheController executes the physical I/O.
 
 <TierFlowViz client:visible lang="en" />
 
