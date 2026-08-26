@@ -1,0 +1,54 @@
+/* GLM-5.3-Flash 课程专用样式;交互态类名沿用 arch-* 约定(每页独立加载,不与他课冲突) */
+
+.arch-tile {
+  transition: stroke 140ms ease, stroke-width 140ms ease, filter 140ms ease;
+}
+
+.arch-clickable:hover .arch-tile:not(.is-selected) {
+  stroke: var(--ink-2);
+  stroke-width: 1.8px;
+}
+
+.arch-tile.is-selected {
+  filter: drop-shadow(0 2px 5px color-mix(in srgb, var(--ink) 22%, transparent));
+}
+
+.arch-callout-line {
+  stroke: var(--ink);
+  stroke-width: 1.4px;
+  stroke-linecap: round;
+  stroke-dasharray: 4 3;
+}
+
+.arch-callout {
+  transform-box: fill-box;
+  transform-origin: center;
+  filter: drop-shadow(0 5px 7px color-mix(in srgb, var(--ink) 16%, transparent));
+}
+
+.arch-callout rect {
+  fill: var(--surface);
+  stroke: var(--ink);
+  stroke-width: 1.2px;
+}
+
+.arch-callout text {
+  fill: var(--ink);
+  font-size: 9.2px;
+  font-weight: 600;
+}
+
+/* DSA 步进图:被跳过的 KV 压暗 */
+.g53-dim {
+  opacity: 0.28;
+  transition: opacity 220ms ease;
+}
+
+.g53-cell {
+  transition: opacity 220ms ease, fill 220ms ease;
+}
+
+/* mHC 矩阵格 */
+.g53-mat-cell text {
+  font-variant-numeric: tabular-nums;
+}

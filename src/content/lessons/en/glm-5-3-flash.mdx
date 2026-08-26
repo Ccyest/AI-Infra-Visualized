@@ -1,0 +1,176 @@
+---
+title: "GLM-5.3-Flash: 4.4× Less KV Cache at 1M Context, and SGLang Day-0 Support"
+description: "Serving a 1M-token context runs into two walls: full-attention KV cache grows with every token, and every decode step rescans the whole history. GLM-5.3-Flash, the first natively multimodal model in the GLM-5 series (320B total, 18B active, MIT license), redesigns the stack around both walls. 34 KDA linear-attention layers keep a fixed-size state instead of KV; the 11 global layers use DSA, so each step reads only the top-2048 entries picked by an indexer; IndexPool shrinks the indexer 4×; mHC stabilizes a 4-stream residual. Versus GLM-5.3, attention compute drops **3.0×** and KV cache **4.4×**. SGLang runs it day-0."
+order: 7
+tryOnSglang: "https://github.com/sgl-project/sglang"
+references:
+  - label: "Z.ai Blog: GLM-5.3-Flash: Frontier Intelligence, Flash Cost"
+    url: "https://z.ai/blog/glm-5.3-flash"
+  - label: "GLM-5: from Vibe Coding to Agentic Engineering (Technical Report)"
+    url: "https://arxiv.org/abs/2602.15763"
+  - label: "GLM-5.3-Flash model card (HuggingFace)"
+    url: "https://huggingface.co/zai-org/GLM-5.3-Flash"
+  - label: "Kimi Linear: An Expressive, Efficient Attention Architecture (KDA)"
+    url: "https://arxiv.org/abs/2510.26692"
+  - label: "DeepSeek-V3.2: Pushing the Frontier of Open Large Language Models (DSA)"
+    url: "https://arxiv.org/abs/2512.02556"
+  - label: "mHC: Manifold-Constrained Hyper-Connections"
+    url: "https://arxiv.org/abs/2512.24880"
+  - label: "sglang#36507: GLM-5.3-Flash support"
+    url: "https://github.com/sgl-project/sglang/pull/36507"
+  - label: "SGLang Cookbook: GLM-5.3-Flash"
+    url: "https://docs.sglang.io/cookbook/autoregressive/GLM/GLM-5.3-Flash"
+---
+
+import ArchStackViz from "../../../viz/glm-5-3-flash/ArchStackViz";
+import DsaViz from "../../../viz/glm-5-3-flash/DsaViz";
+import IndexPoolViz from "../../../viz/glm-5-3-flash/IndexPoolViz";
+import MhcViz from "../../../viz/glm-5-3-flash/MhcViz";
+import CostCurvesViz from "../../../viz/glm-5-3-flash/CostCurvesViz";
+
+## Background
+
+GLM-5.3-Flash is the first natively multimodal model in the GLM-5 series: 320B total
+parameters, 18B active per token, a native 1M-token context, released under the MIT
+license. Before the release, Z.ai ran it anonymously as ox-alpha on OpenCode and
+OpenRouter for about a week. It became the most-used model on OpenRouter in that
+window, at 23.2T tokens over six days, and all of that traffic was served on Chinese
+AI chips.
+
+The design goal is cost. Compared with the GLM-4.5 series, the total parameter count
+is similar (320B vs. 355B), but the active parameters nearly halve (18B vs. 32B) and
+the layer count halves (45 vs. 92). Z.ai reports that it outperforms GLM-5.2 across
+benchmarks at one-tenth the price. The rest of this lesson walks through where the
+cut comes from: the attention stack, the indexer on top of it, and the residual
+connections.
+
+## The layer stack
+
+<ArchStackViz client:visible lang="en" />
+
+The 45 layers interleave two attention types at a 3:1 ratio: 34 layers use KDA
+linear attention and 11 layers use DSA sparse attention. Every fourth layer is DSA,
+and the final layer is KDA. The first 3 layers use a dense FFN; the other 42 use MoE
+with 288 routed experts plus 1 shared expert, of which 8 routed experts are active
+per token. One MTP layer sits on top for speculative decoding. Images enter through
+a 24-layer ViT and join the same stack, which is what "natively multimodal" means
+here: one stack serves text and vision.
+
+Two structural choices are easy to miss in the diagram. First, main attention uses
+no RoPE: `qk_rope_head_dim` is 0 in the config, and position comes from the KDA
+recurrence. Kimi K3 made the same choice, and the
+[Kimi K3 lesson](https://yichizhang.dev/AI-Infra-Visualized/en/lessons/kimi-k3-day0-support/)
+covers why input-dependent decay can replace explicit position encoding. Second,
+residuals are not plain additions: every sublayer output passes through mHC, which
+gets its own section below.
+
+## Hybrid attention
+
+### KDA layers
+
+KDA is a linear-attention variant. Instead of appending one KV entry per token, each
+head keeps a fixed 128×128 state matrix. Every new token updates that state in
+place: a per-channel gate decays old content, then a delta-rule write corrects the
+state along the current key. The state never grows. With 64 heads per layer, one
+request holds about 4MB per KDA layer in BF16, roughly 140MB across all 34 KDA
+layers, whether the context is 1K or 1M tokens. The full mechanism walkthrough, from
+MHA to DeltaNet to KDA, is in the
+[Kimi K3 lesson](https://yichizhang.dev/AI-Infra-Visualized/en/lessons/kimi-k3-day0-support/);
+GLM-5.3-Flash even keeps the same decay lower bound (`gate_lower_bound = -5`).
+
+A fixed-size state cannot keep every token apart, so precise long-range retrieval
+still needs layers that read history per position. Kimi K3 keeps full global MLA in
+24 of its 93 layers for that job. GLM-5.3-Flash also keeps 11 global layers, but
+they are not full attention.
+
+### DSA layers
+
+The global layers use DSA, the sparse attention mechanism from DeepSeek-V3.2. Each
+DSA layer is MLA-based: every token stores one 512-dim compressed latent (1KB in
+BF16) instead of per-head K and V. On top sits a lightning indexer with 32 heads of
+128 dims. At each decode step, the indexer scores the history, top-k selection keeps
+the best-scoring entries (`index_topk = 2048`), and main attention reads only those.
+Once the context grows past the top-k budget, reads per step stop growing: compute
+is capped, while the full KV history stays addressable.
+
+<DsaViz client:visible lang="en" />
+
+### IndexPool
+
+At a 1M-token context, the indexer scan is the remaining term that grows with
+context: one score per history token per step, and a 1M-entry indexer cache. Here
+GLM-5.3-Flash adds its own piece, IndexPool. Every 4 indexer keys are compressed
+into 1 cache entry through a learned weighted sum, so the cache and the per-step
+scoring both shrink 4×. Selection then works at 4-token blocks, and the tail block
+is always selected regardless of score, so the newest tokens are never dropped.
+
+<IndexPoolViz client:visible lang="en" />
+
+### Cost curves
+
+The blog's own comparison shows the division of labor. Kimi K3 pairs KDA with full
+MLA, so its global layers rescan the whole history at every decode step, and its
+per-token attention compute is the highest line in the chart. GLM-5.3 uses DSA in
+every layer, so its compute is capped, but every layer still stores KV, and its
+cache is the steepest line. GLM-5.3-Flash cuts both at once: KDA removes the KV from
+34 layers, and DSA caps the reads in the other 11.
+
+<CostCurvesViz client:visible lang="en" />
+
+In absolute terms, the 11 DSA layers store about 11KB of KV latents per token in
+BF16, so a full 1M-token request holds about 11GB before any cache quantization,
+plus the pooled indexer cache. The blog is explicit that this still lands slightly
+above Kimi-K3 and DeepSeek-V4-Flash on KV size, and calls it room for improvement.
+
+## mHC
+
+Hyper-Connections widen the residual stream. Instead of one running sum, the model
+keeps `hc_mult = 4` parallel streams, and a learned 4×4 matrix mixes them around
+every sublayer. The catch is the identity mapping. A plain residual passes a signal
+through unchanged, and that property is what keeps very deep networks trainable.
+Once a learned matrix sits on the path, each crossing multiplies the signal by that
+matrix. If its row and column sums drift from 1, the drift compounds across 45
+layers of repeated crossings, and training becomes unstable at scale.
+
+mHC, from DeepSeek, restores the property by constraint. Each mixing matrix is
+projected to be doubly stochastic: all entries non-negative, every row and every
+column summing to 1. The projection runs inside the forward pass as Sinkhorn-Knopp
+iterations, which alternately normalize rows and columns; the config runs 20
+(`hc_sinkhorn_iters = 20`). A doubly stochastic matrix can only average streams,
+never amplify them, so identity mapping comes back while the extra width and the
+learned routing between streams stay.
+
+<MhcViz client:visible lang="en" />
+
+## Results
+
+The release benchmarks put the efficiency story next to capability. Selected
+numbers from the blog:
+
+| Benchmark | GLM-5.3-Flash | GLM-5.2 | Claude Opus 4.8 |
+| --- | --- | --- | --- |
+| Terminal Bench 2.1 | 84.3 | 81.0 | 85.0 |
+| DeepSWE v1.1 | 63.4 | 46.2 | 58.0 |
+| AutomationBench v1.0.6 | 48.8 | 26.2 | 41.0 |
+| Toolathlon Verified | 78.4 | 59.9 | 76.2 |
+
+On the Artificial Analysis Intelligence Index v4.1.1, GLM-5.3-Flash scores 57 at
+$0.045 per task (discounted), which places it on the cost-intelligence Pareto
+frontier of that index.
+
+## Serving on SGLang
+
+SGLang opened day-0 support at release:
+[sglang#36507](https://github.com/sgl-project/sglang/pull/36507) carries the model
+support, and the
+[GLM-5.3-Flash cookbook](https://docs.sglang.io/cookbook/autoregressive/GLM/GLM-5.3-Flash)
+merged the same day, with FP8 KV cache and the TRT-LLM DSA attention backend as the
+default recipe on Blackwell GPUs.
+
+The production tie runs deeper than day-0 support. Z.ai writes that the inference
+engine serving this model on Chinese AI chips was built on top of SGLang, with an
+Encode–Prefill–Decode (EPD) disaggregated architecture that scales multimodal
+encoding, prefill, and decoding as independent worker pools, plus W8A8 weight
+quantization and hybrid INT8/FP8/BF16 cache quantization. Against their initial
+baseline on the same hardware, that stack reached a 3× end-to-end serving
+improvement, at per-token costs comparable to mainstream NVIDIA GPUs.

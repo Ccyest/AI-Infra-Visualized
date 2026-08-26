@@ -1,0 +1,98 @@
+---
+title: "GLM-5.3-Flash：1M 上下文下 KV cache 省 4.4 倍，与 SGLang Day-0 Support"
+description: "要把 1M token 的上下文跑起来，会撞上两堵墙：全注意力的 KV cache 随 token 数一路增长，每步解码还要重扫全部历史。GLM-5.3-Flash 是 GLM-5 系列首个原生多模态模型（总参 320B、激活 18B、MIT 协议），整个堆叠围绕这两堵墙重新设计：34 层 KDA linear attention 用固定大小的状态取代 KV；11 层全局层改用 DSA，每步只读 indexer 选出的 top-2048 条；IndexPool 把 indexer 本身再压 4 倍；mHC 稳住 4 路残差流。对比 GLM-5.3，attention 计算量降 **3.0 倍**，KV cache 降 **4.4 倍**。SGLang day-0 即可运行。"
+order: 7
+tryOnSglang: "https://github.com/sgl-project/sglang"
+references:
+  - label: "Z.ai Blog: GLM-5.3-Flash: Frontier Intelligence, Flash Cost"
+    url: "https://z.ai/blog/glm-5.3-flash"
+  - label: "GLM-5: from Vibe Coding to Agentic Engineering（技术报告）"
+    url: "https://arxiv.org/abs/2602.15763"
+  - label: "GLM-5.3-Flash model card（HuggingFace）"
+    url: "https://huggingface.co/zai-org/GLM-5.3-Flash"
+  - label: "Kimi Linear: An Expressive, Efficient Attention Architecture（KDA）"
+    url: "https://arxiv.org/abs/2510.26692"
+  - label: "DeepSeek-V3.2: Pushing the Frontier of Open Large Language Models（DSA）"
+    url: "https://arxiv.org/abs/2512.02556"
+  - label: "mHC: Manifold-Constrained Hyper-Connections"
+    url: "https://arxiv.org/abs/2512.24880"
+  - label: "sglang#36507：GLM-5.3-Flash support"
+    url: "https://github.com/sgl-project/sglang/pull/36507"
+  - label: "SGLang Cookbook：GLM-5.3-Flash"
+    url: "https://docs.sglang.io/cookbook/autoregressive/GLM/GLM-5.3-Flash"
+---
+
+import ArchStackViz from "../../../viz/glm-5-3-flash/ArchStackViz";
+import DsaViz from "../../../viz/glm-5-3-flash/DsaViz";
+import IndexPoolViz from "../../../viz/glm-5-3-flash/IndexPoolViz";
+import MhcViz from "../../../viz/glm-5-3-flash/MhcViz";
+import CostCurvesViz from "../../../viz/glm-5-3-flash/CostCurvesViz";
+
+## 背景
+
+GLM-5.3-Flash 是 GLM-5 系列首个原生多模态模型：总参 320B，每 token 激活 18B，原生 1M 上下文，以 MIT 协议开源。发布前，Z.ai 以 ox-alpha 的匿名身份把它放在 OpenCode 和 OpenRouter 上跑了约一周。那段时间它成了 OpenRouter 上用量第一的模型，六天处理 23.2T token，而且全部流量跑在国产 AI 芯片上。
+
+这个模型的设计目标是成本。对比 GLM-4.5 系列，总参数量相近（320B vs. 355B），但激活参数近乎减半（18B vs. 32B），层数也减半（45 vs. 92）。Z.ai 给出的结论是：各项 benchmark 全面超过 GLM-5.2，价格只有十分之一。本课后面就沿着省钱的来源走一遍：attention 堆叠、堆叠之上的 indexer、以及残差连接。
+
+## 层堆叠
+
+<ArchStackViz client:visible />
+
+45 层以 3:1 的比例交错两种 attention：34 层 KDA linear attention，11 层 DSA sparse attention。每 4 层里第 4 层是 DSA，最后一层是 KDA。前 3 层用 dense FFN，其余 42 层用 MoE：288 个 routed expert 加 1 个 shared expert，每 token 激活 8 个 routed。顶部有 1 层 MTP，用于投机解码。图像经 24 层 ViT 进入同一条堆叠，这就是「原生多模态」的含义：文本和视觉共用一条主干。
+
+图里还有两个容易漏看的结构选择。第一，主注意力不用 RoPE：config 里 `qk_rope_head_dim` 为 0，位置信息由 KDA 的递归提供。Kimi K3 做了同样的选择，[Kimi K3 那一课](https://yichizhang.dev/AI-Infra-Visualized/lessons/kimi-k3-day0-support/)讲过为什么随输入变化的衰减可以替代显式位置编码。第二，残差不是普通加法：每个子层的输出都要过 mHC，后文有专门一节。
+
+## 混合注意力
+
+### KDA 层
+
+KDA 是 linear attention 的变体。它不为每个 token 追加一条 KV，而是每个头维护一个固定的 128×128 状态矩阵。每个新 token 原地更新这个状态：先用逐通道的门控衰减旧内容，再沿当前 key 做一次 delta rule 改写。状态不会增长。每层 64 个头，一个请求在每个 KDA 层约占 4MB（BF16），34 层合计约 140MB，上下文是 1K 还是 1M token 都一样。从 MHA 到 DeltaNet 再到 KDA 的完整机制讲解见 [Kimi K3 那一课](https://yichizhang.dev/AI-Infra-Visualized/lessons/kimi-k3-day0-support/)；GLM-5.3-Flash 连衰减下界都沿用了同一个值（`gate_lower_bound = -5`）。
+
+固定大小的状态没法把每个 token 分开存，精确的长程检索仍然需要能逐位置读历史的层。Kimi K3 为此在 93 层里保留 24 层完整的全局 MLA。GLM-5.3-Flash 也保留 11 层全局层，但它们不是 full attention。
+
+### DSA 层
+
+全局层用的是 DSA，出自 DeepSeek-V3.2 的稀疏注意力机制。每个 DSA 层基于 MLA：每个 token 只存一条 512 维压缩 latent（BF16 下 1KB），不存逐头的 K 和 V。latent 之上是一个 lightning indexer：32 个头、每头 128 维。每步解码时，indexer 先给全部历史打分，top-k 留下得分最高的条目（`index_topk = 2048`），主注意力只读这些。上下文一旦超过 top-k 的预算，每步的读取量就不再增长：计算被封顶，而完整的 KV 历史仍然可寻址。
+
+<DsaViz client:visible />
+
+### IndexPool
+
+到 1M token 的上下文，indexer 的扫描成了仅剩的随上下文增长的项：每步要给每个历史 token 打一次分，还要存 1M 条 indexer cache。GLM-5.3-Flash 在这里加了自己的东西：IndexPool。每 4 个 indexer key 通过学到的加权求和压成 1 条缓存条目，缓存和每步打分都缩小 4 倍。选择随之变成按 4-token 的 block 进行，且尾部 block 无论得分高低恒被选中，最新的 token 永远不会被丢掉。
+
+<IndexPoolViz client:visible />
+
+### 开销曲线
+
+官方 blog 的对比图正好展示了这套分工。Kimi K3 用 KDA 搭配完整 MLA，全局层每步解码仍要重扫全部历史，它的每 token attention 计算量是图中最高的一条线。GLM-5.3 每层都用 DSA，计算被封顶，但每层都要存 KV，它的 cache 是最陡的一条线。GLM-5.3-Flash 两头都砍：KDA 消掉 34 层的 KV，DSA 把剩下 11 层的读取量封顶。
+
+<CostCurvesViz client:visible />
+
+看绝对值：11 个 DSA 层每 token 合计约 11KB 的 KV latent（BF16），一条打满 1M token 的请求在任何 cache 量化之前约占 11GB，另加池化后的 indexer cache。blog 也明说这个 KV 体积仍略高于 Kimi-K3 和 DeepSeek-V4-Flash，并称之为进一步改进的空间。
+
+## mHC
+
+Hyper-Connections 把残差流加宽。模型不再只有一条累加和，而是维护 `hc_mult = 4` 条并行的流，每个子层前后由一个学到的 4×4 矩阵混合它们。代价出在恒等映射上。普通残差把信号原样传过去，深网络能训得动靠的就是这个性质。一旦路径上放了学到的矩阵，信号每过一次就被乘一次。如果矩阵的行和列和偏离 1，偏差会在 45 层的反复穿越中指数级累积，规模一大训练就不稳。
+
+mHC 出自 DeepSeek，用约束把这个性质找回来。每个混合矩阵被投影成双随机矩阵：所有元素非负，每行、每列的和都是 1。投影就在前向传播里做，用 Sinkhorn-Knopp 迭代交替归一化行与列，config 里跑 20 轮（`hc_sinkhorn_iters = 20`）。双随机矩阵只会对流做平均，不会放大它们，恒等映射由此回归，而加宽的残差流和流之间学到的路由得以保留。
+
+<MhcViz client:visible />
+
+## 成果
+
+发布 benchmark 把效率故事和能力放在了一起。blog 中的部分数字：
+
+| Benchmark | GLM-5.3-Flash | GLM-5.2 | Claude Opus 4.8 |
+| --- | --- | --- | --- |
+| Terminal Bench 2.1 | 84.3 | 81.0 | 85.0 |
+| DeepSWE v1.1 | 63.4 | 46.2 | 58.0 |
+| AutomationBench v1.0.6 | 48.8 | 26.2 | 41.0 |
+| Toolathlon Verified | 78.4 | 59.9 | 76.2 |
+
+在 Artificial Analysis Intelligence Index v4.1.1 上，GLM-5.3-Flash 以每任务 $0.045（折扣价）拿到 57 分，落在该指数的成本–智能 Pareto 前沿上。
+
+## SGLang 上的部署
+
+SGLang 在发布当天打开了 day-0 支持：[sglang#36507](https://github.com/sgl-project/sglang/pull/36507) 承载模型支持，[GLM-5.3-Flash cookbook](https://docs.sglang.io/cookbook/autoregressive/GLM/GLM-5.3-Flash) 同日合并，在 Blackwell GPU 上默认使用 FP8 KV cache 加 TRT-LLM DSA attention backend 的配方。
+
+这层关系比 day-0 支持更深。Z.ai 写明，在国产 AI 芯片上服务这个模型的推理引擎是在 SGLang 之上构建的：Encode–Prefill–Decode（EPD）分离架构把多模态编码、prefill、解码拆成独立扩缩的 worker 池，配合 W8A8 权重量化和 INT8/FP8/BF16 混合 cache 量化。对比同一硬件上的初始基线，这套栈拿到了 3 倍的端到端服务性能提升，每 token 成本与主流 NVIDIA GPU 相当。
