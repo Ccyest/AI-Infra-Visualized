@@ -1,6 +1,6 @@
 ---
 title: "Unified Radix Cache in SGLang: one tree for every hybrid model, up to 16.6% lower TTFT"
-description: "A hybrid model applies three reuse rules to the same token prefix: full attention KV, sliding window KV, and recurrent checkpoints. Prefix caches used to encode each combination as its own cache class, duplicating matching, locking, and eviction logic. SGLang's Unified Radix Cache keeps one radix tree instead. Each rule attaches to the shared topology as a component, and a reuse boundary counts only when every component votes yes. Multi-turn hit rates stay near **98%** with a Mooncake L3 tier. Session-aware eviction cuts SWE-bench TTFT by up to **16.6%**. The experimental Rust tree core lowers SWA TTFT by up to **42%**."
+description: "Radix Cache is a major component in SGLang, but as the model architecture keeps updating, its limitations are gradually appearing. Nowadays models apply hybrid attention mechanisms, but the traditional radix cache is only designed for full attention KV. Therefore we designed SGLang's Unified Radix Cache. Multi-turn hit rates stay near **98%** with a Mooncake L3 tier. Session-aware eviction cuts SWE-bench TTFT by up to **16.6%**. The experimental Rust tree core lowers SWA TTFT by up to **42%**."
 order: 5
 concepts: []
 tryOnSglang: "https://github.com/sgl-project/sglang"
@@ -30,28 +30,24 @@ import RustBenchViz from "../../../viz/unified-radix-cache/RustBenchViz";
 ## Background
 
 Prefix caching reuses KV when requests share a token prefix. Under full
-attention the rule is simple. KV only appends as tokens arrive, so a shared
-prefix stays valid once computed, and a later request with the same prefix
-skips that part of prefill. SGLang tracks this mapping with a radix tree keyed
-by token sequences. Before prefill, the tree returns the longest reusable
-prefix and the locations of its KV.
+attention the rule is simple. KV only appends as tokens arrive, and shared
+tokens will be reused, so we only need to compute the later-arriving tokens.
 
 Hybrid models break the single rule. One request can carry full attention KV,
-sliding window attention KV, and recurrent states at the same time: one token
-prefix, three notions of reuse. Full attention KV is reusable across the whole
-matched prefix. Sliding window KV covers only the trailing window. A recurrent
-state mutates in place as tokens are read, so it is valid only at an exact
-checkpoint. Forcing one boundary across all three either discards valid reuse
-or permits invalid reuse.
+sliding window attention KV, and recurrent states at the same time. Full
+attention KV is reusable across the whole matched prefix. Sliding window KV
+covers only the trailing window. A recurrent state mutates in place as tokens
+are read, so it is valid only at an exact checkpoint. Forcing one boundary
+across all three either discards valid reuse or permits invalid reuse.
 
 <ReuseRuleViz client:visible lang="en" />
 
 These rules ship in different combinations. DeepSeek-V4 pairs FULL with SWA.
 Kimi-K3 pairs FULL with MAMBA for its KDA recurrent state. Inkling runs all
 three. Encoding each combination as a specialized cache class produces a
-combinatorial matrix, and orthogonal capabilities such as HiCache multiply it
-further. Earlier implementations followed that pattern, duplicating matching,
-insertion, locking, and eviction logic across cache variants.
+combinatorial matrix. Earlier implementations followed that pattern, with
+duplicated logic everywhere. Thus a unified prefix cache is becoming an urgent
+task.
 
 <ComponentMatrixViz client:visible lang="en" />
 
@@ -59,108 +55,56 @@ insertion, locking, and eviction logic across cache variants.
 
 ### Design and mechanism
 
-Each node of a radix tree stores a run of tokens. Reading the tokens from the
-root down to a node spells out a prefix. Matching walks the new request's
-tokens down from the root, and however far the walk gets is how much prefix is
-matched. Requests that start with the same tokens walk the same nodes. In the
-figure below, three requests arrive one after another. Requests 1 and 2 share
-their first 6 tokens, and request 3 shares only the opening A B. Every shared
-span is stored once, not twice.
-
-Unified Radix Cache adds exactly one thing to this structure: every node
-carries one slot per component, and a slot holds pool indices. FULL's slot
-holds the KV page numbers for the node's tokens, present on every node of a
-cached path. SWA's slot holds window-slot numbers, present only on nodes
-inside the trailing window; on older nodes it is an empty tombstone. MAMBA's
-slot holds the location of a checkpoint, the recurrent state after reading all
-tokens up to this node. It is present only where a checkpoint was actually
-stored. An empty slot is fine; the node stays for the other components.
+Unified Radix Cache adds only one thing to the radix tree: every node carries
+one slot per component. FULL's slot holds the KV page numbers for the node's
+tokens, present on every node of a cached path. SWA's slot holds window-slot
+numbers, present only on nodes inside the trailing window; on older nodes it
+is an empty tombstone. MAMBA's slot holds the location of a checkpoint, the
+recurrent state after reading all tokens up to this node. It is present only
+where a checkpoint was actually stored.
 
 <TreeReplayViz client:visible lang="en" />
+
+### The safe reuse boundary
+
+During matching, the core walks the canonical FULL path and treats every
+visited node as a candidate boundary. Each active component votes through its
+validator, and the boundary advances only when all validators accept the
+candidate. A rejection does not stop the traversal, because a component may
+accept a deeper node. Take SWA on a long cached prefix: shallow nodes have
+slid out of the trailing window, so their window slots are tombstones and SWA
+rejects them, while the last few nodes still hold a complete window and SWA
+accepts there. Stopping at the first rejection would throw that deeper
+boundary away.
+
+<BoundaryVoteViz client:visible lang="en" />
 
 This is why three reuse rules do not need three trees. The tree walks by
 tokens alone. Reaching a node means the prefix matched that far. Whether the
 node's data is usable is each component's own question, and each component
 answers by checking its own slots. Data there means usable; a tombstone or
 nothing means not. For SWA the check also requires a complete trailing window,
-as the next section shows. The entire difference between the three rules is
-which nodes carry their data. New models change nothing about the walk. A
-DeepSeek-V4 node carries only the F and S slots, Kimi-K3 only F and M,
-Inkling all three.
-
-In code, UnifiedTreeCore owns the walk: matching, splitting, insertion,
-locking, and eviction. UnifiedRadixCache turns slot indices into actual pool
-operations. Each rule is one TreeComponent.
-
-The MAMBA slot has one extra rule. A recurrent state overwrites itself in
-place as it reads tokens, so the checkpoint in the tree cannot be handed to a
-request directly. Two requests advancing one shared state would corrupt it for
-each other. Checkpoints in the tree are therefore read-only. A hit first
-copies the checkpoint into the request's own state slot, and only the copy is
-mutated. The
-[Kimi K3 lesson](https://yichizhang.dev/AI-Infra-Visualized/en/lessons/kimi-k3-day0-support/)
-steps through this copy-on-write for KDA state in detail.
-
-### The safe reuse boundary
-
-During matching, the core walks the canonical FULL path and treats every
-visited node as a candidate boundary. A FULL match alone is not sufficient:
-each active component creates a validator, and the boundary advances only when
-all validators accept the candidate. A rejection does not stop the traversal,
-because a component may accept a deeper node. SWA can reject a node whose
-window slots are tombstoned, then accept a deeper one where a complete
-trailing window exists.
-
-<BoundaryVoteViz client:visible lang="en" />
-
-After traversal the core builds a MatchResult. Component finalizers then
-prepare the selected values for reuse, including the checkpoint copy described
-above.
-
-### Lifecycle hooks
-
-The same component contract covers the rest of the tree lifecycle:
-
-| Lifecycle | What the component decides |
-| --- | --- |
-| Match | `create_match_validator` accepts or rejects a candidate; the finalizers prepare the selected result |
-| Split | `redistribute_on_node_split` moves component data when a radix node divides |
-| Insert | `update_component_on_insert_overlap` and `commit_insert_component_data` decide which pool indices the component owns |
-| Lock | `acquire_component_lock` / `release_component_lock` protect a path, a trailing window, or one checkpoint |
-| Evict | `evict_device_start` / `next_node` / `end` pick device candidates; `evict_component` removes data; `drive_host_eviction` reclaims host memory |
-
-Removing one component's payload does not always remove the radix node. The
-remaining topology can still anchor other components, and the empty slot stays
-behind as a tombstone until the payload is restored or the node becomes
-unnecessary. Component semantics stay attached to one prefix identity. That is
-what lets HiCache extend payloads across memory tiers without introducing
-another tree.
+as the example above showed.
 
 ## HiCache across memory tiers
 
 Components decide what can be reused; HiCache decides where the reusable
 payload lives. Unified Radix Cache carries the same component identity across
 GPU L1, Host L2, and an external L3 tier. Moving data between tiers changes
-neither its prefix identity nor its reuse rule. Components describe the
-required transfers, and HybridCacheController executes the physical I/O.
+neither its prefix identity nor its reuse rule.
 
 <TierFlowViz client:visible lang="en" />
 
-The unchanged identity rests on one level of indirection. A node's slot
-stores page numbers inside a pool; the node's key is the token sequence
-itself. When L1 fills up, the controller copies the pages down one tier, frees
-the device pages, and records the new location on the node. The node is not
-deleted, so the tree still knows the prefix exists and on which tier. Matching
-reads only the tree. Only actual reuse reads the slot: pages still in L1 are
-used in place, and pages on a lower tier get freshly allocated device pages,
-copied in, with the new page numbers written back to the slot. Every move
-rewrites page numbers, so not every physical pool should keep its own. A
-component (anchor) has its own reuse rule and votes on the boundary. A sidecar
-does not: it declares one source pool and stores its data at the same page
-numbers the source uses, moving with it with no extra bookkeeping. In
-DeepSeek-V4, FULL and SWA are components with independent index spaces: in the
-blog's normalized six-page example, the same tokens sit in the FULL tail pages
-F4 and F5 but in the SWA slots S0 and S1, translated by the allocator at
+A node's slot stores page numbers inside a pool; the node's key is the token
+sequence itself. When L1 fills up, the controller copies the pages down one
+tier, frees the device pages, and records the new location on the node. The
+node is not deleted, so the tree still knows the prefix exists and on which
+tier. Matching reads only the tree. Only actual reuse reads the slot: pages
+still in L1 are used in place, and pages on a lower tier get freshly allocated
+device pages, copied in, with the new page numbers written back to the slot.
+In DeepSeek-V4, FULL and SWA are components with independent index spaces: in
+the blog's normalized six-page example, the same tokens sit in the FULL tail
+pages F4 and F5 but in the SWA slots S0 and S1, translated by the allocator at
 runtime. The C4 and C128 compressed-KV pools plus indexer buffers and
 compressor states, five auxiliary pools in all, register as sidecars, three
 following FULL and two following SWA. Components translate indices; sidecars
@@ -171,39 +115,24 @@ copy them.
 ### Multi-turn benchmark
 
 Multi-turn workloads grow a reusable conversational prefix every round. The
-question is whether lower tiers preserve it after GPU capacity runs out. The
-blog compares three configurations on two hybrid models: GPU L1 only, L1 plus
-Host L2, and L1 plus L2 plus a 500 GiB Mooncake Store as an external L3.
+question is whether lower tiers preserve it after GPU capacity runs out. Here
+is the comparison across two hybrid models and three storage tiers.
 
 <MultiTurnBenchViz client:visible lang="en" />
 
-In both workloads L1 loses reusable prefixes first, and L2 delays the capacity
-limit. L3 stays high after warmup. On DeepSeek-V4-Flash it keeps the hit rate
-near 98%, holds average TTFT below 9 seconds, and reaches 145.5K effective
-input tokens/s, versus 9.4K for L1 only. On Inkling-Small it finishes at 96.8%
-and 67.1K. One note on the metric: effective input-token throughput divides
-the sum of complete prompt lengths by wall-clock time, so it credits cache-hit
-prefix tokens. It measures serving progress under prefix reuse, not raw
-prefill compute.
+We can see that on DeepSeek-V4-Flash, L3 keeps the hit rate near 98%, holds
+average TTFT below 9 seconds, and reaches 145.5K effective input tokens/s,
+versus 9.4K for L1 only. On Inkling-Small it finishes at 96.8% and 67.1K.
 
 ## Session-aware eviction
 
-LRU records which entries were touched recently, but not which prefixes belong
-to sessions that will come back on their next turn. Under memory pressure it
-can evict an active session's KV while keeping unrelated entries.
-Session-aware eviction adds the missing signal. Applications attach a stable
-`session_id` to every request. After a request finishes, Unified Radix Cache
-registers that session's reusable region: FULL tracks its prefix path, SWA its
-trailing window, and MAMBA its reusable frontier.
-
-These references change eviction order; they never pin memory. FULL orders
-candidates by referenced state, session reference count, and base priority.
-SWA and MAMBA scan unreferenced entries in their own reusable regions first,
-then fall back to referenced ones when more space is needed. The policy covers
-GPU L1 and Host L2, not the external L3. Calling `/close_session` removes a
-session's references without immediately deleting its entries. Session
-generations plus bounded closed-session tombstones keep stale late-finishing
-requests from restoring released references.
+LRU records which entries were touched recently, but doesn't know any
+session-level context. Under memory pressure it can evict an active session's
+KV while keeping unrelated entries. Session-aware eviction adds the missing
+signal. Applications attach a stable `session_id` to every request. Calling
+`/close_session` removes a session's references without immediately deleting
+its entries. When a session is closed, the cache evicts that session's entries
+first instead of following plain LRU order.
 
 <SessionEvictViz client:visible lang="en" />
 
@@ -222,15 +151,12 @@ so the deltas are not an isolated ablation of session awareness.
 ## Rust tree core
 
 The tree core runs on the scheduler's CPU critical path: every request pays
-for traversal, lock bookkeeping, LRU updates, and eviction scans. As an
-interpreted language, Python resolves types and attributes at runtime: every
-node is a heap object, every visit pays for interpreter dispatch, attribute
-lookups, and reference counting, and one LRU update juggles several separate
-container objects. Rust, in contrast, is compiled: types and field offsets
-are fixed at compile time, so the same step becomes a few instructions over
-compact structs, and the LRU links live inside the node itself, making an
-update two pointer writes with no allocation. The experimental prototype
-therefore rebuilds the same state machine in Rust,
+for traversal, lock bookkeeping, LRU updates, etc. As an interpreted language,
+Python resolves types and attributes at runtime: every visit pays for
+interpreter dispatch, attribute lookups, and reference counting. Rust, in
+contrast, is compiled: types and field offsets are fixed at compile time, so
+the same step becomes a few instructions over compact structs. The
+experimental prototype therefore rebuilds the same state machine in Rust,
 opt-in and L1-only: Rust owns the radix topology, lock accounting, intrusive
 LRU lists, and eviction walks, while Python keeps request-to-token mappings
 and physical KV allocation, applying the deferred actions Rust returns.
@@ -245,21 +171,6 @@ follow-up RFC #32710 keeps orchestration and pool management in Python behind
 a replaceable tree core.
 
 <RustBenchViz client:visible lang="en" />
-
-## Future work
-
-Three parts of the system still need to converge on the shared prefix
-identity:
-
-- Complete the replaceable Rust tree core (roadmap #20415): extend it to SWA,
-  MAMBA, and HiCache while pool allocation and orchestration stay in Python.
-- Connect GPU L1 directly to external L3 tiers, making Host L2 an optional
-  staging tier. This needs coordinated admission, prefetch, transfer, and
-  eviction, not just another storage connector.
-- Coordinate agentic KV caching across the serving stack (roadmap #21846):
-  extend the same cache identity across routers, prefill and decode workers,
-  and HiCache, so sessions, subagents, and tool calls can share prefetch and
-  retention decisions.
 
 ## Acknowledgments
 
