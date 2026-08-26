@@ -1,5 +1,5 @@
 ---
-title: "SGLang 里的 Unified Radix Cache：一棵树支持所有混合模型，TTFT 最多降 16.6%"
+title: "SGLang 里的 Unified Radix Cache：一棵树支持所有混合模型"
 description: "Radix Cache 是 SGLang 的核心组件之一，但随着模型架构不断更新，它的局限逐渐显现。如今的模型采用混合注意力机制，而传统 Radix Cache 只为 full attention KV 设计。因此我们为混合注意力机制设计了 SGLang 的 Unified Radix Cache。多轮对话命中率在 Mooncake L3 下保持 **98%**；会话感知驱逐把 SWE-bench TTFT 最多降 **16.6%**；实验性 Rust 树核把滑窗负载 TTFT 最多降 **42%**。"
 order: 5
 concepts: []
