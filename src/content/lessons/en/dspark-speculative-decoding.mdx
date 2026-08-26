@@ -1,88 +1,213 @@
 ---
-title: "DSpark: Speculative Decoding at Large Batch Sizes"
-description: "Block drafting and block verification are the standard part; DSpark's contribution is confidence-scheduled verify windows and ragged packing. +68% over verify-all at batch 256; K3's BS=1 decode goes from 113 to 423 tok/s."
+title: "DSpark in SGLang: confidence-sized verification, 383.7 tok/s single-user decode"
+description: "Speculative decoding trades one target forward for a batch of drafted tokens, and the trade sours under load: at batch size B with K drafted tokens the target checks B×K tokens every step, and past a point the checking costs more than it saves. DSpark drafts a whole block per forward and scores each token's survival with a calibrated confidence head; SGLang turns those scores into a per-request verify budget every step and replays the trimmed, front-packed batch as a genuinely smaller CUDA graph. Verify windows contract from **5.24** to **2.91** tokens as workloads get harder, holding **0.88–0.97** of the acceptance ceiling, and batch-1 decode reaches **383.7 tok/s** on DeepSeek-V4-Pro."
 order: 3
-draft: true
 tryOnSglang: "https://github.com/sgl-project/sglang"
 references:
-  - label: "LMSYS Blog: DSpark in SGLang (primary source for this post)"
+  - label: "LMSYS Blog: DSpark in SGLang: Speculative Decoding with Confidence-Driven, Variable-Length Verification"
     url: "https://www.lmsys.org/blog/2026-07-06-dspark-sglang"
-  - label: "LMSYS Blog: Kimi K3 Day-0 Support (DSpark's numbers on K3, and ReplaySSM)"
-    url: "https://www.lmsys.org/blog/2026-07-27-kimi-k3-day0-support/"
-  - label: "SGLang Cookbook: Speculative Decoding"
-    url: "https://sgl-project-sglang-93.mintlify.app/advanced/speculative-decoding"
-  - label: "Awesome-ML-SYS-Tutorial (companion written tutorials)"
-    url: "https://github.com/zhaochenyang20/Awesome-ML-SYS-Tutorial"
+  - label: "sglang#30261: [Spec] Add DSpark: confidence-scheduled speculative decoding"
+    url: "https://github.com/sgl-project/sglang/pull/30261"
+  - label: "sglang#30344: [Tracking] DSpark in SGLang: roadmap"
+    url: "https://github.com/sgl-project/sglang/issues/30344"
 ---
 
 import SpecRaceViz from "../../../viz/dspark/SpecRaceViz";
+import CostViz from "../../../viz/dspark/CostViz";
+import FrontierViz from "../../../viz/dspark/FrontierViz";
+import BlockDraftViz from "../../../viz/dspark/BlockDraftViz";
 import TrimViz from "../../../viz/dspark/TrimViz";
+import VerifyModesViz from "../../../viz/dspark/VerifyModesViz";
 import PackViz from "../../../viz/dspark/PackViz";
-import Mapping from "../../../viz/dspark/Mapping";
+import MixedTrafficViz from "../../../viz/dspark/MixedTrafficViz";
+import ZosViz from "../../../viz/dspark/ZosViz";
 
-## Why verification is cheaper than generation
+## Background
 
-Decode is memory-bound: a target-model forward mostly moves weights, so
-verifying K tokens costs about the same as generating one (at small batch).
-So a drafter writes K tokens first, and the target verifies them all in one
-forward: the accepted prefix is committed, and the verify forward emits one
-bonus token as a side effect.
-
-DSpark's drafter is a semi-autoregressive block drafter: the small model also
-emits a whole block per forward instead of generating token by token, which is
-fast and keeps acceptance high. The comparison:
+To start, the basic idea behind speculative decoding: decode is memory-bound,
+so a target-model forward spends most of its time moving weights, and at small
+batch verifying several tokens costs about the same as generating one. A small
+drafter writes K tokens first, and the target checks them all in one forward.
+The accepted prefix is committed, and the verify forward emits one bonus token
+as a side effect. Rejected drafts only waste the drafter's cheap compute:
 
 <SpecRaceViz client:visible lang="en" />
 
-Rejected drafts (hatched) cost drafter compute; what they save is target
-forwards. At small batch this trade is always favorable.
+The trade sours as load grows. At batch size B with K speculative tokens the
+target verifies B×K tokens every step. At small batch those extra tokens ride
+along with the weight traffic almost for free. As the batch fills the GPU,
+every verify token starts to cost real step time, and past a point verification
+costs more than it saves. The diagram below prices the same three choices at
+different loads:
 
-## Verification stops being free at large batches
+<CostViz client:visible lang="en" />
 
-Once the batch grows, the GPU has no idle capacity, and verify tokens compete
-with other requests' compute. DSpark models the marginal cost of the M-th
-verify token at load bs with an additive model
-`T(bs, K) = bias + α(bs) + θ(M)`, where θ is measured per load by a one-time
-server profile. The measured curve is a staircase of shelves and risers, not a
-smooth line.
+DSpark attacks both ends of this trade. A semi-autoregressive block drafter
+emits a whole block per draft forward, so acceptance stays high. A confidence
+head scores each drafted token, and the verify length becomes a per-request
+budget that stops paying for tokens the workload is unlikely to accept. The
+algorithm and its gains come from the DSpark paper; SGLang integrated it in
+[#30261](https://github.com/sgl-project/sglang/pull/30261) (merged July 2026)
+for both dense and sparse models, such as Qwen3 and DeepSeek-V4. Across a full
+concurrency sweep on DeepSeek-V4-Flash, DSpark holds the best
+throughput/latency frontier, ahead of both MTP and the non-speculative floor:
 
-On the drafter side, a trained confidence head outputs a survival probability
-for each draft position. The scheduler trims per request: positions whose
-expected value falls below marginal cost are not sent to verify. Switch the
-load preset to see the windows shrink, unevenly across requests:
+<FrontierViz client:visible lang="en" />
+
+The rest of this post walks through the mechanism, and the engineering that
+turns a verify schedule into wall-clock time.
+
+## DSpark
+
+### Design and mechanism
+
+The draft side has three pieces. The block drafter emits a gamma-token block in
+one forward, with a lightweight sequential head (a Markov or RNN head)
+conditioning each position on the previous token, which is what
+semi-autoregressive means here. The confidence head scores each drafted token's
+chance of surviving verification, and the product across the block is the
+block's survival probability. Sequential Temperature Scaling (STS) calibrates
+those scores, because raw scores are systematically overconfident and the
+scheduler budgets against true acceptance rates.
+
+On top of the algorithm, SGLang adds a confidence scheduler. Each step it
+converts per-block survival into a per-request verify budget: it walks down the
+block's survival curve and stops where the expected accepted tokens no longer
+cover the marginal cost of verifying one more token. The diagram below follows
+one request through a draft step:
+
+<BlockDraftViz client:visible lang="en" />
+
+Across a batch, the same rule sizes every request separately. A predictable
+request keeps a long window. A divergent one gets trimmed to two or three
+tokens. Higher load raises the marginal cost of every verify token, so all
+windows tighten together:
 
 <TrimViz client:visible lang="en" />
 
-Math drafts get accepted easily, so their windows survive; free-form writing
-diverges and is only worth verifying two or three tokens at large batch. This
-matches the mixed-traffic measurements: gsm8k averages 5.24-token windows,
-poetry 2.91, with utilization at 0.88–0.97 of the acceptance ceiling.
+### Verify modes
 
-## Engineering: ragged packing and state replay
+SGLang ships three verify modes, and the rest of this post keeps referring to
+them. static verifies the full drafted block every step; it is the baseline.
+compact verifies only the window the scheduler picked; it is the production
+path. cap-accept verifies the full block but commits only up to the window, so
+it produces exactly compact's output while also observing what a full verify
+would have accepted:
 
-After trimming, verify lengths differ per request, and CUDA graphs require
-fixed input shapes. Instead of padding every request to the maximum block
-length, DSpark front-packs the verify requests into one compact buffer and
-rounds up to the nearest pre-captured tier:
+<VerifyModesViz client:visible lang="en" />
+
+## Ragged verify under full CUDA graphs
+
+Per-request windows do not fit a fixed-shape CUDA graph. A batch where one
+request verifies two tokens and another six has no single query length, and
+padding everyone back up to the block width just pads the trim back in. SGLang
+keeps the batch ragged instead. The verify tokens are front-packed into one
+compact buffer, and the graph is keyed on the total token count, rounded up to
+the nearest captured tier. When budgets trim, the packed total drops to a
+smaller tier, and the replayed graph is genuinely cheaper: fewer attention and
+MLP rows, not a masked full-width forward. Under data-parallel attention the
+ranks share one tier, the largest any rank needs, and step down together:
 
 <PackViz client:visible lang="en" />
 
-ReplaySSM addresses a K3-specific problem: KDA recurrent state is overwritten
-in place, so rejected speculation needs a rollback. Rather than snapshotting
-whole states (512 KB), store each draft step's compact raw inputs (16 KB, 32×
-smaller) and replay the accepted prefix with a fold kernel; the output is
-bit-identical to the snapshotting baseline. The freed scratch memory converts
-directly into concurrency. With the overlap scheduler's async futures and
-device-side barriers, iterations run without bubbles, about 1.5× tighter.
+The packed buffer is a cu_seqlens-style varlen input, so the compact verify
+reuses attention kernels the backend already has. On DeepSeek-V4 it runs the
+model's own sparse-MLA path (flash_mla) with no new kernel. Each supported
+backend just rebuilds its varlen metadata from the packed layout on graph
+replay.
 
-## Numbers
+## Scheduling results
 
-| Setting | Result |
-| --- | --- |
-| K3, BS=1 decode | 113 → 423 tok/s (~3.7×, net of draft + verify overhead) |
-| Chat workload, batch 256 | +68% throughput over the verify-all speculation baseline (mean accept 2.7 → 2.2; verifying less, and faster for it) |
-| DeepSeek-V4-Flash, H200 DP4 | Best throughput/latency frontier across the concurrency sweep, ahead of MTP and the non-spec floor |
+How much does the dynamic budget actually buy? The blog compares compact
+against no-trim, which runs the static full-block schedule through the same
+ragged path, on two example workloads that differ in acceptance. The win is
+primarily a high-batch effect. At batch size 1 the target verify barely slows
+down with more tokens, so trimming saves little and the two arms tie. As
+concurrency grows and throughput starts to plateau, trimming shortens the step
+and compact pulls ahead. The gap is larger, and opens earlier, on the
+lower-accept workload, because lower acceptance leaves more tail to trim.
 
-## Diagram ↔ real system
+The scheduler behind these numbers is a first, vanilla version, and the blog
+treats it that way: a proof that the mechanism works end to end. The two
+example workloads also differ slightly in setup beyond acceptance, so the
+trend across them is the result, not absolute cross-panel numbers. And the
+budgets are only as good as the cost tables behind them; the current fit is a
+first approximation that may not fully account for context length.
 
-<Mapping client:visible lang="en" />
+### Per-request differentiation on mixed traffic
+
+Homogeneous sweeps hide the real point of confidence scheduling: two requests
+in the same batch should not get the same verify window if one is far more
+predictable than the other. On a mix of gsm8k, arena-hard, and poetry, the
+window contracts with acceptance difficulty, 5.24 to 3.78 to 2.91 tokens, while
+utilization against the ceiling stays at 0.88–0.97. The per-step distribution
+shows the same thing: about 55% of gsm8k steps fill the full window of six,
+while about 80% of poetry steps use three or fewer:
+
+<MixedTrafficViz client:visible lang="en" />
+
+### The cost table behind the budgets
+
+The scheduler prices verify tokens with the additive model from the Background
+figure: T(bs, K) = bias + α(bs) + θ(M), with M = bs + K the step's total
+tokens. α(bs) is the request-scaling floor, the draft pass plus part of
+attention, and trimming cannot move it. θ(M) is the target's verify-token cost,
+the only term trimming recovers, so trim headroom shows up only where θ is
+large. The table is profiled offline by sweeping a batch × verify-fraction
+grid, and the scheduler reads it online, trading expected accepted tokens
+against real marginal cost. The blog validates the model's predictions against
+a live server.
+
+## Zero-overhead scheduling and kernels
+
+Two kinds of engineering turn the schedule into wall-clock time: cutting the
+cost of each step, and hiding the scheduler behind the forward. Together they
+reach 383.7 tok/s at accept length ~5 at batch size 1, on DeepSeek-V4-Pro with
+TP8 on B300.
+
+On the kernel side, SGLang rewrote the clusters of tiny ops around the verify
+as fused Triton kernels: the compact scatter, the SWA page-index, the
+verify-length top-k schedule, and the ragged-window packing. The block
+drafter's sampling path folds into fused kernels, and its matrix multiplication
+is sharded. In one example profile, the work outside the target verify shrinks
+by 1.7 ms, against a 7.3 ms verify.
+
+On the scheduling side, DSpark drops straight into SGLang's zero-overhead
+(overlap) scheduler with almost no special-casing. The spec-v2 runtime already
+overlaps the next step's scheduling with the current forward on separate
+streams, and DSpark joins as a first-class worker: forward outputs come back as
+async futures, cross-iteration ordering rides the runtime's device-side
+barrier, and on-device page tables mean no per-step host sync. The confidence
+relay uses the same channel, read two steps back. The decode loop then runs
+with no per-step bubble, about 1.5× tighter than with the overlap scheduler
+off:
+
+<ZosViz client:visible lang="en" />
+
+## Observability
+
+Trimming censors the very number you need to judge it. compact only verifies
+the window, so how many tokens a full-block verify would have accepted at that
+step is never observed, and without that ceiling you cannot tell a good trim
+from a lossy one. A cap-accept run recovers the ceiling exactly: it verifies
+the full block, commits only up to the window, and therefore matches compact's
+output while measuring what trimming left behind.
+
+For production runs where an extra companion arm is unwanted, a block-accept
+estimator recovers an estimated ceiling directly inside a compact run. It uses
+the target tokens of future steps with their logprobs, and computes estimation
+intervals for the counterfactual tail. SGLang also surfaces per-request
+confidence and calibration metrics, such as ECE, for post-hoc analysis.
+
+## What's next
+
+The roadmap lives in
+[#30344](https://github.com/sgl-project/sglang/issues/30344): a stronger,
+increasingly online cost model and scheduler; more dense and sparse models;
+broader parallelism coverage; productionizing the block-accept estimator and
+confidence calibration; and hardening the full-CUDA-graph path.
+
+## Acknowledgments
+
+The original blog thanks the DSpark authors and DeepSeek for the algorithm and
+the models.

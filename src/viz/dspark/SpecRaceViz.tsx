@@ -7,7 +7,7 @@ import type { Locale } from "../../lib/i18n";
 import { seriesColor } from "../../lib/palette";
 import { dsparkCommittedAt, simulateSpec } from "./specEngine";
 import type { SpecResult } from "./specEngine";
-import { RACE, raceCellTooltip, raceFinished, raceVerdict } from "./strings";
+import { RACE, raceCellTooltip, raceFinished } from "./strings";
 import "./styles.css";
 
 const BLOCK_SIZE = 6;
@@ -285,20 +285,7 @@ export default function SpecRaceViz({ lang = "zh" }: { lang?: Locale }) {
       subtitle={RACE.subtitle[lang]}
       player={player}
       lang={lang}
-      footer={
-        <>
-          <Legend items={legend} />
-          <div className="viz-verdict">
-            {raceVerdict(
-              lang,
-              result.targetTokens,
-              result.baselineForwards,
-              result.dsparkForwards,
-              result.avgAccept.toFixed(1),
-            )}
-          </div>
-        </>
-      }
+      footer={<Legend items={legend} />}
     >
       <div className="viz-section">
         <div className="viz-section-head">

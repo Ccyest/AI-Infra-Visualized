@@ -1,79 +1,107 @@
 ---
-title: "DSpark：大 batch 下的投机解码"
-description: "小模型整块起草、大模型整块验证是投机解码的常规部分；DSpark 的增量在于按置信度裁剪验证窗口和 ragged 打包。batch 256 下相对 verify-all 吞吐 +68%，K3 的 BS=1 解码从 113 提到 423 tok/s。"
+title: "DSpark in SGLang：按置信度定验证预算，单请求解码 383.7 tok/s"
+description: "投机解码用一次 target forward 换一串草稿 token，但这笔交易在高负载下会变亏：batch 为 B、每请求 K 个草稿时，target 每步要验证 B×K 个 token，过了某个点，验证的开销反而超过省下的。DSpark 让 drafter 一次 forward 起草一整块，再用校准过的 confidence head 给每个草稿打存活分；SGLang 每步把这些分数换算成逐请求的验证预算，并把裁剪后的批次 front-pack 成一张真正更小的 CUDA graph 回放。负载越难，验证窗口从 **5.24** 收缩到 **2.91** 个 token，同时保持接受上限的 **0.88–0.97**；DeepSeek-V4-Pro 上 batch 1 解码达到 **383.7 tok/s**。"
 order: 3
-draft: true
 tryOnSglang: "https://github.com/sgl-project/sglang"
 references:
-  - label: "LMSYS Blog：DSpark in SGLang(本文的第一手来源)"
+  - label: "LMSYS Blog: DSpark in SGLang: Speculative Decoding with Confidence-Driven, Variable-Length Verification"
     url: "https://www.lmsys.org/blog/2026-07-06-dspark-sglang"
-  - label: "LMSYS Blog：Kimi K3 Day-0 Support(DSpark 在 K3 上的实测数字与 ReplaySSM)"
-    url: "https://www.lmsys.org/blog/2026-07-27-kimi-k3-day0-support/"
-  - label: "SGLang Cookbook：Speculative Decoding"
-    url: "https://sgl-project-sglang-93.mintlify.app/advanced/speculative-decoding"
-  - label: "Awesome-ML-SYS-Tutorial(本站配套的中文文字讲解库)"
-    url: "https://github.com/zhaochenyang20/Awesome-ML-SYS-Tutorial"
+  - label: "sglang#30261: [Spec] Add DSpark: confidence-scheduled speculative decoding"
+    url: "https://github.com/sgl-project/sglang/pull/30261"
+  - label: "sglang#30344: [Tracking] DSpark in SGLang: roadmap"
+    url: "https://github.com/sgl-project/sglang/issues/30344"
 ---
 
 import SpecRaceViz from "../../../viz/dspark/SpecRaceViz";
+import CostViz from "../../../viz/dspark/CostViz";
+import FrontierViz from "../../../viz/dspark/FrontierViz";
+import BlockDraftViz from "../../../viz/dspark/BlockDraftViz";
 import TrimViz from "../../../viz/dspark/TrimViz";
+import VerifyModesViz from "../../../viz/dspark/VerifyModesViz";
 import PackViz from "../../../viz/dspark/PackViz";
-import Mapping from "../../../viz/dspark/Mapping";
+import MixedTrafficViz from "../../../viz/dspark/MixedTrafficViz";
+import ZosViz from "../../../viz/dspark/ZosViz";
 
-## 为什么验证比生成便宜
+## Background
 
-decode 是 memory-bound 的：大模型一次 forward 的时间大头在搬权重，验证 K 个
-token 和生成 1 个 token 的耗时(小 batch 下)接近。所以让小模型先写 K 个
-草稿，大模型一次 forward 全部验证：接受的前缀直接提交，验证那次 forward 还
-顺带产出 1 个 bonus token。
-
-DSpark 的 drafter 是 semi-autoregressive block drafter：小模型也是一次
-forward 起草一整块，不逐 token 生成，起草快，接受率也高。看对比：
+先讲投机解码的基本思路。解码是 memory-bound 的：target 模型的一次 forward 大部分时间在搬权重，所以小批次下验证好几个 token 的开销和生成一个差不多。于是让一个小 drafter 先写出 K 个 token，target 用一次 forward 全部检查一遍。通过的前缀被提交，verify forward 还顺带产出一个 bonus token。被拒的草稿只浪费 drafter 的便宜算力：
 
 <SpecRaceViz client:visible />
 
-被拒的草稿(斜纹格)浪费的是小模型的算力，省下的是大模型的 forward 次数。
-小 batch 下这个交换总是合算的。
+这笔交易随负载变亏。batch 为 B、每请求 K 个投机 token 时，target 每步要验证 B×K 个 token。小批次下，这些多出来的 token 几乎搭权重搬运的顺风车。批次填满 GPU 后，每个 verify token 都开始消耗真实的步时，过了某个点，验证的开销就超过了它省下的。下图给同样三种选择在不同负载下算账：
 
-## 大 batch 下验证不再免费
+<CostViz client:visible />
 
-batch 变大后 GPU 没有空闲算力，verify token 挤占的是其他请求的计算。DSpark
-用一个加性成本模型 `T(bs, K) = bias + α(bs) + θ(M)` 描述第 M 个 verify token
-在负载 bs 下的边际成本，θ 通过一次性的服务器画像逐负载测出。实测曲线是带
-平台和陡坡的台阶，不是平滑曲线。
+DSpark 从这笔交易的两端同时下手。半自回归的 block drafter 一次 draft forward 产出一整块，接受率保持在高位。confidence head 给每个草稿打分，验证长度变成逐请求的预算，不再为工作负载多半不会接受的 token 买单。算法与收益来自 DSpark 论文；SGLang 在 [#30261](https://github.com/sgl-project/sglang/pull/30261)(2026 年 7 月合入)完成集成，稠密与稀疏模型都支持，例如 Qwen3 和 DeepSeek-V4。在 DeepSeek-V4-Flash 的完整并发扫掠中，DSpark 保持最优的吞吐/延迟频谱，全程领先 MTP 和非投机基线：
 
-drafter 一侧训练了一个 confidence head，对每个草稿位置输出存活概率。调度器
-逐请求裁剪：期望收益低于边际成本的位置不送去验证。切换负载档位，可以看到
-窗口收缩，而且不同请求收缩得很不均匀：
+<FrontierViz client:visible />
+
+本文余下的部分讲机制本身，以及把验证调度变成真实墙钟时间的工程。
+
+## DSpark
+
+### Design and mechanism
+
+draft 侧有三件东西。block drafter 一次 forward 产出 gamma 个 token 的块，一个轻量的 sequential head(Markov 或 RNN)让每一位以前一位为条件，这就是「半自回归」的含义。confidence head 给每个草稿打「通过验证」的分数，整块连乘就是块的存活率。Sequential Temperature Scaling(STS)再校准这些分数，因为原始分系统性偏自信，而 scheduler 的预算要对照真实接受率来做。
+
+在算法之上，SGLang 加了一个 confidence scheduler。它每步把块存活率换算成逐请求的验证预算：沿着块的存活率曲线往下走，走到「期望多接受的 token 盖不住多验证一个 token 的边际成本」就停。下图跟着一个请求走完一次 draft：
+
+<BlockDraftViz client:visible />
+
+放到一个批次里，同一条规则给每个请求单独定窗口。可预测的请求保住长窗口。发散的请求被裁到两三个 token。负载升高会抬高每个 verify token 的边际成本，所有窗口一起收紧：
 
 <TrimViz client:visible />
 
-数学推理的草稿容易被接受，窗口保得住；自由写作发散，大 batch 下只值得验证
-两三个。这和混合流量的实测一致：gsm8k 平均拿到 5.24 的窗口，诗歌 2.91，
-利用率保持在接受上限的 0.88–0.97。
+### Verify modes
 
-## 工程细节：ragged 打包与状态回放
+SGLang 提供三种 verify 模式，本文后面会反复用到。static 每步验证整块草稿，是基线。compact 只验证 scheduler 选出的窗口，是生产路径。cap-accept 验证整块但只提交到窗口为止，输出和 compact 完全一致，同时还能观测到整块验证本可以接受多少：
 
-裁剪之后，每个请求的验证长度参差不齐，而 CUDA graph 要求固定输入形状。
-与其把每个请求 padding 到最大块长，DSpark 把验证请求首尾相接打包进一个紧凑
-buffer，再向上取整到最近的预捕获档位：
+<VerifyModesViz client:visible />
+
+## Ragged verify under full CUDA graphs
+
+逐请求的窗口塞不进固定形状的 CUDA graph。一个批次里，这个请求验证两个 token，那个验证六个，没有统一的 query 长度；把所有请求 pad 回块宽，等于把裁掉的又 pad 回来。SGLang 选择让批次保持参差。verify token 被 front-pack 进一个紧凑 buffer，graph 按总 token 数取 key，向上取整到最近的已捕获档位。预算收紧时，打包后的总数落到更小的档位，回放的 graph 是真正更便宜的：attention 和 MLP 的行数变少了，而不是一个打了 mask 的全宽 forward。data-parallel attention 下，各 rank 共用一个档位(取各 rank 所需的最大值)，一起降档：
 
 <PackViz client:visible />
 
-ReplaySSM 是 K3 特有的问题：KDA 递归状态原地覆写，投机被拒时需要回滚。
-方案是不存整块快照(512 KB)，只存每步草稿的原始输入(16 KB，小 32×)，
-接受后用 fold kernel 重放一遍，输出与快照方案逐位一致。省下的 scratch 显存
-直接转化为并发度。配合 overlap scheduler 的异步 future 和设备端 barrier，
-迭代之间没有气泡，执行紧凑约 1.5×。
+打包后的 buffer 是 cu_seqlens 式的变长输入，所以 compact verify 复用后端现成的 attention kernel。DeepSeek-V4 上直接走模型自己的 sparse-MLA 路径(flash_mla)，没有新 kernel。每个支持的后端只需在 graph 回放时从打包布局重建自己的变长 metadata。
 
-## 数字
+## Scheduling results
 
-| 场景 | 结果 |
-| --- | --- |
-| K3，BS=1 解码 | 113 → 423 tok/s(约 3.7×，含起草与验证开销) |
-| chat 负载，batch 256 | 相对 verify-all 投机基线 +68% 吞吐(平均接受 2.7 → 2.2，少验反而更快) |
-| DeepSeek-V4-Flash，H200 DP4 | 全并发扫描下吞吐/延迟前沿领先 MTP 与非投机基线 |
+动态预算到底买到了多少？原文把 compact 和 no-trim 对比，后者是把 static 的整块调度跑在同一条 ragged 路径上，比较对象是两个接受率不同的示例负载。收益主要是高批次效应。batch 1 时，target verify 几乎不因多验几个 token 变慢，裁剪省不了什么，两臂打平。并发上去、吞吐开始进入平台期后，裁剪缩短了每一步，compact 拉开领先。在接受率更低的负载上，差距更大、拉开得更早，因为更低的接受率留下了更多可裁的尾巴。
 
-## 图 ↔ 真实系统对照
+这些数字背后的 scheduler 是第一版朴素实现，原文也这么定位它：证明机制端到端可行。两个示例负载除接受率外还有细微的设置差异，所以结论是跨负载的趋势，而不是面板间的绝对数字。预算的质量也取决于背后的成本表；当前的拟合是初版，可能还没有完全考虑 context 长度对步时的影响。
 
-<Mapping client:visible />
+### Per-request differentiation on mixed traffic
+
+同质负载的扫掠会掩盖 confidence scheduling 的真正意义：同一批次里，一个请求比另一个可预测得多时，两者不该拿到同样的验证窗口。在 gsm8k、arena-hard、poetry 的混合流量上，窗口随接受难度收缩，从 5.24 到 3.78 再到 2.91 个 token，对接受上限的利用率保持在 0.88–0.97。逐步分布说明同一件事：约 55% 的 gsm8k 步用满 6 的窗口，约 80% 的 poetry 步只用 3 个以内：
+
+<MixedTrafficViz client:visible />
+
+### The cost table behind the budgets
+
+scheduler 用 Background 那张图里的加法模型给 verify token 定价：T(bs, K) = bias + α(bs) + θ(M)，其中 M = bs + K 是这一步的总 token 数。α(bs) 是随请求数增长的地板，包含 draft pass 和一部分 attention，裁剪动不了它。θ(M) 是 target 的 verify token 成本，是裁剪唯一能省回来的项，所以裁剪的收益只出现在 θ 大的地方。成本表离线 profile 得到：扫一个 batch × verify 比例的网格；scheduler 在线读表，用期望接受的 token 数对照真实边际成本做取舍。原文用真实 server 验证了模型的预测。
+
+## Zero-overhead scheduling and kernels
+
+把调度变成墙钟时间靠两类工程：压低每一步的成本，以及把 scheduler 藏到 forward 背后。两者合起来，在 DeepSeek-V4-Pro(TP8，B300)上 batch 1、接受长度约 5 时达到 383.7 tok/s。
+
+kernel 侧，SGLang 把 verify 周围成簇的小算子重写成融合的 Triton kernel：compact scatter、SWA page-index、验证长度的 top-k 调度、ragged 窗口打包。block drafter 的采样路径折叠进融合 kernel，矩阵乘做了 shard。在一个示例 profile 里，target verify 之外的部分缩短了 1.7 ms，而 verify 本身是 7.3 ms。
+
+调度侧，DSpark 几乎不加特判就接入了 SGLang 的 zero-overhead(overlap)scheduler。spec-v2 运行时本来就在独立 stream 上把下一步的调度和当前 forward 重叠，DSpark 作为一等 worker 加入：forward 输出以 async future 返回，跨迭代的顺序靠运行时的 device 侧 barrier，页表在 device 上，每步不需要 host 同步。confidence relay 走同一条通道，读两步之前的值。解码循环于是完全没有逐步气泡，比关掉 overlap scheduler 紧约 1.5×：
+
+<ZosViz client:visible />
+
+## Observability
+
+裁剪恰好审查掉了评判裁剪所需的那个数。compact 只验证窗口，所以「这一步整块验证本可以接受多少个 token」永远观测不到；没有这个上限，就分不清一次裁剪是恰到好处还是有损的。cap-accept 恰好能把上限找回来：它验证整块、只提交到窗口，输出和 compact 一致，同时量出了裁剪丢掉的部分。
+
+生产环境不想多跑一条伴随臂时，block-accept estimator 可以在 compact 运行内部直接估计被审查掉的上限。它利用后续步 target token 的 logprobs，为反事实的尾部计算估计区间。SGLang 还暴露逐请求的置信度与校准指标(如 ECE)供事后分析。
+
+## What's next
+
+路线图在 [#30344](https://github.com/sgl-project/sglang/issues/30344)：更强、逐步在线化的成本模型与调度器；更多稠密与稀疏模型；更广的并行方式覆盖；把 block-accept estimator 和置信度校准做成生产级指标；以及加固 full CUDA graph 路径。
+
+## Acknowledgments
+
+原文感谢 DSpark 作者们与 DeepSeek 提供算法与模型。

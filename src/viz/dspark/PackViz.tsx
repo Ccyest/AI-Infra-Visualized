@@ -6,8 +6,8 @@ import { seriesColor } from "../../lib/palette";
 import { PACK, packCellTooltip } from "./strings";
 import "./styles.css";
 
-/** 3 个请求各自的验证窗口长度(参差;总和 11,落在档位之间以展示取整) */
-const LENGTHS = [5, 4, 2];
+/** 3 个请求各自的验证窗口长度(与原文 ragged-verify 示意图一致:总和 10 → 档位 12) */
+const LENGTHS = [5, 3, 2];
 const MAX_K = 6;
 /** CUDA graph 预捕获的形状档位 */
 const TIERS = [4, 8, 12, 16];
@@ -206,7 +206,6 @@ export default function PackViz({ lang = "zh" }: { lang?: Locale }) {
             },
           ]}
         />
-        <div className="viz-verdict">{PACK.note[lang]}</div>
       </div>
     </figure>
   );

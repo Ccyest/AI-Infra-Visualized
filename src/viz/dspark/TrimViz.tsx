@@ -172,7 +172,6 @@ export default function TrimViz({ lang = "zh" }: { lang?: Locale }) {
             },
           ]}
         />
-        <div className="viz-verdict">{TRIM.note[lang]}</div>
       </div>
     </figure>
   );

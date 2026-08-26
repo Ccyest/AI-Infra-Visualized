@@ -1,3 +1,31 @@
 /* DSpark 课程专用样式
-   (网格/分段/结论条等通用可视化样式见 src/styles/global.css)
-   目前本课全部复用通用样式,此文件为约定占位。 */
+   (网格/分段/结论条等通用可视化样式见 src/styles/global.css) */
+
+/* 步进图当前步的状态说明(样式对齐 bcg-step-desc) */
+.dspark-step-desc {
+  margin-top: 0.9rem;
+  font-size: 0.86rem;
+  color: var(--ink);
+  border-left: 3px solid var(--accent);
+  padding: 0.25rem 0 0.25rem 0.7rem;
+  min-height: 2.4em;
+}
+
+/* 双面板并排(混合流量图):窄屏纵向堆叠 */
+.dspark-panels {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+@media (max-width: 640px) {
+  .dspark-panels {
+    grid-template-columns: 1fr;
+  }
+}
+.dspark-panel-head {
+  display: block;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--muted);
+  margin-bottom: 0.35rem;
+}
