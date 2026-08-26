@@ -1,6 +1,6 @@
 ---
 title: "Unified Radix Cache in SGLang: one tree for every hybrid model, up to 16.6% lower TTFT"
-description: "Radix Cache is a major component in SGLang, but as the model architecture keeps updating, its limitations are gradually appearing. Nowadays models apply hybrid attention mechanisms, but the traditional radix cache is only designed for full attention KV. Therefore we designed SGLang's Unified Radix Cache. Multi-turn hit rates stay near **98%** with a Mooncake L3 tier. Session-aware eviction cuts SWE-bench TTFT by up to **16.6%**. The experimental Rust tree core lowers SWA TTFT by up to **42%**."
+description: "Radix Cache is a major component in SGLang, but as the model architecture keeps updating, its limitations are gradually appearing. Nowadays models apply hybrid attention mechanisms, but the traditional Radix Cache is only designed for full attention KV. Therefore we designed SGLang's Unified Radix Cache for hybrid attention mechanisms. Multi-turn hit rates stay near **98%** with a Mooncake L3 tier. Session-aware eviction cuts SWE-bench TTFT by up to **16.6%**. The experimental Rust tree core lowers SWA TTFT by up to **42%**."
 order: 5
 concepts: []
 tryOnSglang: "https://github.com/sgl-project/sglang"
