@@ -143,16 +143,20 @@ GPU L1, Host L2, and an external L3 tier, so moving data between tiers changes
 neither its prefix identity nor its reuse rule. Components describe the
 required transfers, and HybridCacheController executes the physical I/O.
 
-Not every physical pool needs to be a component, either. An anchor defines
-reuse semantics or supplies the page indices that other pools follow; a
-sidecar stores a separate payload but reuses the exact indices of its declared
-source pool, moving with it without voting on the boundary or adding a slot to
-the topology. DeepSeek-V4 makes the distinction concrete: FULL and SWA are
-both components with independent device index spaces — in the blog's
-normalized six-page example the allocator maps the FULL tail slots F4, F5 to
-the SWA slots S0, S1 — while the C4 and C128 compressed-KV pools, indexer
-buffers, and compressor states register as sidecars, three following FULL and
-two following SWA.
+Not every physical pool needs to be a component, either. A component (anchor)
+has its own reuse rule, holds a slot on the tree, and votes on the boundary. A
+sidecar has no reuse rule of its own; it only declares "I follow this source
+pool" — whatever page number the source stores its data at, the sidecar stores
+its data at the same page number in its own pool, so one set of indices serves
+both pools, and it moves to whatever tier its source moves to, without voting
+or adding a slot. DeepSeek-V4 shows both relationships: FULL and SWA are
+components with independent device index spaces — in the blog's normalized
+six-page example the same tokens sit in the FULL tail pages F4, F5 but in the
+SWA slots S0, S1, translated by the allocator at runtime — while the C4 and
+C128 compressed-KV pools plus indexer buffers and compressor states, five
+auxiliary pools in all, register as sidecars, three following FULL and two
+following SWA. Components translate indices between each other; sidecars just
+copy them.
 
 <TierFlowViz client:visible lang="en" />
 
