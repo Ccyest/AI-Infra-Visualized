@@ -269,7 +269,7 @@
 
 .urc-vote-nodes {
   display: grid;
-  grid-template-columns: 5.5rem repeat(4, 1fr);
+  grid-template-columns: 3.6rem repeat(4, minmax(0, 1fr));
   gap: 0.5rem;
   align-items: stretch;
 }
@@ -374,7 +374,7 @@
 
 .urc-boundary-track {
   display: grid;
-  grid-template-columns: 5.5rem repeat(4, 1fr);
+  grid-template-columns: 3.6rem repeat(4, minmax(0, 1fr));
   gap: 0.5rem;
   align-items: center;
   min-height: 2rem;
@@ -406,7 +406,7 @@
 
 .urc-zone-bar {
   display: grid;
-  grid-template-columns: 5.5rem 1fr;
+  grid-template-columns: 3.6rem minmax(0, 1fr);
   gap: 0.5rem;
   align-items: center;
 }
@@ -886,14 +886,14 @@
 }
 
 .urc-split-box b {
-  font-size: var(--urc-font-sm);
+  font-size: 1rem;
   color: var(--ink);
 }
 
 .urc-split-box ul {
   margin: 0;
   padding-left: 1.1rem;
-  font-size: var(--urc-font-sm);
+  font-size: 0.92rem;
   color: var(--ink-2);
   display: grid;
   gap: 0.2rem;
@@ -904,7 +904,7 @@
   gap: 0.6rem;
   align-content: center;
   justify-items: center;
-  font-size: var(--urc-font-xs);
+  font-size: 0.85rem;
   color: var(--muted);
   max-width: 11rem;
   text-align: center;

@@ -157,7 +157,7 @@ export default function BoundaryVoteViz({ lang = "zh" }: { lang?: Locale }) {
 
         {/* 边界与走查位置 */}
         <div className="urc-boundary-track">
-          <span className="urc-vote-rowhead">{VOTE.boundary[lang]}</span>
+          <span className="urc-vote-rowhead" />
           {NODES.map((name, i) => (
             <span key={name} style={{ display: "grid" }}>
               <span

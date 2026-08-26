@@ -18,7 +18,7 @@ export default function RustSplitViz({ lang = "zh" }: { lang?: Locale }) {
 
       <div className="urc-split">
         <div className="urc-split-box py">
-          <b>Python · {RUST_SPLIT.pyHead[lang]}</b>
+          <b>{RUST_SPLIT.pyHead[lang]}</b>
           <ul>
             {pyItems.map((it) => (
               <li key={it}>{it}</li>
@@ -38,7 +38,7 @@ export default function RustSplitViz({ lang = "zh" }: { lang?: Locale }) {
         </div>
 
         <div className="urc-split-box rust">
-          <b>Rust · {RUST_SPLIT.rustHead[lang]}</b>
+          <b>{RUST_SPLIT.rustHead[lang]}</b>
           <ul>
             {rustItems.map((it) => (
               <li key={it}>{it}</li>

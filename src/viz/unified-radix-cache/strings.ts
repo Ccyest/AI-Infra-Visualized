@@ -72,8 +72,8 @@ export const VOTE = {
   scenarioFull: { zh: "只有 FULL", en: "FULL only" },
   scenarioFullSwa: { zh: "FULL + SWA", en: "FULL + SWA" },
   scenarioAll: { zh: "FULL + SWA + MAMBA", en: "FULL + SWA + MAMBA" },
-  boundary: { zh: "最深安全边界", en: "Deepest safe boundary" },
-  walk: { zh: "走查位置", en: "Walk position" },
+  boundary: { zh: "最深安全边界", en: "Safe boundary" },
+  walk: { zh: "走查位置", en: "walk" },
   reuseZone: { zh: "直接复用", en: "Reused directly" },
   recomputeZone: { zh: "从这里重算", en: "Recomputed from here" },
   accept: { zh: "接受", en: "accept" },
@@ -234,21 +234,21 @@ export const SWE = {
 export const RUST_SPLIT = {
   title: { zh: "Rust / Python 所有权图示", en: "Rust and Python ownership diagram" },
   subtitle: {
-    zh: "实验性原型:opt-in、仅 L1,支持 FULL/SWA/MAMBA,不含 HiCache",
-    en: "Experimental prototype: opt-in, L1-only, supports FULL/SWA/MAMBA, no HiCache",
+    zh: "支持 FULL/SWA/MAMBA,不含 HiCache",
+    en: "Supports FULL/SWA/MAMBA, no HiCache",
   },
-  rustHead: { zh: "Rust 树核拥有", en: "The Rust tree core owns" },
+  rustHead: { zh: "Rust 树核拥有", en: "Rust tree core owns" },
   rustItems: {
     zh: "radix 拓扑|每组件的锁记账|侵入式 LRU 链表|驱逐走查",
-    en: "the radix topology|per-component lock accounting|intrusive LRU lists|eviction walks",
+    en: "radix topology|per-component lock accounting|intrusive LRU lists|eviction walks",
   },
-  pyHead: { zh: "Python 仍然拥有", en: "Python still owns" },
+  pyHead: { zh: "Python 拥有", en: "Python owns" },
   pyItems: {
     zh: "request ↔ token 映射|物理 KV 分配|池操作与编排",
     en: "request-to-token mappings|physical KV allocation|pool ops and orchestration",
   },
   callArrow: { zh: "match / insert / evict 调用", en: "match / insert / evict calls" },
-  deferArrow: { zh: "deferred actions:树变更后由 Python 应用到池", en: "deferred actions: Python applies pool changes after tree mutation" },
+  deferArrow: { zh: "deferred actions", en: "deferred actions" },
 } satisfies Record<string, Localized>;
 
 /* ---------------- RustBenchViz ---------------- */
