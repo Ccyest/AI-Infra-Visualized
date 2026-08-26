@@ -153,6 +153,123 @@ export function blockCellTooltip(
 
 /* ---------------------------------------------------------------- */
 
+export const DFLASH = {
+  title: { zh: "DFlash 起草图示", en: "DFlash drafting diagram" },
+  subtitle: {
+    zh: "块长 8 与 5 层 drafter 为示意取值",
+    en: "Block of 8 and a 5-layer drafter are illustrative",
+  },
+  arHead: { zh: "自回归 drafter(EAGLE / MTP)", en: "Autoregressive drafter (EAGLE / MTP)" },
+  dfHead: { zh: "DFlash：块扩散 drafter", en: "DFlash: block diffusion drafter" },
+  arStat: { zh: "8 tokens · 8 次 draft forward", en: "8 tokens · 8 draft forwards" },
+  dfStat: { zh: "8 tokens · 1 次 draft forward", en: "8 tokens · 1 draft forward" },
+  layerLabel: { zh: "draft 层", en: "draft layer" },
+  arInjectLabel: { zh: "target features · 仅输入端", en: "target features · input only" },
+  dfInjectLabel: { zh: "target hidden states → 每层 KV", en: "target hidden states → every layer's KV" },
+  oneForward: { zh: "1 次 forward", en: "one forward" },
+  legendToken: { zh: "草稿 token", en: "draft token" },
+  legendInject: { zh: "target 特征注入", en: "target feature injection" },
+} satisfies Record<string, Localized>;
+
+export function dflashCellTooltip(
+  locale: Locale,
+  mode: "ar" | "df",
+  pos: number,
+): string {
+  const zh = locale === "zh";
+  if (mode === "ar") {
+    return zh
+      ? `第 ${pos + 1} 个草稿 · 第 ${pos + 1} 次 draft forward 产出`
+      : `draft ${pos + 1} · emitted by draft forward #${pos + 1}`;
+  }
+  return zh
+    ? `第 ${pos + 1} 个草稿 · 同一次 forward 并行产出`
+    : `draft ${pos + 1} · emitted in parallel by the same forward`;
+}
+
+export function dflashInjectTooltip(
+  locale: Locale,
+  mode: "ar" | "df",
+  layer: number,
+): string {
+  const zh = locale === "zh";
+  if (mode === "ar") {
+    return zh
+      ? "target features 只在 draft 模型的输入端进入"
+      : "target features enter only at the draft model's input";
+  }
+  return zh
+    ? `target hidden states 注入第 ${layer + 1} 层的 KV cache`
+    : `target hidden states injected into layer ${layer + 1}'s KV cache`;
+}
+
+export const DFBENCH = {
+  title: { zh: "DFlash 消融图示", en: "DFlash ablation diagram" },
+  subtitle: {
+    zh: "5 层 drafter · Qwen3-4B target · 同一数据集训练；纵轴 = 端到端加速比",
+    en: "5-layer drafters · Qwen3-4B target · same training data; y-axis = end-to-end speedup",
+  },
+  yAxis: { zh: "端到端加速比", en: "End-to-end speedup" },
+  armE3: { zh: "EAGLE-3", en: "EAGLE-3" },
+  armInj: { zh: "仅 KV 注入(自回归)", en: "KV injection only (AR)" },
+  armDiff: { zh: "仅扩散(无注入)", en: "diffusion only (no injection)" },
+  armFull: { zh: "DFlash 完整", en: "full DFlash" },
+} satisfies Record<string, Localized>;
+
+export interface DfBenchTask {
+  key: string;
+  label: Localized;
+  /** [acc_len, speedup] per arm: E3 / 仅注入 / 仅扩散 / 完整 */
+  arms: [number, number][];
+}
+
+export const DFBENCH_TASKS: DfBenchTask[] = [
+  {
+    key: "gsm8k",
+    label: { zh: "GSM8K", en: "GSM8K" },
+    arms: [
+      [4.2, 2.1],
+      [4.8, 2.4],
+      [3.5, 2.9],
+      [4.2, 3.3],
+    ],
+  },
+  {
+    key: "humaneval",
+    label: { zh: "HumanEval", en: "HumanEval" },
+    arms: [
+      [4.3, 2.2],
+      [4.6, 2.3],
+      [3.5, 2.9],
+      [4.0, 3.2],
+    ],
+  },
+  {
+    key: "mtbench",
+    label: { zh: "MT-Bench", en: "MT-Bench" },
+    arms: [
+      [3.1, 1.4],
+      [3.4, 1.5],
+      [2.6, 2.0],
+      [3.0, 2.2],
+    ],
+  },
+];
+
+export function dfBenchTooltip(
+  locale: Locale,
+  task: string,
+  arm: string,
+  accLen: number,
+  speedup: number,
+): string {
+  return locale === "zh"
+    ? `${task} · ${arm} · 接受长度 ${accLen.toFixed(1)} · 加速 ${speedup.toFixed(1)}×`
+    : `${task} · ${arm} · accept length ${accLen.toFixed(1)} · ${speedup.toFixed(1)}× speedup`;
+}
+
+/* ---------------------------------------------------------------- */
+
 export const TRIM = {
   title: { zh: "confidence scheduler 图示", en: "Confidence scheduler diagram" },
   subtitle: {

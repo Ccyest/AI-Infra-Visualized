@@ -6,14 +6,24 @@ tryOnSglang: "https://github.com/sgl-project/sglang"
 references:
   - label: "LMSYS Blog: DSpark in SGLang: Speculative Decoding with Confidence-Driven, Variable-Length Verification"
     url: "https://www.lmsys.org/blog/2026-07-06-dspark-sglang"
+  - label: "LMSYS Blog: The next generation of speculative decoding: DFlash and Spec V2"
+    url: "https://www.lmsys.org/blog/2026-06-15-next-generation-speculative-decoding-dflash-v2/"
+  - label: "LMSYS Blog: DeepSeek-V4 on Day 0: From Fast Inference to Verified RL with SGLang and Miles"
+    url: "https://www.lmsys.org/blog/2026-04-25-deepseek-v4/"
   - label: "sglang#30261: [Spec] Add DSpark: confidence-scheduled speculative decoding"
     url: "https://github.com/sgl-project/sglang/pull/30261"
   - label: "sglang#30344: [Tracking] DSpark in SGLang: roadmap"
     url: "https://github.com/sgl-project/sglang/issues/30344"
+  - label: "DFlash 论文: Block Diffusion for Flash Speculative Decoding"
+    url: "https://arxiv.org/abs/2602.06036"
+  - label: "DSpark 论文: Confidence-Scheduled Speculative Decoding with Semi-Autoregressive Generation"
+    url: "https://arxiv.org/abs/2607.05147"
 ---
 
 import SpecRaceViz from "../../../viz/dspark/SpecRaceViz";
 import CostViz from "../../../viz/dspark/CostViz";
+import DFlashViz from "../../../viz/dspark/DFlashViz";
+import DFlashBenchViz from "../../../viz/dspark/DFlashBenchViz";
 import FrontierViz from "../../../viz/dspark/FrontierViz";
 import BlockDraftViz from "../../../viz/dspark/BlockDraftViz";
 import TrimViz from "../../../viz/dspark/TrimViz";
@@ -32,17 +42,31 @@ import ZosViz from "../../../viz/dspark/ZosViz";
 
 <CostViz client:visible />
 
-DSpark 从这笔交易的两端同时下手。半自回归的 block drafter 一次 draft forward 产出一整块，接受率保持在高位。confidence head 给每个草稿打分，验证长度变成逐请求的预算，不再为工作负载多半不会接受的 token 买单。算法与收益来自 DSpark 论文；SGLang 在 [#30261](https://github.com/sgl-project/sglang/pull/30261)(2026 年 7 月合入)完成集成，稠密与稀疏模型都支持，例如 Qwen3 和 DeepSeek-V4。在 DeepSeek-V4-Flash 的完整并发扫掠中，DSpark 保持最优的吞吐/延迟频谱，全程领先 MTP 和非投机基线：
+本文余下的部分沿着两代 drafter 讲这笔交易怎么解，最后落到它们对 DeepSeek-V4 serving 意味着什么。
+
+## DFlash: parallel drafting with KV injection
+
+在讲验证侧之前，先看草稿从哪来。大多数投机方案，包括 EAGLE 系列和 DeepSeek-V4 这类模型自带的 MTP head，起草是自回归的：小模型逐 token 生成，草稿越长起草开销越大，为了压延迟只能把 drafter 做得很浅。
+
+Z Lab 开发的 DFlash 用一个轻量的块扩散(block diffusion)模型换掉自回归 drafter，一次 forward 并行产出整块草稿。做到这一点不只是换个 drafter 那么简单。从头训练的小扩散模型接受率很低，拿现成的大扩散 LLM 起草又太贵。DFlash 的答案是 KV injection：context 谁最懂？target 模型自己。DFlash 把 target 的 hidden states 抽出来，注入 draft 模型每一层的 KV cache。EAGLE 类方法只在 drafter 的输入端喂一次 target 特征，drafter 一深信号就衰减；逐层注入让 context 信号一直在场，drafter 可以完全不建模 context，把全部容量花在预测这一块上：
+
+<DFlashViz client:visible />
+
+两个部件的贡献是分开的，原文的消融把这一点摆得很清楚。只用扩散、不用注入，端到端就已经比 EAGLE-3 快，哪怕接受长度更低。只用注入、不用扩散，接受长度反超 EAGLE-3。两个一起用，接受长度保持在 EAGLE-3 的水平，起草却快一个量级：GSM8K 上接受 4.2 个、端到端 3.3×，对 EAGLE-3 的 4.2 个、2.1×。在 Qwen3.5-397B-A17B 上，联合发布的 drafter 在 HumanEval 并发 1 下达到非投机基线的 4.3×、MTP 的 1.5×：
+
+<DFlashBenchViz client:visible />
+
+SGLang 集成 DFlash 的同时上线了 spec-v2 引擎，它的 overlap scheduling 消掉了 draft-verify 循环两侧的 host 气泡，在初版集成之上又多拿了 33% 的吞吐。下文的 DSpark 跑在同一套运行时上。
+
+## 从 DFlash 到 DSpark
+
+纯并行的块留下了两件事没解决。第一，块内各位置的起草互相独立，没有块内依赖，质量向块尾衰减；DSpark 论文称之为 suffix decay。第二，验证侧原封未动：每个请求照旧整块 verify，高并发下就是 Background 里那笔 B×K 的账。来自 DeepSeek 的 DSpark 从两端一起下手：drafter 在并行 backbone 上挂一个轻量 sequential head，验证长度变成逐请求的预算。在 Qwen3-4B、8B、14B 三个 target 上，论文报告宏平均接受长度比 DFlash 分别高 16.3%、18.4%、18.3%。SGLang 在 [#30261](https://github.com/sgl-project/sglang/pull/30261)(2026 年 7 月合入)完成集成，drafter 直接搭在 DFlash 的 draft 模型之上，稠密与稀疏 target 都支持，例如 Qwen3 和 DeepSeek-V4。在 DeepSeek-V4-Flash 的完整并发扫掠中，DSpark 保持最优的吞吐/延迟频谱，全程领先 MTP 和非投机基线：
 
 <FrontierViz client:visible />
 
-本文余下的部分讲机制本身，以及把验证调度变成真实墙钟时间的工程。
-
-## DSpark
-
 ### Design and mechanism
 
-draft 侧有三件东西。block drafter 一次 forward 产出 gamma 个 token 的块，一个轻量的 sequential head(Markov 或 RNN)让每一位以前一位为条件，这就是「半自回归」的含义。confidence head 给每个草稿打「通过验证」的分数，整块连乘就是块的存活率。Sequential Temperature Scaling(STS)再校准这些分数，因为原始分系统性偏自信，而 scheduler 的预算要对照真实接受率来做。
+draft 侧有三件东西。block drafter 一次 forward 产出 gamma 个 token 的块，一个轻量的 sequential head(Markov 或 RNN)让每一位以前一位为条件，这就是「半自回归」的含义，也正是对付 suffix decay 的那一手。confidence head 给每个草稿打「通过验证」的分数，整块连乘就是块的存活率。Sequential Temperature Scaling(STS)再校准这些分数，因为原始分系统性偏自信，而 scheduler 的预算要对照真实接受率来做。
 
 在算法之上，SGLang 加了一个 confidence scheduler。它每步把块存活率换算成逐请求的验证预算：沿着块的存活率曲线往下走，走到「期望多接受的 token 盖不住多验证一个 token 的边际成本」就停。下图跟着一个请求走完一次 draft：
 
@@ -88,7 +112,7 @@ scheduler 用 Background 那张图里的加法模型给 verify token 定价：T(
 
 kernel 侧，SGLang 把 verify 周围成簇的小算子重写成融合的 Triton kernel：compact scatter、SWA page-index、验证长度的 top-k 调度、ragged 窗口打包。block drafter 的采样路径折叠进融合 kernel，矩阵乘做了 shard。在一个示例 profile 里，target verify 之外的部分缩短了 1.7 ms，而 verify 本身是 7.3 ms。
 
-调度侧，DSpark 几乎不加特判就接入了 SGLang 的 zero-overhead(overlap)scheduler。spec-v2 运行时本来就在独立 stream 上把下一步的调度和当前 forward 重叠，DSpark 作为一等 worker 加入：forward 输出以 async future 返回，跨迭代的顺序靠运行时的 device 侧 barrier，页表在 device 上，每步不需要 host 同步。confidence relay 走同一条通道，读两步之前的值。解码循环于是完全没有逐步气泡，比关掉 overlap scheduler 紧约 1.5×：
+调度侧，DSpark 几乎不加特判就接入了 SGLang 的 zero-overhead(overlap)scheduler。spec-v2 运行时就是随 DFlash 一起上线的那套引擎，它本来就在独立 stream 上把下一步的调度和当前 forward 重叠，DSpark 作为一等 worker 加入：forward 输出以 async future 返回，跨迭代的顺序靠运行时的 device 侧 barrier，页表在 device 上，每步不需要 host 同步。confidence relay 走同一条通道，读两步之前的值。解码循环于是完全没有逐步气泡，比关掉 overlap scheduler 紧约 1.5×：
 
 <ZosViz client:visible />
 
@@ -98,10 +122,16 @@ kernel 侧，SGLang 把 verify 周围成簇的小算子重写成融合的 Triton
 
 生产环境不想多跑一条伴随臂时，block-accept estimator 可以在 compact 运行内部直接估计被审查掉的上限。它利用后续步 target token 的 logprobs，为反事实的尾部计算估计区间。SGLang 还暴露逐请求的置信度与校准指标(如 ECE)供事后分析。
 
+## 用 SGLang serve DeepSeek-V4
+
+DeepSeek-V4 有两个尺寸，1.6T 的 Pro 和 284B 的 Flash。每一层都把滑动窗口注意力和压缩注意力混着用，撑起 1M token 的上下文；checkpoint 还自带一个原生训练的单层 MTP head。SGLang 从 Day 0 起就支持这个家族，前缀缓存、kernel、并行方式都为混合注意力路径专门做过；那一侧的细节见文末的 Day-0 blog。
+
+本文讲的一切都架在这之上，是 serving 时的一个选择。投机解码不碰 target 模型的架构，也不改输出分布：drafter 是单独训练的伴随模型，关掉投机就等于加载裸的 checkpoint。同一个 V4 target 上，`--speculative-algorithm` 选的就是 drafter 的代际：EAGLE 跑 checkpoint 里自带的 MTP head，DFLASH 跑块扩散 drafter，DSPARK 跑 DeepSeek 以伴随 checkpoint 形式发布的置信度调度 drafter(DeepSeek-V4-Flash-DSpark、DeepSeek-V4-Pro-DSpark)。DSpark 论文报告，在 DeepSeek 自己的 V4 服务系统里、真实用户流量下，DSpark 在同等吞吐水平上把单用户生成速度比 MTP 基线提高 60–85%。完整的启动配方和复现命令都在文末的原文链接里。
+
 ## What's next
 
 路线图在 [#30344](https://github.com/sgl-project/sglang/issues/30344)：更强、逐步在线化的成本模型与调度器；更多稠密与稀疏模型；更广的并行方式覆盖；把 block-accept estimator 和置信度校准做成生产级指标；以及加固 full CUDA graph 路径。
 
 ## Acknowledgments
 
-原文感谢 DSpark 作者们与 DeepSeek 提供算法与模型。
+原文致谢 DSpark 作者们与 DeepSeek 提供算法与模型，以及 Z Lab、Modal 和 SGLang 团队带来 DFlash 与 Spec V2。

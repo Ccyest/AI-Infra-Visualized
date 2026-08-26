@@ -6,14 +6,24 @@ tryOnSglang: "https://github.com/sgl-project/sglang"
 references:
   - label: "LMSYS Blog: DSpark in SGLang: Speculative Decoding with Confidence-Driven, Variable-Length Verification"
     url: "https://www.lmsys.org/blog/2026-07-06-dspark-sglang"
+  - label: "LMSYS Blog: The next generation of speculative decoding: DFlash and Spec V2"
+    url: "https://www.lmsys.org/blog/2026-06-15-next-generation-speculative-decoding-dflash-v2/"
+  - label: "LMSYS Blog: DeepSeek-V4 on Day 0: From Fast Inference to Verified RL with SGLang and Miles"
+    url: "https://www.lmsys.org/blog/2026-04-25-deepseek-v4/"
   - label: "sglang#30261: [Spec] Add DSpark: confidence-scheduled speculative decoding"
     url: "https://github.com/sgl-project/sglang/pull/30261"
   - label: "sglang#30344: [Tracking] DSpark in SGLang: roadmap"
     url: "https://github.com/sgl-project/sglang/issues/30344"
+  - label: "DFlash paper: Block Diffusion for Flash Speculative Decoding"
+    url: "https://arxiv.org/abs/2602.06036"
+  - label: "DSpark paper: Confidence-Scheduled Speculative Decoding with Semi-Autoregressive Generation"
+    url: "https://arxiv.org/abs/2607.05147"
 ---
 
 import SpecRaceViz from "../../../viz/dspark/SpecRaceViz";
 import CostViz from "../../../viz/dspark/CostViz";
+import DFlashViz from "../../../viz/dspark/DFlashViz";
+import DFlashBenchViz from "../../../viz/dspark/DFlashBenchViz";
 import FrontierViz from "../../../viz/dspark/FrontierViz";
 import BlockDraftViz from "../../../viz/dspark/BlockDraftViz";
 import TrimViz from "../../../viz/dspark/TrimViz";
@@ -42,33 +52,77 @@ different loads:
 
 <CostViz client:visible lang="en" />
 
-DSpark attacks both ends of this trade. A semi-autoregressive block drafter
-emits a whole block per draft forward, so acceptance stays high. A confidence
-head scores each drafted token, and the verify length becomes a per-request
-budget that stops paying for tokens the workload is unlikely to accept. The
-algorithm and its gains come from the DSpark paper; SGLang integrated it in
-[#30261](https://github.com/sgl-project/sglang/pull/30261) (merged July 2026)
-for both dense and sparse models, such as Qwen3 and DeepSeek-V4. Across a full
-concurrency sweep on DeepSeek-V4-Flash, DSpark holds the best
-throughput/latency frontier, ahead of both MTP and the non-speculative floor:
+The rest of this post follows two generations of drafters that attack this
+trade, and ends with what they mean for serving DeepSeek-V4.
+
+## DFlash: parallel drafting with KV injection
+
+Before the verify side, look at where drafts come from. Most speculative
+methods, including the EAGLE series and the native MTP heads that ship with
+models like DeepSeek-V4, draft autoregressively: the small model emits tokens
+one by one, so draft cost grows with draft length, and keeping latency low
+forces the drafter to stay shallow.
+
+DFlash, developed by Z Lab, replaces the autoregressive drafter with a
+lightweight block diffusion model that emits the whole block in one forward.
+Making that work is not just swapping the drafter. A small diffusion model
+trained from scratch accepts poorly, and a full-size diffusion LLM is too
+expensive to draft with. DFlash's answer is KV injection: the target model
+knows the context best, so DFlash extracts the target's hidden states and
+injects them into the draft model's KV cache at every draft layer. EAGLE-style
+methods feed target features only at the drafter's input, and that signal fades
+as the drafter gets deeper. Injected at every layer, the context signal stays
+strong, and the drafter can skip modeling the context entirely and spend its
+capacity on predicting the block:
+
+<DFlashViz client:visible lang="en" />
+
+The two pieces contribute separately, and the blog's ablation makes that
+visible. Diffusion alone already beats EAGLE-3 end to end on speed, even at
+lower acceptance. Injection alone raises acceptance above EAGLE-3. Together
+they hold acceptance at EAGLE-3's level while drafting an order faster:
+on GSM8K, 4.2 accepted tokens and 3.3× end-to-end against EAGLE-3's 4.2 and
+2.1×. On Qwen3.5-397B-A17B, the jointly released drafter reaches 4.3× the
+non-speculative baseline and 1.5× MTP at concurrency 1 on HumanEval:
+
+<DFlashBenchViz client:visible lang="en" />
+
+SGLang integrated DFlash together with its spec-v2 engine, whose overlap
+scheduling removed the host-side bubbles around the draft-verify loop and
+added another 33% throughput on top of the initial integration. That same
+runtime carries DSpark below.
+
+## From DFlash to DSpark
+
+A purely parallel block leaves two things on the table. First, the block's
+positions are drafted without intra-block dependencies, so quality decays
+toward the tail of the block; the DSpark paper calls this suffix decay.
+Second, the verify side is untouched: every request still pays for a
+full-block verify, which is exactly the B×K cost from the Background at high
+concurrency. DSpark, from DeepSeek, addresses both ends. The drafter couples
+the parallel backbone with a lightweight sequential head, and the verify
+length becomes a per-request budget. Across Qwen3-4B, 8B, and 14B targets, the
+paper reports 16.3%, 18.4%, and 18.3% higher macro-average accepted length
+than DFlash. SGLang integrated DSpark in
+[#30261](https://github.com/sgl-project/sglang/pull/30261) (merged July 2026),
+building its drafter directly on the DFlash draft model, for both dense and
+sparse targets such as Qwen3 and DeepSeek-V4. Across a full concurrency sweep
+on DeepSeek-V4-Flash, DSpark holds the best throughput/latency frontier, ahead
+of both MTP and the non-speculative floor:
 
 <FrontierViz client:visible lang="en" />
-
-The rest of this post walks through the mechanism, and the engineering that
-turns a verify schedule into wall-clock time.
-
-## DSpark
 
 ### Design and mechanism
 
 The draft side has three pieces. The block drafter emits a gamma-token block in
 one forward, with a lightweight sequential head (a Markov or RNN head)
-conditioning each position on the previous token, which is what
-semi-autoregressive means here. The confidence head scores each drafted token's
-chance of surviving verification, and the product across the block is the
-block's survival probability. Sequential Temperature Scaling (STS) calibrates
-those scores, because raw scores are systematically overconfident and the
-scheduler budgets against true acceptance rates.
+conditioning each position on the previous token; this is what
+semi-autoregressive means, and it is the piece that counters suffix decay. The
+confidence head scores each drafted token's chance of surviving verification,
+and the product across the block is the block's survival probability.
+Sequential Temperature Scaling (STS) calibrates those scores, because raw
+scores are systematically overconfident and the scheduler budgets against true
+acceptance rates.
 
 On top of the algorithm, SGLang adds a confidence scheduler. Each step it
 converts per-block survival into a per-request verify budget: it walks down the
@@ -173,14 +227,14 @@ is sharded. In one example profile, the work outside the target verify shrinks
 by 1.7 ms, against a 7.3 ms verify.
 
 On the scheduling side, DSpark drops straight into SGLang's zero-overhead
-(overlap) scheduler with almost no special-casing. The spec-v2 runtime already
-overlaps the next step's scheduling with the current forward on separate
-streams, and DSpark joins as a first-class worker: forward outputs come back as
-async futures, cross-iteration ordering rides the runtime's device-side
-barrier, and on-device page tables mean no per-step host sync. The confidence
-relay uses the same channel, read two steps back. The decode loop then runs
-with no per-step bubble, about 1.5× tighter than with the overlap scheduler
-off:
+(overlap) scheduler with almost no special-casing. The spec-v2 runtime, the
+same engine introduced with DFlash, already overlaps the next step's scheduling
+with the current forward on separate streams, and DSpark joins as a first-class
+worker: forward outputs come back as async futures, cross-iteration ordering
+rides the runtime's device-side barrier, and on-device page tables mean no
+per-step host sync. The confidence relay uses the same channel, read two steps
+back. The decode loop then runs with no per-step bubble, about 1.5× tighter
+than with the overlap scheduler off:
 
 <ZosViz client:visible lang="en" />
 
@@ -199,6 +253,29 @@ the target tokens of future steps with their logprobs, and computes estimation
 intervals for the counterfactual tail. SGLang also surfaces per-request
 confidence and calibration metrics, such as ECE, for post-hoc analysis.
 
+## Serving DeepSeek-V4 with SGLang
+
+DeepSeek-V4 ships in two sizes, the 1.6T Pro and the 284B Flash. Each layer
+mixes sliding-window attention with compressed attention to keep the 1M-token
+context tractable, and the checkpoint includes a natively trained single-layer
+MTP head. SGLang has served the family since day 0, with prefix caching,
+kernels, and parallelism built for the hybrid attention path; the day-0 blog in
+the references covers that side.
+
+Everything in this post sits on top of that as a serving-time choice.
+Speculation never touches the target model's architecture or its output
+distribution: the drafter is a separately trained companion model, and turning
+speculation off just means loading the plain checkpoint. On the same V4
+target, `--speculative-algorithm` selects the generation of drafter: EAGLE
+runs the MTP head that ships inside the checkpoint, DFLASH runs a
+block-diffusion drafter, and DSPARK runs the confidence-scheduled drafter that
+DeepSeek releases as companion checkpoints (DeepSeek-V4-Flash-DSpark,
+DeepSeek-V4-Pro-DSpark). The DSpark paper reports that in DeepSeek's own V4
+serving system, under live user traffic, DSpark accelerates per-user
+generation by 60–85% over the MTP baseline at matched throughput. Full launch
+recipes and reproduction commands live in the original blogs in the
+references.
+
 ## What's next
 
 The roadmap lives in
@@ -209,5 +286,5 @@ confidence calibration; and hardening the full-CUDA-graph path.
 
 ## Acknowledgments
 
-The original blog thanks the DSpark authors and DeepSeek for the algorithm and
-the models.
+The original blogs thank the DSpark authors and DeepSeek for the algorithm and
+the models, and Z Lab, Modal, and the SGLang team for DFlash and Spec V2.
