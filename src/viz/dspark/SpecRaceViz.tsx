@@ -17,7 +17,7 @@ const ACCEPTS = [4, 2, 5, 1, 3, 4, 3, 2];
 const CELL = 13;
 const GAP = 2;
 const PITCH = CELL + GAP;
-const LABEL_W = 92;
+const LABEL_W = 104;
 const AXIS_H = 18;
 
 const HATCH_CSS =

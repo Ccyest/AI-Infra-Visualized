@@ -480,7 +480,8 @@ function ReplayInner({
             style={{ transform: flagRoot ? "translate(30px, 10px)" : "translate(224px, 36px)" }}
           >
             <line x1={0} y1={0} x2={0} y2={flagRoot ? 26 : 58} />
-            <text x={0} y={-4} textAnchor="middle">
+            {/* 根位置贴左缘,文字右移避免溢出画布 */}
+            <text x={flagRoot ? 16 : 0} y={-4} textAnchor="middle">
               {REPLAY.flag[lang]}
             </text>
           </g>

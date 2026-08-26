@@ -142,7 +142,7 @@ function CacheBar({
           {Array.from({ length: Math.floor(maxCells / 10) + 1 }, (_, i) => (
             <text
               key={i}
-              x={kdaOffset + i * 10 * PITCH - GAP / 2}
+              x={Math.max(kdaOffset + i * 10 * PITCH - GAP / 2, 3)}
               y={CELL + AXIS_H - 3}
               textAnchor="middle"
               fontSize="8"

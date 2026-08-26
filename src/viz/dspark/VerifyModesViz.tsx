@@ -19,7 +19,7 @@ const GAP = 4;
 const PITCH = CELL + GAP;
 const LABEL_W = 96;
 const ROW_GAP = 14;
-const STATS_W = 240;
+const STATS_W = 285;
 
 const HATCH_CSS =
   "repeating-linear-gradient(45deg, transparent 0 3px, var(--axis) 3px 4.5px)";

@@ -11,11 +11,11 @@ const LAYERS = 5;
 const CELL = 20;
 const GAP = 4;
 const PITCH = CELL + GAP;
-/* 左侧 draft 层堆叠 */
+/* 左侧 draft 层堆叠(STACK_X 左边要留够注入标签的宽度,标签锚定在箭头起点左侧) */
 const LAYER_W = 64;
 const LAYER_H = 12;
 const LAYER_GAP = 6;
-const STACK_X = 96;
+const STACK_X = 250;
 const TOKENS_X = STACK_X + LAYER_W + 56;
 
 interface PanelProps {
@@ -106,8 +106,8 @@ function Panel({ mode, lang, showTooltip, hide, uid }: PanelProps) {
         {DFLASH.layerLabel[lang]} ×{LAYERS}
       </text>
       <text
-        x={STACK_X - 44}
-        y={mode === "df" ? stackTop - 0.5 : stackTop + stackH + 17}
+        x={STACK_X - 46}
+        y={mode === "df" ? stackTop + stackH / 2 + 3 : stackTop + stackH + 12}
         textAnchor="end"
         fontSize="9"
         fill="var(--series-3)"
