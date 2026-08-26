@@ -52,16 +52,18 @@ different loads:
 
 <CostViz client:visible lang="en" />
 
-The rest of this post follows two generations of drafters that attack this
-trade, and ends with what they mean for serving DeepSeek-V4.
+The rest of this post is in three parts: the two algorithm generations that
+attack this trade, the engineering SGLang builds to serve them, and what that
+stack means for DeepSeek-V4.
 
-## DFlash: parallel drafting with KV injection
+## The algorithms: DFlash, then DSpark
 
-Before the verify side, look at where drafts come from. Most speculative
-methods, including the EAGLE series and the native MTP heads that ship with
-models like DeepSeek-V4, draft autoregressively: the small model emits tokens
-one by one, so draft cost grows with draft length, and keeping latency low
-forces the drafter to stay shallow.
+### DFlash: parallel drafting with KV injection
+
+Most speculative methods, including the EAGLE series and the native MTP heads
+that ship with models like DeepSeek-V4, draft autoregressively: the small model
+emits tokens one by one, so draft cost grows with draft length, and keeping
+latency low forces the drafter to stay shallow.
 
 DFlash, developed by Z Lab, replaces the autoregressive drafter with a
 lightweight block diffusion model that emits the whole block in one forward.
@@ -77,7 +79,7 @@ capacity on predicting the block:
 
 <DFlashViz client:visible lang="en" />
 
-The two pieces contribute separately, and the blog's ablation makes that
+The two pieces contribute separately, and the paper's ablation makes that
 visible. Diffusion alone already beats EAGLE-3 end to end on speed, even at
 lower acceptance. Injection alone raises acceptance above EAGLE-3. Together
 they hold acceptance at EAGLE-3's level while drafting an order faster:
@@ -87,70 +89,70 @@ non-speculative baseline and 1.5× MTP at concurrency 1 on HumanEval:
 
 <DFlashBenchViz client:visible lang="en" />
 
-SGLang integrated DFlash together with its spec-v2 engine, whose overlap
-scheduling removed the host-side bubbles around the draft-verify loop and
-added another 33% throughput on top of the initial integration. That same
-runtime carries DSpark below.
-
-## From DFlash to DSpark
+### DSpark: draft semi-autoregressively, verify on a budget
 
 A purely parallel block leaves two things on the table. First, the block's
 positions are drafted without intra-block dependencies, so quality decays
 toward the tail of the block; the DSpark paper calls this suffix decay.
 Second, the verify side is untouched: every request still pays for a
 full-block verify, which is exactly the B×K cost from the Background at high
-concurrency. DSpark, from DeepSeek, addresses both ends. The drafter couples
-the parallel backbone with a lightweight sequential head, and the verify
-length becomes a per-request budget. Across Qwen3-4B, 8B, and 14B targets, the
-paper reports 16.3%, 18.4%, and 18.3% higher macro-average accepted length
-than DFlash. SGLang integrated DSpark in
-[#30261](https://github.com/sgl-project/sglang/pull/30261) (merged July 2026),
-building its drafter directly on the DFlash draft model, for both dense and
-sparse targets such as Qwen3 and DeepSeek-V4. Across a full concurrency sweep
-on DeepSeek-V4-Flash, DSpark holds the best throughput/latency frontier, ahead
-of both MTP and the non-speculative floor:
+concurrency.
 
-<FrontierViz client:visible lang="en" />
-
-### Design and mechanism
-
-The draft side has three pieces. The block drafter emits a gamma-token block in
-one forward, with a lightweight sequential head (a Markov or RNN head)
-conditioning each position on the previous token; this is what
-semi-autoregressive means, and it is the piece that counters suffix decay. The
-confidence head scores each drafted token's chance of surviving verification,
-and the product across the block is the block's survival probability.
-Sequential Temperature Scaling (STS) calibrates those scores, because raw
-scores are systematically overconfident and the scheduler budgets against true
-acceptance rates.
-
-On top of the algorithm, SGLang adds a confidence scheduler. Each step it
-converts per-block survival into a per-request verify budget: it walks down the
-block's survival curve and stops where the expected accepted tokens no longer
-cover the marginal cost of verifying one more token. The diagram below follows
-one request through a draft step:
+DSpark, from DeepSeek, addresses both ends with three draft-side pieces. The
+block drafter still emits a gamma-token block in one forward, but a lightweight
+sequential head (a Markov or RNN head) conditions each position on the previous
+token; this is what semi-autoregressive means, and it is the piece that
+counters suffix decay. The confidence head scores each drafted token's chance
+of surviving verification, and the product across the block is the block's
+survival probability. Sequential Temperature Scaling (STS) calibrates those
+scores, because raw scores are systematically overconfident and any budget
+built on them must reflect true acceptance rates. Those survival scores are
+what makes the verify length schedulable per request: walk down the block's
+survival curve and stop where the expected accepted tokens no longer cover the
+marginal cost of verifying one more token. The diagram below follows one
+request through a draft step:
 
 <BlockDraftViz client:visible lang="en" />
 
-Across a batch, the same rule sizes every request separately. A predictable
-request keeps a long window. A divergent one gets trimmed to two or three
-tokens. Higher load raises the marginal cost of every verify token, so all
-windows tighten together:
+Across Qwen3-4B, 8B, and 14B targets, the paper reports 16.3%, 18.4%, and
+18.3% higher macro-average accepted length than DFlash. The rest is a serving
+problem: someone has to price the marginal cost, cut the budgets every step,
+and make a batch of unequal verify lengths run fast on real GPUs. That is the
+SGLang part.
+
+## How SGLang serves DSpark
+
+SGLang integrated DSpark in
+[#30261](https://github.com/sgl-project/sglang/pull/30261) (merged July 2026),
+building the drafter directly on the DFlash draft model, for both dense and
+sparse targets such as Qwen3 and DeepSeek-V4. Across a full concurrency sweep
+on DeepSeek-V4-Flash, the integration holds the best throughput/latency
+frontier, ahead of both MTP and the non-speculative floor:
+
+<FrontierViz client:visible lang="en" />
+
+The rest of this section walks through the engineering that turns the paper's
+schedule into wall-clock time.
+
+### The confidence scheduler and verify modes
+
+SGLang's confidence scheduler runs the budget rule from the previous section
+every step, for every request in the batch. A predictable request keeps a long
+window. A divergent one gets trimmed to two or three tokens. Higher load raises
+the marginal cost of every verify token, so all windows tighten together:
 
 <TrimViz client:visible lang="en" />
 
-### Verify modes
-
-SGLang ships three verify modes, and the rest of this post keeps referring to
-them. static verifies the full drafted block every step; it is the baseline.
-compact verifies only the window the scheduler picked; it is the production
-path. cap-accept verifies the full block but commits only up to the window, so
-it produces exactly compact's output while also observing what a full verify
-would have accepted:
+Around the scheduler, SGLang ships three verify modes, and the rest of this
+post keeps referring to them. static verifies the full drafted block every
+step; it is the baseline. compact verifies only the window the scheduler
+picked; it is the production path. cap-accept verifies the full block but
+commits only up to the window, so it produces exactly compact's output while
+also observing what a full verify would have accepted:
 
 <VerifyModesViz client:visible lang="en" />
 
-## Ragged verify under full CUDA graphs
+### Ragged verify under full CUDA graphs
 
 Per-request windows do not fit a fixed-shape CUDA graph. A batch where one
 request verifies two tokens and another six has no single query length, and
@@ -170,7 +172,19 @@ model's own sparse-MLA path (flash_mla) with no new kernel. Each supported
 backend just rebuilds its varlen metadata from the packed layout on graph
 replay.
 
-## Scheduling results
+### The cost table behind the budgets
+
+The scheduler prices verify tokens with the additive model from the Background
+figure: T(bs, K) = bias + α(bs) + θ(M), with M = bs + K the step's total
+tokens. α(bs) is the request-scaling floor, the draft pass plus part of
+attention, and trimming cannot move it. θ(M) is the target's verify-token cost,
+the only term trimming recovers, so trim headroom shows up only where θ is
+large. SGLang profiles the table offline by sweeping a batch × verify-fraction
+grid, and the scheduler reads it online, trading expected accepted tokens
+against real marginal cost. The blog validates the model's predictions against
+a live server.
+
+### Scheduling results
 
 How much does the dynamic budget actually buy? The blog compares compact
 against no-trim, which runs the static full-block schedule through the same
@@ -188,31 +202,17 @@ trend across them is the result, not absolute cross-panel numbers. And the
 budgets are only as good as the cost tables behind them; the current fit is a
 first approximation that may not fully account for context length.
 
-### Per-request differentiation on mixed traffic
-
-Homogeneous sweeps hide the real point of confidence scheduling: two requests
-in the same batch should not get the same verify window if one is far more
-predictable than the other. On a mix of gsm8k, arena-hard, and poetry, the
-window contracts with acceptance difficulty, 5.24 to 3.78 to 2.91 tokens, while
-utilization against the ceiling stays at 0.88–0.97. The per-step distribution
-shows the same thing: about 55% of gsm8k steps fill the full window of six,
-while about 80% of poetry steps use three or fewer:
+Homogeneous sweeps also hide the real point of confidence scheduling: two
+requests in the same batch should not get the same verify window if one is far
+more predictable than the other. On a mix of gsm8k, arena-hard, and poetry,
+the window contracts with acceptance difficulty, 5.24 to 3.78 to 2.91 tokens,
+while utilization against the ceiling stays at 0.88–0.97. The per-step
+distribution shows the same thing: about 55% of gsm8k steps fill the full
+window of six, while about 80% of poetry steps use three or fewer:
 
 <MixedTrafficViz client:visible lang="en" />
 
-### The cost table behind the budgets
-
-The scheduler prices verify tokens with the additive model from the Background
-figure: T(bs, K) = bias + α(bs) + θ(M), with M = bs + K the step's total
-tokens. α(bs) is the request-scaling floor, the draft pass plus part of
-attention, and trimming cannot move it. θ(M) is the target's verify-token cost,
-the only term trimming recovers, so trim headroom shows up only where θ is
-large. The table is profiled offline by sweeping a batch × verify-fraction
-grid, and the scheduler reads it online, trading expected accepted tokens
-against real marginal cost. The blog validates the model's predictions against
-a live server.
-
-## Zero-overhead scheduling and kernels
+### Zero-overhead scheduling and kernels
 
 Two kinds of engineering turn the schedule into wall-clock time: cutting the
 cost of each step, and hiding the scheduler behind the forward. Together they
@@ -227,18 +227,19 @@ is sharded. In one example profile, the work outside the target verify shrinks
 by 1.7 ms, against a 7.3 ms verify.
 
 On the scheduling side, DSpark drops straight into SGLang's zero-overhead
-(overlap) scheduler with almost no special-casing. The spec-v2 runtime, the
-same engine introduced with DFlash, already overlaps the next step's scheduling
-with the current forward on separate streams, and DSpark joins as a first-class
-worker: forward outputs come back as async futures, cross-iteration ordering
-rides the runtime's device-side barrier, and on-device page tables mean no
-per-step host sync. The confidence relay uses the same channel, read two steps
-back. The decode loop then runs with no per-step bubble, about 1.5× tighter
-than with the overlap scheduler off:
+(overlap) scheduler with almost no special-casing. The spec-v2 runtime was
+introduced together with the DFlash integration, where its overlap scheduling
+added another 33% throughput on top of the initial implementation. It overlaps
+the next step's scheduling with the current forward on separate streams, and
+DSpark joins as a first-class worker: forward outputs come back as async
+futures, cross-iteration ordering rides the runtime's device-side barrier, and
+on-device page tables mean no per-step host sync. The confidence relay uses
+the same channel, read two steps back. The decode loop then runs with no
+per-step bubble, about 1.5× tighter than with the overlap scheduler off:
 
 <ZosViz client:visible lang="en" />
 
-## Observability
+### Observability
 
 Trimming censors the very number you need to judge it. compact only verifies
 the window, so how many tokens a full-block verify would have accepted at that

@@ -42,47 +42,51 @@ import ZosViz from "../../../viz/dspark/ZosViz";
 
 <CostViz client:visible />
 
-本文余下的部分沿着两代 drafter 讲这笔交易怎么解，最后落到它们对 DeepSeek-V4 serving 意味着什么。
+本文余下的部分分三块：解这笔交易的两代算法，SGLang 为 serve 它们做的工程，以及这套栈对 DeepSeek-V4 意味着什么。
 
-## DFlash: parallel drafting with KV injection
+## 算法：DFlash 与 DSpark
 
-在讲验证侧之前，先看草稿从哪来。大多数投机方案，包括 EAGLE 系列和 DeepSeek-V4 这类模型自带的 MTP head，起草是自回归的：小模型逐 token 生成，草稿越长起草开销越大，为了压延迟只能把 drafter 做得很浅。
+### DFlash: parallel drafting with KV injection
+
+大多数投机方案，包括 EAGLE 系列和 DeepSeek-V4 这类模型自带的 MTP head，起草是自回归的：小模型逐 token 生成，草稿越长起草开销越大，为了压延迟只能把 drafter 做得很浅。
 
 Z Lab 开发的 DFlash 用一个轻量的块扩散(block diffusion)模型换掉自回归 drafter，一次 forward 并行产出整块草稿。做到这一点不只是换个 drafter 那么简单。从头训练的小扩散模型接受率很低，拿现成的大扩散 LLM 起草又太贵。DFlash 的答案是 KV injection：context 谁最懂？target 模型自己。DFlash 把 target 的 hidden states 抽出来，注入 draft 模型每一层的 KV cache。EAGLE 类方法只在 drafter 的输入端喂一次 target 特征，drafter 一深信号就衰减；逐层注入让 context 信号一直在场，drafter 可以完全不建模 context，把全部容量花在预测这一块上：
 
 <DFlashViz client:visible />
 
-两个部件的贡献是分开的，原文的消融把这一点摆得很清楚。只用扩散、不用注入，端到端就已经比 EAGLE-3 快，哪怕接受长度更低。只用注入、不用扩散，接受长度反超 EAGLE-3。两个一起用，接受长度保持在 EAGLE-3 的水平，起草却快一个量级：GSM8K 上接受 4.2 个、端到端 3.3×，对 EAGLE-3 的 4.2 个、2.1×。在 Qwen3.5-397B-A17B 上，联合发布的 drafter 在 HumanEval 并发 1 下达到非投机基线的 4.3×、MTP 的 1.5×：
+两个部件的贡献是分开的，论文的消融把这一点摆得很清楚。只用扩散、不用注入，端到端就已经比 EAGLE-3 快，哪怕接受长度更低。只用注入、不用扩散，接受长度反超 EAGLE-3。两个一起用，接受长度保持在 EAGLE-3 的水平，起草却快一个量级：GSM8K 上接受 4.2 个、端到端 3.3×，对 EAGLE-3 的 4.2 个、2.1×。在 Qwen3.5-397B-A17B 上，联合发布的 drafter 在 HumanEval 并发 1 下达到非投机基线的 4.3×、MTP 的 1.5×：
 
 <DFlashBenchViz client:visible />
 
-SGLang 集成 DFlash 的同时上线了 spec-v2 引擎，它的 overlap scheduling 消掉了 draft-verify 循环两侧的 host 气泡，在初版集成之上又多拿了 33% 的吞吐。下文的 DSpark 跑在同一套运行时上。
+### DSpark：半自回归起草，按预算验证
 
-## 从 DFlash 到 DSpark
+纯并行的块留下了两件事没解决。第一，块内各位置的起草互相独立，没有块内依赖，质量向块尾衰减；DSpark 论文称之为 suffix decay。第二，验证侧原封未动：每个请求照旧整块 verify，高并发下就是 Background 里那笔 B×K 的账。
 
-纯并行的块留下了两件事没解决。第一，块内各位置的起草互相独立，没有块内依赖，质量向块尾衰减；DSpark 论文称之为 suffix decay。第二，验证侧原封未动：每个请求照旧整块 verify，高并发下就是 Background 里那笔 B×K 的账。来自 DeepSeek 的 DSpark 从两端一起下手：drafter 在并行 backbone 上挂一个轻量 sequential head，验证长度变成逐请求的预算。在 Qwen3-4B、8B、14B 三个 target 上，论文报告宏平均接受长度比 DFlash 分别高 16.3%、18.4%、18.3%。SGLang 在 [#30261](https://github.com/sgl-project/sglang/pull/30261)(2026 年 7 月合入)完成集成，drafter 直接搭在 DFlash 的 draft 模型之上，稠密与稀疏 target 都支持，例如 Qwen3 和 DeepSeek-V4。在 DeepSeek-V4-Flash 的完整并发扫掠中，DSpark 保持最优的吞吐/延迟频谱，全程领先 MTP 和非投机基线：
-
-<FrontierViz client:visible />
-
-### Design and mechanism
-
-draft 侧有三件东西。block drafter 一次 forward 产出 gamma 个 token 的块，一个轻量的 sequential head(Markov 或 RNN)让每一位以前一位为条件，这就是「半自回归」的含义，也正是对付 suffix decay 的那一手。confidence head 给每个草稿打「通过验证」的分数，整块连乘就是块的存活率。Sequential Temperature Scaling(STS)再校准这些分数，因为原始分系统性偏自信，而 scheduler 的预算要对照真实接受率来做。
-
-在算法之上，SGLang 加了一个 confidence scheduler。它每步把块存活率换算成逐请求的验证预算：沿着块的存活率曲线往下走，走到「期望多接受的 token 盖不住多验证一个 token 的边际成本」就停。下图跟着一个请求走完一次 draft：
+来自 DeepSeek 的 DSpark 用 draft 侧的三件东西从两端一起下手。block drafter 仍然一次 forward 产出 gamma 个 token 的块，但一个轻量的 sequential head(Markov 或 RNN)让每一位以前一位为条件，这就是「半自回归」的含义，也正是对付 suffix decay 的那一手。confidence head 给每个草稿打「通过验证」的分数，整块连乘就是块的存活率。Sequential Temperature Scaling(STS)再校准这些分数，因为原始分系统性偏自信，而建立在它之上的预算必须反映真实接受率。有了这些存活分，验证长度才能按请求来调度：沿着块的存活率曲线往下走，走到「期望多接受的 token 盖不住多验证一个 token 的边际成本」就停。下图跟着一个请求走完一次 draft：
 
 <BlockDraftViz client:visible />
 
-放到一个批次里，同一条规则给每个请求单独定窗口。可预测的请求保住长窗口。发散的请求被裁到两三个 token。负载升高会抬高每个 verify token 的边际成本，所有窗口一起收紧：
+在 Qwen3-4B、8B、14B 三个 target 上，论文报告宏平均接受长度比 DFlash 分别高 16.3%、18.4%、18.3%。剩下的是 serving 问题：得有人给边际成本定价、每步切好预算，还要让一批验证长度参差不齐的请求在真实 GPU 上跑得快。这就是 SGLang 的部分。
+
+## SGLang 怎么把 DSpark serve 起来
+
+SGLang 在 [#30261](https://github.com/sgl-project/sglang/pull/30261)(2026 年 7 月合入)完成集成，drafter 直接搭在 DFlash 的 draft 模型之上，稠密与稀疏 target 都支持，例如 Qwen3 和 DeepSeek-V4。在 DeepSeek-V4-Flash 的完整并发扫掠中，这套集成保持最优的吞吐/延迟频谱，全程领先 MTP 和非投机基线：
+
+<FrontierViz client:visible />
+
+本节余下的部分逐个讲把论文的调度变成真实墙钟时间的工程。
+
+### Confidence scheduler 与 verify 模式
+
+SGLang 的 confidence scheduler 每步对批次里的每个请求执行上一节的预算规则。可预测的请求保住长窗口。发散的请求被裁到两三个 token。负载升高会抬高每个 verify token 的边际成本，所有窗口一起收紧：
 
 <TrimViz client:visible />
 
-### Verify modes
-
-SGLang 提供三种 verify 模式，本文后面会反复用到。static 每步验证整块草稿，是基线。compact 只验证 scheduler 选出的窗口，是生产路径。cap-accept 验证整块但只提交到窗口为止，输出和 compact 完全一致，同时还能观测到整块验证本可以接受多少：
+围绕 scheduler，SGLang 提供三种 verify 模式，本文后面会反复用到。static 每步验证整块草稿，是基线。compact 只验证 scheduler 选出的窗口，是生产路径。cap-accept 验证整块但只提交到窗口为止，输出和 compact 完全一致，同时还能观测到整块验证本可以接受多少：
 
 <VerifyModesViz client:visible />
 
-## Ragged verify under full CUDA graphs
+### Ragged verify under full CUDA graphs
 
 逐请求的窗口塞不进固定形状的 CUDA graph。一个批次里，这个请求验证两个 token，那个验证六个，没有统一的 query 长度；把所有请求 pad 回块宽，等于把裁掉的又 pad 回来。SGLang 选择让批次保持参差。verify token 被 front-pack 进一个紧凑 buffer，graph 按总 token 数取 key，向上取整到最近的已捕获档位。预算收紧时，打包后的总数落到更小的档位，回放的 graph 是真正更便宜的：attention 和 MLP 的行数变少了，而不是一个打了 mask 的全宽 forward。data-parallel attention 下，各 rank 共用一个档位(取各 rank 所需的最大值)，一起降档：
 
@@ -90,33 +94,31 @@ SGLang 提供三种 verify 模式，本文后面会反复用到。static 每步�
 
 打包后的 buffer 是 cu_seqlens 式的变长输入，所以 compact verify 复用后端现成的 attention kernel。DeepSeek-V4 上直接走模型自己的 sparse-MLA 路径(flash_mla)，没有新 kernel。每个支持的后端只需在 graph 回放时从打包布局重建自己的变长 metadata。
 
-## Scheduling results
+### 预算背后的成本表
+
+scheduler 用 Background 那张图里的加法模型给 verify token 定价：T(bs, K) = bias + α(bs) + θ(M)，其中 M = bs + K 是这一步的总 token 数。α(bs) 是随请求数增长的地板，包含 draft pass 和一部分 attention，裁剪动不了它。θ(M) 是 target 的 verify token 成本，是裁剪唯一能省回来的项，所以裁剪的收益只出现在 θ 大的地方。SGLang 离线 profile 这张表：扫一个 batch × verify 比例的网格；scheduler 在线读表，用期望接受的 token 数对照真实边际成本做取舍。原文用真实 server 验证了模型的预测。
+
+### 调度收益
 
 动态预算到底买到了多少？原文把 compact 和 no-trim 对比，后者是把 static 的整块调度跑在同一条 ragged 路径上，比较对象是两个接受率不同的示例负载。收益主要是高批次效应。batch 1 时，target verify 几乎不因多验几个 token 变慢，裁剪省不了什么，两臂打平。并发上去、吞吐开始进入平台期后，裁剪缩短了每一步，compact 拉开领先。在接受率更低的负载上，差距更大、拉开得更早，因为更低的接受率留下了更多可裁的尾巴。
 
 这些数字背后的 scheduler 是第一版朴素实现，原文也这么定位它：证明机制端到端可行。两个示例负载除接受率外还有细微的设置差异，所以结论是跨负载的趋势，而不是面板间的绝对数字。预算的质量也取决于背后的成本表；当前的拟合是初版，可能还没有完全考虑 context 长度对步时的影响。
 
-### Per-request differentiation on mixed traffic
-
-同质负载的扫掠会掩盖 confidence scheduling 的真正意义：同一批次里，一个请求比另一个可预测得多时，两者不该拿到同样的验证窗口。在 gsm8k、arena-hard、poetry 的混合流量上，窗口随接受难度收缩，从 5.24 到 3.78 再到 2.91 个 token，对接受上限的利用率保持在 0.88–0.97。逐步分布说明同一件事：约 55% 的 gsm8k 步用满 6 的窗口，约 80% 的 poetry 步只用 3 个以内：
+同质负载的扫掠还会掩盖 confidence scheduling 的真正意义：同一批次里，一个请求比另一个可预测得多时，两者不该拿到同样的验证窗口。在 gsm8k、arena-hard、poetry 的混合流量上，窗口随接受难度收缩，从 5.24 到 3.78 再到 2.91 个 token，对接受上限的利用率保持在 0.88–0.97。逐步分布说明同一件事：约 55% 的 gsm8k 步用满 6 的窗口，约 80% 的 poetry 步只用 3 个以内：
 
 <MixedTrafficViz client:visible />
 
-### The cost table behind the budgets
-
-scheduler 用 Background 那张图里的加法模型给 verify token 定价：T(bs, K) = bias + α(bs) + θ(M)，其中 M = bs + K 是这一步的总 token 数。α(bs) 是随请求数增长的地板，包含 draft pass 和一部分 attention，裁剪动不了它。θ(M) 是 target 的 verify token 成本，是裁剪唯一能省回来的项，所以裁剪的收益只出现在 θ 大的地方。成本表离线 profile 得到：扫一个 batch × verify 比例的网格；scheduler 在线读表，用期望接受的 token 数对照真实边际成本做取舍。原文用真实 server 验证了模型的预测。
-
-## Zero-overhead scheduling and kernels
+### Zero-overhead scheduling 与 kernel
 
 把调度变成墙钟时间靠两类工程：压低每一步的成本，以及把 scheduler 藏到 forward 背后。两者合起来，在 DeepSeek-V4-Pro(TP8，B300)上 batch 1、接受长度约 5 时达到 383.7 tok/s。
 
 kernel 侧，SGLang 把 verify 周围成簇的小算子重写成融合的 Triton kernel：compact scatter、SWA page-index、验证长度的 top-k 调度、ragged 窗口打包。block drafter 的采样路径折叠进融合 kernel，矩阵乘做了 shard。在一个示例 profile 里，target verify 之外的部分缩短了 1.7 ms，而 verify 本身是 7.3 ms。
 
-调度侧，DSpark 几乎不加特判就接入了 SGLang 的 zero-overhead(overlap)scheduler。spec-v2 运行时就是随 DFlash 一起上线的那套引擎，它本来就在独立 stream 上把下一步的调度和当前 forward 重叠，DSpark 作为一等 worker 加入：forward 输出以 async future 返回，跨迭代的顺序靠运行时的 device 侧 barrier，页表在 device 上，每步不需要 host 同步。confidence relay 走同一条通道，读两步之前的值。解码循环于是完全没有逐步气泡，比关掉 overlap scheduler 紧约 1.5×：
+调度侧，DSpark 几乎不加特判就接入了 SGLang 的 zero-overhead(overlap)scheduler。spec-v2 运行时是随 DFlash 集成一起上线的，当时它的 overlap scheduling 在初版实现之上又多拿了 33% 的吞吐。它在独立 stream 上把下一步的调度和当前 forward 重叠，DSpark 作为一等 worker 加入：forward 输出以 async future 返回，跨迭代的顺序靠运行时的 device 侧 barrier，页表在 device 上，每步不需要 host 同步。confidence relay 走同一条通道，读两步之前的值。解码循环于是完全没有逐步气泡，比关掉 overlap scheduler 紧约 1.5×：
 
 <ZosViz client:visible />
 
-## Observability
+### Observability
 
 裁剪恰好审查掉了评判裁剪所需的那个数。compact 只验证窗口，所以「这一步整块验证本可以接受多少个 token」永远观测不到；没有这个上限，就分不清一次裁剪是恰到好处还是有损的。cap-accept 恰好能把上限找回来：它验证整块、只提交到窗口，输出和 compact 一致，同时量出了裁剪丢掉的部分。
 
