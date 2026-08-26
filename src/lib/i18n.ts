@@ -54,5 +54,4 @@ export const PLAYER_UI = {
   stepForward: { zh: "下一步", en: "Step forward" },
   toStart: { zh: "回到开头", en: "Back to start" },
   timeline: { zh: "时间轴", en: "Timeline" },
-  speed: { zh: "播放速度", en: "Playback speed" },
 } satisfies Record<string, Localized>;

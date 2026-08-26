@@ -22,6 +22,7 @@ import ComponentMatrixViz from "../../../viz/unified-radix-cache/ComponentMatrix
 import TreeReplayViz from "../../../viz/unified-radix-cache/TreeReplayViz";
 import BoundaryVoteViz from "../../../viz/unified-radix-cache/BoundaryVoteViz";
 import TierFlowViz from "../../../viz/unified-radix-cache/TierFlowViz";
+import IndexReuseViz from "../../../viz/unified-radix-cache/IndexReuseViz";
 import MultiTurnBenchViz from "../../../viz/unified-radix-cache/MultiTurnBenchViz";
 import SessionEvictViz from "../../../viz/unified-radix-cache/SessionEvictViz";
 import SweBenchViz from "../../../viz/unified-radix-cache/SweBenchViz";
@@ -145,6 +146,8 @@ GPU L1, Host L2, and an external L3 tier. Moving data between tiers changes
 neither its prefix identity nor its reuse rule. Components describe the
 required transfers, and HybridCacheController executes the physical I/O.
 
+<TierFlowViz client:visible lang="en" />
+
 Not every physical pool needs to be a component, either. A component (anchor)
 has its own reuse rule. It holds a slot on the tree and votes on the boundary.
 A sidecar has no reuse rule of its own. It only declares which source pool it
@@ -160,7 +163,7 @@ compressor states, five auxiliary pools in all, register as sidecars. Three
 follow FULL and two follow SWA. Components translate indices between each
 other; sidecars just copy them.
 
-<TierFlowViz client:visible lang="en" />
+<IndexReuseViz client:visible lang="en" />
 
 ### Multi-turn benchmark
 

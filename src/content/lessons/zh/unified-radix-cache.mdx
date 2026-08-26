@@ -22,6 +22,7 @@ import ComponentMatrixViz from "../../../viz/unified-radix-cache/ComponentMatrix
 import TreeReplayViz from "../../../viz/unified-radix-cache/TreeReplayViz";
 import BoundaryVoteViz from "../../../viz/unified-radix-cache/BoundaryVoteViz";
 import TierFlowViz from "../../../viz/unified-radix-cache/TierFlowViz";
+import IndexReuseViz from "../../../viz/unified-radix-cache/IndexReuseViz";
 import MultiTurnBenchViz from "../../../viz/unified-radix-cache/MultiTurnBenchViz";
 import SessionEvictViz from "../../../viz/unified-radix-cache/SessionEvictViz";
 import SweBenchViz from "../../../viz/unified-radix-cache/SweBenchViz";
@@ -82,9 +83,11 @@ MAMBA 的槽位多一条规则。递归状态每读一个 token 就地覆写自�
 
 组件决定「什么能复用」，HiCache 决定「可复用的 payload 放在哪」。Unified Radix Cache 让同一个组件身份贯穿 GPU L1、Host L2 和外部 L3 层。数据在层间搬运，不改变前缀身份，也不改变复用规则。组件描述需要的传输，HybridCacheController 执行物理 I/O。
 
+<TierFlowViz client:visible />
+
 也不是每个物理池都要当组件。组件（anchor）有自己的复用规则，在树上有槽位，参与边界投票。sidecar 没有独立的复用规则，只声明「我跟随某个来源池」：来源池的数据存在第几号页，它的数据就存在自己池子的第几号页。一套索引管两个池。来源池搬到哪层它跟到哪层，不投票，也不占槽位。DeepSeek-V4 两种关系都有。FULL 和 SWA 是组件，各有独立的设备索引空间。在博客归一化的六页例子里，同一段 token 的 FULL 尾页是 F4、F5，在 SWA 池里却是 S0、S1，要靠分配器在运行时翻译。而 C4、C128 两个压缩 KV 池，加上 indexer buffer 和 compressor state，共五个辅助池注册为 sidecar：三个跟随 FULL，两个跟随 SWA。组件之间要翻译索引，sidecar 直接抄号。
 
-<TierFlowViz client:visible />
+<IndexReuseViz client:visible />
 
 ### 多轮对话基准
 

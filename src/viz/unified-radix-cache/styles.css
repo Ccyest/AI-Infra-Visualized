@@ -568,12 +568,53 @@
   white-space: nowrap;
 }
 
-.urc-tiermap {
-  margin-top: 0.9rem;
-  padding-top: 0.75rem;
-  border-top: 1px dashed var(--grid);
+/* ---------------- IndexReuseViz ---------------- */
+
+.urc-idx {
   display: grid;
-  gap: 0.45rem;
+  gap: 0.4rem;
+  margin-top: 0.4rem;
+}
+
+.urc-idx .urc-page {
+  height: 24px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.62rem;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  padding: 0;
+}
+
+.urc-idx .urc-page.empty {
+  cursor: default;
+}
+
+.urc-page.sidecar {
+  border-style: dashed;
+  color: var(--muted);
+}
+
+.urc-idx .urc-page.on {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.urc-idx-xlate {
+  min-height: 0.9rem;
+}
+
+.urc-xarrow {
+  text-align: center;
+  font-size: 0.7rem;
+  line-height: 0.9rem;
+  color: var(--muted);
+}
+
+.urc-xarrow.on {
+  color: var(--accent);
+  font-weight: 700;
 }
 
 .urc-pagerow {

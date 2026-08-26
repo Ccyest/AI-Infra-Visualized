@@ -708,15 +708,6 @@ main {
   text-align: right;
 }
 
-.viz-speed {
-  border: 1px solid var(--border);
-  background: var(--surface);
-  color: var(--ink-2);
-  border-radius: var(--radius-sm);
-  height: 1.95rem;
-  font-size: 0.85rem;
-}
-
 .viz-footer {
   display: flex;
   flex-wrap: wrap;

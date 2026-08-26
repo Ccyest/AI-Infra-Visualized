@@ -6,8 +6,7 @@ import "./styles.css";
 
 /* 5 步走查(t=0..4):payload 在 L1 → 下沉 L2 → 下沉 L3 →
    新请求在树上命中(复用判定与楼层无关) → 取回 L1。
-   底部静态条对应原文 Figure 3 归一化的六页例子:
-   FULL 尾槽 F4、F5 与 SWA 槽 S0、S1 的运行时映射,sidecar 精确跟随来源池索引。 */
+   索引映射与 sidecar 抄号在 IndexReuseViz 单独画。 */
 
 const TOTAL = 4;
 
@@ -32,8 +31,6 @@ export default function TierFlowViz({ lang = "zh" }: { lang?: Locale }) {
     { key: "l2", name: TIER.l2[lang] },
     { key: "l3", name: TIER.l3[lang], sub: "500 GiB" },
   ];
-
-  const fullPages = ["F0", "F1", "F2", "F3", "F4", "F5"];
 
   return (
     <VizStage
@@ -74,30 +71,6 @@ export default function TierFlowViz({ lang = "zh" }: { lang?: Locale }) {
       </div>
 
       <div className="urc-step-desc">{TIER_STEPS[t][lang]}</div>
-
-      <div className="urc-tiermap">
-        <span className="urc-note">{TIER.mapHead[lang]}</span>
-        <div className="urc-pagerow">
-          <span className="urc-pagerow-label">{TIER.fullPages[lang]}</span>
-          {fullPages.map((p) => (
-            <span className="urc-page full" key={p}>
-              {p}
-            </span>
-          ))}
-          <span className="urc-pagemap-note">{TIER.followFull[lang]}</span>
-        </div>
-        <div className="urc-pagerow">
-          <span className="urc-pagerow-label">{TIER.swaPages[lang]}</span>
-          <span className="urc-page empty" />
-          <span className="urc-page empty" />
-          <span className="urc-page empty" />
-          <span className="urc-page empty" />
-          <span className="urc-page swa">S0</span>
-          <span className="urc-page swa">S1</span>
-          <span className="urc-pagemap-note">{TIER.followSwa[lang]}</span>
-        </div>
-        <span className="urc-note">{TIER.mapNote[lang]}</span>
-      </div>
     </VizStage>
   );
 }

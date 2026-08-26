@@ -3,8 +3,6 @@ import { PLAYER_UI } from "../../lib/i18n";
 import type { Locale } from "../../lib/i18n";
 import type { SimPlayer } from "./useSimPlayer";
 
-const SPEEDS = [0.5, 1, 2, 4];
-
 /* 控件图标一律内联 SVG:unicode 三角(◀ ▶ ⏮)的墨迹在字符框里不居中,
    且随平台字体漂移,flex 居中救不了;SVG 按 viewBox 几何中心画,永远居中。 */
 function Icon({ children }: { children: ReactNode }) {
@@ -63,7 +61,7 @@ interface VizStageProps {
 }
 
 /**
- * 可视化舞台:卡片容器 + 统一的播放/单步/拖动/调速控件。
+ * 可视化舞台:卡片容器 + 统一的播放/单步/拖动控件。
  * 所有课程的动画都放在这个容器里,保证交互一致。
  */
 export default function VizStage({
@@ -154,18 +152,6 @@ export default function VizStage({
         <span className="viz-tick">
           t = {t}/{total}
         </span>
-        <select
-          className="viz-speed"
-          value={player.speed}
-          onChange={(e) => player.setSpeed(Number(e.target.value))}
-          aria-label={PLAYER_UI.speed[lang]}
-        >
-          {SPEEDS.map((s) => (
-            <option key={s} value={s}>
-              {s}×
-            </option>
-          ))}
-        </select>
       </div>
 
       {footer && <div className="viz-footer">{footer}</div>}

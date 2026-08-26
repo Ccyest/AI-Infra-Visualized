@@ -93,29 +93,17 @@ export const VOTE = {
 /* ---------------- TierFlowViz ---------------- */
 
 export const TIER = {
-  title: { zh: "跨层搬运与 sidecar 图示", en: "Tier movement and sidecar diagram" },
+  title: { zh: "跨层搬运图示", en: "Tier movement diagram" },
   subtitle: {
-    zh: "L3 为 500 GiB Mooncake Store · 下方索引例子为原文归一化的六页示意",
-    en: "L3 is a 500 GiB Mooncake Store · the index example below is the blog's normalized six-page case",
+    zh: "L3 为 500 GiB Mooncake Store",
+    en: "L3 is a 500 GiB Mooncake Store",
   },
   l1: { zh: "GPU L1", en: "GPU L1" },
   l2: { zh: "Host L2", en: "Host L2" },
   l3: { zh: "外部 L3 · Mooncake", en: "External L3 · Mooncake" },
   payload: { zh: "prefix p 的 FULL KV", en: "FULL KV of prefix p" },
-  sidecars: { zh: "sidecar ×3(C4 / C128 / indexer)", en: "sidecars ×3 (C4 / C128 / indexer)" },
+  sidecars: { zh: "sidecar 跟着搬(同一套索引)", en: "sidecars move along (same indices)" },
   identity: { zh: "前缀身份:不变", en: "Prefix identity: unchanged" },
-  mapHead: {
-    zh: "组件各有索引空间,sidecar 精确复用来源池的索引",
-    en: "Components own index spaces; sidecars reuse their source pool's exact indices",
-  },
-  fullPages: { zh: "FULL 页", en: "FULL pages" },
-  swaPages: { zh: "SWA 窗口槽", en: "SWA window slots" },
-  mapNote: {
-    zh: "运行时分配器把 FULL 尾槽 F4、F5 映射到 SWA 槽 S0、S1",
-    en: "At runtime the allocator maps FULL tail slots F4, F5 to SWA slots S0, S1",
-  },
-  followFull: { zh: "3 个 sidecar 跟随 FULL 的索引", en: "3 sidecars follow FULL's indices" },
-  followSwa: { zh: "2 个 sidecar 跟随 SWA 的索引", en: "2 sidecars follow SWA's indices" },
 } satisfies Record<string, Localized>;
 
 export const TIER_STEPS: Localized[] = [
@@ -132,14 +120,49 @@ export const TIER_STEPS: Localized[] = [
     en: "As it cools further it moves to external L3 (Mooncake). The tree node remains; only the payload changed floors.",
   },
   {
-    zh: "新请求命中 prefix p:组件 validator 照常投票——「能不能复用」和「存在哪层」是两个独立问题。",
-    en: "A new request hits prefix p: component validators vote as usual — reusability and residence are independent questions.",
+    zh: "新请求命中 prefix p:组件 validator 照常投票。「能不能复用」和「存在哪层」是两个独立问题。",
+    en: "A new request hits prefix p, and component validators vote as usual. Reusability and residence are independent questions.",
   },
   {
     zh: "HybridCacheController 把 payload 取回 L1,sidecar 按同样的索引跟回来,前缀身份从头到尾没变。",
     en: "HybridCacheController fetches the payload back to L1; sidecars follow on the same indices. The prefix identity never changed.",
   },
 ];
+
+/* ---------------- IndexReuseViz ---------------- */
+
+export const IDX = {
+  title: { zh: "索引复用图示", en: "Index reuse diagram" },
+  subtitle: {
+    zh: "原文归一化的六页示意 · 点任意一列看这份索引的去向",
+    en: "The blog's normalized six-page case · click a column to trace one index",
+  },
+  fullRow: { zh: "FULL 页(组件)", en: "FULL pages (component)" },
+  fullSide: { zh: "sidecar ×3 跟随 FULL", en: "sidecars ×3 follow FULL" },
+  swaRow: { zh: "SWA 窗口槽(组件)", en: "SWA window slots (component)" },
+  swaSide: { zh: "sidecar ×2 跟随 SWA", en: "sidecars ×2 follow SWA" },
+  xlate: { zh: "分配器翻译", en: "allocator translates" },
+  legendCopy: { zh: "sidecar 直接抄来源池的页号", en: "sidecars copy the source pool's page numbers" },
+  legendXlate: {
+    zh: "组件之间索引空间独立,F4、F5 翻译成 S0、S1",
+    en: "components own index spaces; F4, F5 translate to S0, S1",
+  },
+} satisfies Record<string, Localized>;
+
+export const IDX_NOTE = {
+  copyOnly: {
+    zh: (i: number) =>
+      `选中页号 ${i}:FULL 的 F${i} 和跟随它的三个 sidecar 用同一个页号 ${i}。SWA 窗口不覆盖这一列,没有对应槽。`,
+    en: (i: number) =>
+      `Page ${i}: FULL's F${i} and its three sidecars share page number ${i}. The SWA window does not cover this column, so it has no slot here.`,
+  },
+  copyAndXlate: {
+    zh: (i: number) =>
+      `选中页号 ${i}:FULL 的 F${i} 和跟随它的三个 sidecar 用同一个页号 ${i}。分配器把 F${i} 翻译成 SWA 的 S${i - 4};跟随 SWA 的两个 sidecar 再抄页号 ${i - 4}。`,
+    en: (i: number) =>
+      `Page ${i}: FULL's F${i} and its three sidecars share page number ${i}. The allocator translates F${i} to SWA's S${i - 4}, and SWA's two sidecars copy page number ${i - 4}.`,
+  },
+};
 
 /* ---------------- MultiTurnBenchViz ---------------- */
 

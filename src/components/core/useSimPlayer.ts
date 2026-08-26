@@ -5,22 +5,19 @@ export interface SimPlayer {
   t: number;
   total: number;
   playing: boolean;
-  speed: number;
   toggle: () => void;
   reset: () => void;
   stepBy: (delta: number) => void;
   seek: (t: number) => void;
-  setSpeed: (s: number) => void;
 }
 
 /**
  * 离散时间轴播放器:驱动"确定性模拟结果 + 播放头"式的可视化。
- * baseIps = 1x 速度下每秒推进的 iteration 数。
+ * baseIps = 每秒推进的 iteration 数。
  */
 export function useSimPlayer(total: number, baseIps = 2.5): SimPlayer {
   const [t, setT] = useState(0);
   const [playing, setPlaying] = useState(false);
-  const [speed, setSpeed] = useState(1);
   const fraction = useRef(0);
 
   useEffect(() => {
@@ -31,7 +28,7 @@ export function useSimPlayer(total: number, baseIps = 2.5): SimPlayer {
     const MAX_FRAME_SECONDS = 0.25;
     const frame = (now: number) => {
       const dt = Math.min((now - last) / 1000, MAX_FRAME_SECONDS);
-      fraction.current += dt * baseIps * speed;
+      fraction.current += dt * baseIps;
       last = now;
       if (fraction.current >= 1) {
         const n = Math.floor(fraction.current);
@@ -42,7 +39,7 @@ export function useSimPlayer(total: number, baseIps = 2.5): SimPlayer {
     };
     raf = requestAnimationFrame(frame);
     return () => cancelAnimationFrame(raf);
-  }, [playing, speed, total, baseIps]);
+  }, [playing, total, baseIps]);
 
   useEffect(() => {
     if (t >= total) setPlaying(false);
@@ -80,5 +77,5 @@ export function useSimPlayer(total: number, baseIps = 2.5): SimPlayer {
     [total],
   );
 
-  return { t, total, playing, speed, toggle, reset, stepBy, seek, setSpeed };
+  return { t, total, playing, toggle, reset, stepBy, seek };
 }
