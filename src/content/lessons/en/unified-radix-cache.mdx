@@ -140,28 +140,31 @@ another tree.
 
 ## HiCache across memory tiers
 
-Components decide what can be reused; HiCache decides where the reusable
-payload lives. Unified Radix Cache carries the same component identity across
-GPU L1, Host L2, and an external L3 tier. Moving data between tiers changes
-neither its prefix identity nor its reuse rule. Components describe the
-required transfers, and HybridCacheController executes the physical I/O.
+Components decide what can be reused; HiCache decides where the payload
+lives, across GPU L1, Host L2, and an external L3 tier. A node's slot stores
+page numbers inside a pool; the node's key is the token sequence itself. When
+L1 fills up, HybridCacheController copies the pages down one tier, frees the
+device pages, and records the new location on the node. The node is not
+deleted, so the tree still knows the prefix exists and on which tier. Matching
+reads only the tree; reusability never depends on where the data sits. On
+actual reuse the cache reads the slot. Pages still in L1 are used in place.
+Pages on a lower tier get freshly allocated device pages, the controller
+copies the data in, and the new page numbers are written back to the slot.
+Addresses change on every move; the prefix identity never does.
 
 <TierFlowViz client:visible lang="en" />
 
-Not every physical pool needs to be a component, either. A component (anchor)
-has its own reuse rule. It holds a slot on the tree and votes on the boundary.
-A sidecar has no reuse rule of its own. It only declares which source pool it
-follows: whatever page number the source uses, the sidecar stores its data at
-the same page number in its own pool. One set of indices serves both pools.
-The sidecar moves to whatever tier its source moves to, and it neither votes
-nor adds a slot. DeepSeek-V4 shows both relationships. FULL and SWA are
-components with independent device index spaces. In the blog's normalized
-six-page example, the same tokens sit in the FULL tail pages F4 and F5 but in
-the SWA slots S0 and S1, and the allocator translates between the two at
-runtime. The C4 and C128 compressed-KV pools plus indexer buffers and
-compressor states, five auxiliary pools in all, register as sidecars. Three
-follow FULL and two follow SWA. Components translate indices between each
-other; sidecars just copy them.
+Every move rewrites page numbers, so not every physical pool should keep its
+own. A component (anchor) has its own reuse rule and votes on the boundary. A
+sidecar does not: it declares one source pool and stores its data at the same
+page numbers the source uses, so it moves with the source with no extra
+bookkeeping. DeepSeek-V4 shows both relationships. FULL and SWA are components
+with independent index spaces: in the blog's normalized six-page example, the
+same tokens sit in the FULL tail pages F4 and F5 but in the SWA slots S0 and
+S1, translated by the allocator at runtime. The C4 and C128 compressed-KV
+pools plus indexer buffers and compressor states, five auxiliary pools in all,
+register as sidecars, three following FULL and two following SWA. Components
+translate indices; sidecars copy them.
 
 <IndexReuseViz client:visible lang="en" />
 
