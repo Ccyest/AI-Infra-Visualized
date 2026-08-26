@@ -85,7 +85,7 @@ MAMBA 的槽位多一条规则。递归状态每读一个 token 就地覆写自�
 
 <TierFlowViz client:visible />
 
-每搬一次页号就重写一次，所以不是每个物理池都该自己管页号。组件（anchor）有自己的复用规则，参与边界投票。sidecar 没有：它声明一个来源池，数据就存在和来源池相同的页号上，搬层时跟着走，不需要额外记账。DeepSeek-V4 两种关系都有。FULL 和 SWA 是组件，索引空间彼此独立：在博客归一化的六页例子里，同一段 token 在 FULL 是尾页 F4、F5，在 SWA 池里是 S0、S1，由分配器在运行时翻译。而 C4、C128 两个压缩 KV 池，加上 indexer buffer 和 compressor state，共五个辅助池注册为 sidecar：三个跟随 FULL，两个跟随 SWA。组件之间翻译索引，sidecar 直接抄号。
+「身份不变」靠的是一层间接。节点槽位里存的是池内页号，节点的键是 token 序列本身。L1 吃紧时，controller 把页拷到下一层，释放设备页，把新位置记到节点上。节点不删，树仍然知道这段前缀存在、在哪一层。匹配只读树。真正复用时才读槽位：还在 L1 的页直接用；在更低层的页，先申请新的设备页，把数据拷进来，再把新页号写回槽位。每搬一次页号就重写一次，所以不是每个物理池都该自己管页号。组件（anchor）有自己的复用规则，参与边界投票。sidecar 没有：它声明一个来源池，数据就存在和来源池相同的页号上，搬层时跟着走，不需要额外记账。DeepSeek-V4 里，FULL 和 SWA 是组件，索引空间彼此独立：在博客归一化的六页例子里，同一段 token 在 FULL 是尾页 F4、F5，在 SWA 池里是 S0、S1，由分配器在运行时翻译。而 C4、C128 两个压缩 KV 池，加上 indexer buffer 和 compressor state，共五个辅助池注册为 sidecar：三个跟随 FULL，两个跟随 SWA。组件之间翻译索引，sidecar 直接抄号。
 
 <IndexReuseViz client:visible />
 

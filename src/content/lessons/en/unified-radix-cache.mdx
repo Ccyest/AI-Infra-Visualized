@@ -148,17 +148,25 @@ required transfers, and HybridCacheController executes the physical I/O.
 
 <TierFlowViz client:visible lang="en" />
 
-Every move rewrites page numbers, so not every physical pool should keep its
-own. A component (anchor) has its own reuse rule and votes on the boundary. A
-sidecar does not: it declares one source pool and stores its data at the same
-page numbers the source uses, so it moves with the source with no extra
-bookkeeping. DeepSeek-V4 shows both relationships. FULL and SWA are components
-with independent index spaces: in the blog's normalized six-page example, the
-same tokens sit in the FULL tail pages F4 and F5 but in the SWA slots S0 and
-S1, translated by the allocator at runtime. The C4 and C128 compressed-KV
-pools plus indexer buffers and compressor states, five auxiliary pools in all,
-register as sidecars, three following FULL and two following SWA. Components
-translate indices; sidecars copy them.
+The unchanged identity rests on one level of indirection. A node's slot
+stores page numbers inside a pool; the node's key is the token sequence
+itself. When L1 fills up, the controller copies the pages down one tier, frees
+the device pages, and records the new location on the node. The node is not
+deleted, so the tree still knows the prefix exists and on which tier. Matching
+reads only the tree. Only actual reuse reads the slot: pages still in L1 are
+used in place, and pages on a lower tier get freshly allocated device pages,
+copied in, with the new page numbers written back to the slot. Every move
+rewrites page numbers, so not every physical pool should keep its own. A
+component (anchor) has its own reuse rule and votes on the boundary. A sidecar
+does not: it declares one source pool and stores its data at the same page
+numbers the source uses, moving with it with no extra bookkeeping. In
+DeepSeek-V4, FULL and SWA are components with independent index spaces: in the
+blog's normalized six-page example, the same tokens sit in the FULL tail pages
+F4 and F5 but in the SWA slots S0 and S1, translated by the allocator at
+runtime. The C4 and C128 compressed-KV pools plus indexer buffers and
+compressor states, five auxiliary pools in all, register as sidecars, three
+following FULL and two following SWA. Components translate indices; sidecars
+copy them.
 
 <IndexReuseViz client:visible lang="en" />
 
