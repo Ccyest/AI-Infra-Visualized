@@ -1,6 +1,6 @@
 ---
 title: "SGLang 里的 Unified Radix Cache：一棵树支持所有混合模型，TTFT 最多降 16.6%"
-description: "SGLang 的 Unified Radix Cache 把混合模型的前缀缓存收回一棵 radix 树：full attention KV、滑动窗口 KV、递归 checkpoint 作为组件挂在共享的 token 拓扑上，复用边界只有在每个组件都投票同意时才成立。多轮对话在 Mooncake L3 层下命中率保持 **98%**，会话感知驱逐在 SWE-bench 上把 TTFT 最多降 **16.6%**，实验性 Rust 树核在滑窗负载上再降 **42%**。\n1. 一棵树替代每种组合一个的专门缓存类：各组件各管各的复用、加锁与驱逐语义。\n2. HiCache 分层、会话感知驱逐、Rust 树核都建立在同一个前缀身份上。"
+description: "混合模型给同一段 token 前缀三套复用规则：full attention KV、滑动窗口 KV、递归 checkpoint。过去每种组合都要写一个专门缓存类，匹配、加锁、驱逐逻辑各复制一份。SGLang 的 Unified Radix Cache 只留一棵 radix 树。每种规则作为组件挂在共享拓扑上，复用边界要全体组件投票通过。多轮对话命中率在 Mooncake L3 下保持 **98%**；会话感知驱逐把 SWE-bench TTFT 最多降 **16.6%**；实验性 Rust 树核把滑窗负载 TTFT 最多降 **42%**。"
 order: 5
 concepts: []
 tryOnSglang: "https://github.com/sgl-project/sglang"
@@ -30,13 +30,13 @@ import RustBenchViz from "../../../viz/unified-radix-cache/RustBenchViz";
 
 ## 背景
 
-Prefix caching 在请求共享同一段 token 前缀时复用 KV。在 full attention 下规则很简单：KV 只随新 token 追加、从不改写历史，所以共享前缀一旦算过就一直有效，后来的同前缀请求可以跳过这部分 prefill。SGLang 用一棵以 token 序列为键的 radix tree 维护这个映射；prefill 之前，树返回最长可复用前缀和它的 KV 位置。
+Prefix caching 在请求共享同一段 token 前缀时复用 KV。在 full attention 下规则很简单。KV 只随新 token 追加，从不改写历史，所以共享前缀一旦算过就一直有效，后来的同前缀请求可以跳过这部分 prefill。SGLang 用一棵以 token 序列为键的 radix tree 维护这个映射。prefill 之前，树返回最长可复用前缀和它的 KV 位置。
 
-混合模型打破了这条单一规则。一个请求可能同时携带 full attention KV、滑动窗口 KV 和递归状态——同一段 token 前缀，三种复用语义。Full attention KV 在整条匹配前缀上都可复用；滑动窗口 KV 只覆盖尾部窗口；递归状态因为逐 token 就地覆写，只在精确的 checkpoint 处有效。强行给三者定一个统一边界，要么丢掉本可复用的，要么复用了不该复用的。
+混合模型打破了这条单一规则。一个请求可能同时携带 full attention KV、滑动窗口 KV 和递归状态：同一段 token 前缀，三种复用语义。Full attention KV 在整条匹配前缀上都可复用。滑动窗口 KV 只覆盖尾部窗口。递归状态逐 token 就地覆写，只在精确的 checkpoint 处有效。强行给三者定一个统一边界，要么丢掉本可复用的，要么复用了不该复用的。
 
 <ReuseRuleViz client:visible />
 
-这些规则在不同模型家族里以不同组合出现：DeepSeek-V4 是 FULL 加 SWA，Kimi-K3 为它的 KDA 递归状态组合 FULL 加 MAMBA，Inkling 三种全有。给每种组合写一个专门缓存类会产生组合爆炸的类矩阵，HiCache 这类正交能力再把它翻倍。早期实现正是这个模式，matching、插入、加锁、驱逐逻辑在各个缓存变体里各复制一份。
+这些规则在不同模型家族里以不同组合出现。DeepSeek-V4 是 FULL 加 SWA。Kimi-K3 为它的 KDA 递归状态组合 FULL 加 MAMBA。Inkling 三种全有。给每种组合写一个专门缓存类，会产生组合爆炸的类矩阵；HiCache 这类正交能力还会把矩阵进一步放大。早期实现正是这个模式，matching、插入、加锁、驱逐逻辑在各个缓存变体里各复制一份。
 
 <ComponentMatrixViz client:visible />
 
@@ -44,25 +44,25 @@ Prefix caching 在请求共享同一段 token 前缀时复用 KV。在 full atte
 
 ### 设计与机制
 
-radix tree 的每个节点存一段 token，从根走到某个节点，沿途的 token 连起来就是一段前缀。匹配就是拿新请求的 token 从根往下走——走到哪里，前缀就匹配到哪里。开头相同的请求走的是同一串节点：下图里三条请求依次到达，请求 1、2 的前 6 个 token 完全相同，请求 3 只共享开头的 A B——共享的部分都只存一份，不存两遍。
+radix tree 的每个节点存一段 token。从根走到某个节点，沿途的 token 连起来就是一段前缀。匹配就是拿新请求的 token 从根往下走：走到哪里，前缀就匹配到哪里。开头相同的请求走的是同一串节点。下图里三条请求依次到达：请求 1、2 的前 6 个 token 完全相同，请求 3 只共享开头的 A B。共享的部分都只存一份，不存两遍。
 
-Unified Radix Cache 在这个结构上只加了一件事：每个节点上给每种组件留一个槽位，槽位里存的是池索引。FULL 的槽存这段 token 的 KV 页号，缓存过的路径上每个节点都有；SWA 的槽存窗口槽号，只有落在尾部窗口内的节点才有，更早的节点上是一个空的 tombstone；MAMBA 的槽存 checkpoint 的位置——「读完到这个节点为止的全部 token」那一刻的递归状态——只有真正存过的节点上才有。槽位空着不算错，节点照样留给其他组件用。
+Unified Radix Cache 在这个结构上只加了一件事：每个节点上给每种组件留一个槽位，槽位里存池索引。FULL 的槽存这段 token 的 KV 页号，缓存过的路径上每个节点都有。SWA 的槽存窗口槽号，只有落在尾部窗口内的节点才有；更早的节点上是一个空的 tombstone。MAMBA 的槽存 checkpoint 的位置，即「读完到这个节点为止的全部 token」时的递归状态；只有真正存过 checkpoint 的节点上才有。槽位空着不算错，节点照样留给其他组件用。
 
 <TreeReplayViz client:visible />
 
-这就是三种复用规则不需要三棵树的原因。树只按 token 走：走到哪个节点，就说明前缀匹配到了哪里。这个节点上的数据能不能用，是各组件自己的问题，各自看自己的槽位——有数据就能用，是 tombstone 或者根本没存过就不能用。三种规则之间的全部差别，只是「自己的数据出现在哪些节点上」。新模型也改变不了走法：DeepSeek-V4 的节点上只有 F、S 两个槽，Kimi-K3 只有 F、M，Inkling 三个都有。
+这就是三种复用规则不需要三棵树的原因。树只按 token 走：走到哪个节点，就说明前缀匹配到了哪里。这个节点上的数据能不能用，是各组件自己的问题，各自查自己的槽位。有数据就是能用；是 tombstone 或者根本没存过就是不能用。SWA 还要多查一步尾部窗口是否完整，下一节会讲。三种规则之间的全部差别，只是「自己的数据出现在哪些节点上」。新模型也改变不了走法：DeepSeek-V4 的节点上只有 F、S 两个槽，Kimi-K3 只有 F、M，Inkling 三个都有。
 
-落到代码上：UnifiedTreeCore 负责走树本身——匹配、分裂、插入、加锁、驱逐；UnifiedRadixCache 把槽位里的索引换成对池的实际操作；每条规则就是一个 TreeComponent。
+落到代码上：UnifiedTreeCore 负责走树本身，包括匹配、分裂、插入、加锁、驱逐。UnifiedRadixCache 把槽位里的索引换成对池的实际操作。每条规则就是一个 TreeComponent。
 
-MAMBA 的槽位多一条规则。递归状态每读一个 token 就地覆写自己，树里那份 checkpoint 不能直接交给请求用：两个请求推着同一份状态往前走，会互相写坏。所以树里的 checkpoint 一律只读，命中后先把它拷贝进请求自己的状态槽，改动只发生在拷贝上。这套 copy-on-write 在 KDA 状态上的逐步走查见 [Kimi K3 那一课](https://yichizhang.dev/AI-Infra-Visualized/lessons/kimi-k3-day0-support/)。
+MAMBA 的槽位多一条规则。递归状态每读一个 token 就地覆写自己，树里那份 checkpoint 不能直接交给请求用：两个请求推着同一份状态往前走，会互相写坏。所以树里的 checkpoint 一律只读。命中后先把它拷贝进请求自己的状态槽，改动只发生在拷贝上。这套 copy-on-write 在 KDA 状态上的逐步走查见 [Kimi K3 那一课](https://yichizhang.dev/AI-Infra-Visualized/lessons/kimi-k3-day0-support/)。
 
 ### 安全复用边界
 
-匹配时，core 沿 FULL 的规范路径走查，每个经过的节点都是候选边界。仅有 FULL 匹配并不够：每个在场组件都会创建一个 validator，只有所有 validator 都接受，边界才推进。某个节点被否决不会终止走查，因为组件可能接受更深的节点——SWA 可以否决窗口槽位已是 tombstone 的节点，又接受更深处、尾部窗口完整的那个。
+匹配时，core 沿 FULL 的规范路径走查，每个经过的节点都是候选边界。仅有 FULL 匹配并不够：每个在场组件都会创建一个 validator，只有所有 validator 都接受，边界才推进。某个节点被否决不会终止走查，因为组件可能接受更深的节点。SWA 就可以否决窗口槽位已是 tombstone 的节点，又接受更深处、尾部窗口完整的那个。
 
 <BoundaryVoteViz client:visible />
 
-走查结束后 core 构建 MatchResult，各组件的 finalizer 把选中的值准备好供复用——包括上面说的那次 checkpoint 拷贝。
+走查结束后 core 构建 MatchResult。各组件的 finalizer 把选中的值准备好供复用，包括上面说的那次 checkpoint 拷贝。
 
 ### 生命周期钩子
 
@@ -76,45 +76,45 @@ MAMBA 的槽位多一条规则。递归状态每读一个 token 就地覆写自�
 | Lock | `acquire_component_lock` / `release_component_lock` 保护一条路径、一段尾部窗口或一个 checkpoint |
 | Evict | `evict_device_start` / `next_node` / `end` 挑选设备侧候选；`evict_component` 移除数据；`drive_host_eviction` 回收主机内存 |
 
-移除某个组件的 payload 不一定移除 radix 节点：剩下的拓扑还可以锚定其他组件，空槽位以 tombstone 的形式留着，直到 payload 恢复或节点不再需要。正因为组件语义始终挂在同一个前缀身份上，HiCache 才能把 payload 扩展到多级存储，而不用再引入一棵树。
+移除某个组件的 payload 不一定移除 radix 节点。剩下的拓扑还可以锚定其他组件，空槽位以 tombstone 的形式留着，直到 payload 恢复或节点不再需要。组件语义始终挂在同一个前缀身份上。正因如此，HiCache 才能把 payload 扩展到多级存储，而不用再引入一棵树。
 
 ## 跨层 HiCache
 
-组件决定「什么能复用」，HiCache 决定「可复用的 payload 放在哪」。Unified Radix Cache 让同一个组件身份贯穿 GPU L1、Host L2 和外部 L3 层，数据在层间搬运不改变前缀身份、也不改变复用规则。组件描述需要的传输，HybridCacheController 执行物理 I/O。
+组件决定「什么能复用」，HiCache 决定「可复用的 payload 放在哪」。Unified Radix Cache 让同一个组件身份贯穿 GPU L1、Host L2 和外部 L3 层。数据在层间搬运，不改变前缀身份，也不改变复用规则。组件描述需要的传输，HybridCacheController 执行物理 I/O。
 
-也不是每个物理池都要当组件。组件（anchor）有自己的复用规则，在树上有槽位、参与边界投票；sidecar 没有独立的复用规则，只声明「我跟随某个来源池」——来源池的数据存在第几号页，它的数据就存在自己池子的第几号页，一套索引管两个池，来源池搬到哪层它跟到哪层，不投票、也不占槽位。DeepSeek-V4 里两种关系都有：FULL 和 SWA 是组件，各有独立的设备索引空间，在博客归一化的六页例子里，同一段 token 的 FULL 尾页 F4、F5 在 SWA 池里是 S0、S1，要靠分配器在运行时翻译；而 C4、C128 两个压缩 KV 池加上 indexer buffer、compressor state，共五个辅助池注册为 sidecar，三个跟随 FULL、两个跟随 SWA——组件之间要翻译索引，sidecar 直接抄号。
+也不是每个物理池都要当组件。组件（anchor）有自己的复用规则，在树上有槽位，参与边界投票。sidecar 没有独立的复用规则，只声明「我跟随某个来源池」：来源池的数据存在第几号页，它的数据就存在自己池子的第几号页。一套索引管两个池。来源池搬到哪层它跟到哪层，不投票，也不占槽位。DeepSeek-V4 两种关系都有。FULL 和 SWA 是组件，各有独立的设备索引空间。在博客归一化的六页例子里，同一段 token 的 FULL 尾页是 F4、F5，在 SWA 池里却是 S0、S1，要靠分配器在运行时翻译。而 C4、C128 两个压缩 KV 池，加上 indexer buffer 和 compressor state，共五个辅助池注册为 sidecar：三个跟随 FULL，两个跟随 SWA。组件之间要翻译索引，sidecar 直接抄号。
 
 <TierFlowViz client:visible />
 
 ### 多轮对话基准
 
-多轮负载每一轮都在增长可复用的对话前缀；问题是 GPU 容量耗尽后，更低的层能不能把前缀留住。博客在两个混合模型上比较三种配置：仅 GPU L1、L1 加 Host L2、以及再加一个 500 GiB Mooncake Store 作为外部 L3。
+多轮负载每一轮都在增长可复用的对话前缀。问题是 GPU 容量耗尽后，更低的层能不能把前缀留住。博客在两个混合模型上比较三种配置：仅 GPU L1、L1 加 Host L2、以及再加一个 500 GiB Mooncake Store 作为外部 L3。
 
 <MultiTurnBenchViz client:visible />
 
-两个负载里都是 L1 最先丢失可复用前缀，L2 推迟容量上限，L3 在预热后一直保持高位：DeepSeek-V4-Flash 上命中率接近 98%、平均 TTFT 低于 9 秒、有效输入吞吐 145.5K tokens/s（仅 L1 时是 9.4K）；Inkling-Small 上是 96.8% 和 67.1K。关于口径说明一句：有效输入吞吐是完整 prompt 长度之和除以墙钟时间，命中的前缀 token 也计入——它衡量的是前缀复用下的服务进度，不是原始 prefill 算力。
+两个负载里都是 L1 最先丢失可复用前缀，L2 推迟容量上限，L3 在预热后一直保持高位。DeepSeek-V4-Flash 上，L3 让命中率接近 98%，平均 TTFT 低于 9 秒，有效输入吞吐 145.5K tokens/s，仅 L1 时是 9.4K。Inkling-Small 上是 96.8% 和 67.1K。关于口径说明一句：有效输入吞吐是完整 prompt 长度之和除以墙钟时间，命中的前缀 token 也计入。它衡量的是前缀复用下的服务进度，不是原始 prefill 算力。
 
 ## 会话感知驱逐
 
-LRU 记得哪些条目最近被访问过，但不知道哪些前缀属于下一轮还会回来的会话。内存吃紧时，它可能扔掉活跃会话的 KV，却留着不相干的条目。会话感知驱逐补上这个信号：应用给每个请求带上稳定的 `session_id`，请求成功结束后，Unified Radix Cache 登记该会话的可复用区域——FULL 记它的前缀路径，SWA 记尾部窗口，MAMBA 记可复用前沿。
+LRU 记得哪些条目最近被访问过，但不知道哪些前缀属于下一轮还会回来的会话。内存吃紧时，它可能扔掉活跃会话的 KV，却留着不相干的条目。会话感知驱逐补上这个信号。应用给每个请求带上稳定的 `session_id`。请求成功结束后，Unified Radix Cache 登记该会话的可复用区域：FULL 记它的前缀路径，SWA 记尾部窗口，MAMBA 记可复用前沿。
 
-这些引用只改变驱逐顺序，从不 pin 内存。FULL 按是否被引用、会话引用计数和基础优先级排序候选；SWA 和 MAMBA 先扫无引用的条目，空间还不够时回退到有引用的。当前策略覆盖 GPU L1 和 Host L2，不含外部 L3。调用 `/close_session` 移除会话引用但不立刻删除条目；会话代数（generation）加上有界的已关闭会话 tombstone，防止关闭或重开之后才完成的过期请求把已释放的引用又挂回去。
+这些引用只改变驱逐顺序，从不 pin 内存。FULL 按是否被引用、会话引用计数和基础优先级排序候选。SWA 和 MAMBA 先扫各自可复用区域里的无引用条目，空间还不够时再回退到有引用的。当前策略覆盖 GPU L1 和 Host L2，不含外部 L3。调用 `/close_session` 移除会话引用，但不立刻删除条目。会话代数（generation）加上有界的已关闭会话 tombstone，防止关闭或重开之后才完成的过期请求把已释放的引用又挂回去。
 
 <SessionEvictViz client:visible />
 
 ### SWE-bench 结果
 
-在启用 HiCache 的 SWE-bench agent 轨迹上，会话感知配置把 DeepSeek-V4-Pro 的 TTFT 降低 11.0% 和 2.9%（batch 128 与 256），把 Qwen3.5-397B-A17B 降低 13.5% 和 16.6%（batch 32 与 64）；device 命中率最多从约 42% 升到 51%、从 5% 升到 34%。基线是普通 HiRadixCache 加 LRU，对照组同时启用 Unified Radix Cache 和 `--enable-session-radix-cache`，所以这些差值不是会话感知的单一变量消融。
+在启用 HiCache 的 SWE-bench agent 轨迹上，会话感知配置把 DeepSeek-V4-Pro 的 TTFT 降低 11.0% 和 2.9%（batch 128 与 256），把 Qwen3.5-397B-A17B 降低 13.5% 和 16.6%（batch 32 与 64）。device 命中率也在涨：DeepSeek-V4-Pro 在 batch 128 从约 42% 升到 51%，Qwen 在 batch 32 从约 5% 升到 34%。基线是普通 HiRadixCache 加 LRU。对照组同时启用 Unified Radix Cache 和 `--enable-session-radix-cache`，所以这些差值不是会话感知的单一变量消融。
 
 <SweBenchViz client:visible />
 
 ## Rust 树核
 
-随着共享前缀变长，树的走查、锁记账、LRU 更新和驱逐扫描都压在 scheduler 的关键路径上。把树状态机从缓存编排里拆出来之后，树核自然成了原生实现的目标。实验性 Rust 原型是 opt-in、仅 L1 的：Rust 拥有 radix 拓扑、每组件的锁记账、侵入式 LRU 链表和驱逐走查，Python 仍是 request 到 token 映射和物理 KV 分配的唯一所有者。树变更之后，Rust 返回 deferred actions，由 Python 应用到池上。
+随着共享前缀变长，树的走查、锁记账、LRU 更新和驱逐扫描都压在 scheduler 的关键路径上。把树状态机从缓存编排里拆出来之后，树核自然成了原生实现的目标。实验性 Rust 原型是 opt-in、仅 L1 的。Rust 拥有 radix 拓扑、每组件的锁记账、侵入式 LRU 链表和驱逐走查。Python 仍是 request 到 token 映射和物理 KV 分配的唯一所有者。树变更之后，Rust 返回 deferred actions，由 Python 应用到池上。
 
 <RustSplitViz client:visible />
 
-在 200 轮合成对话上对比 Python 树，原型在树开销占比越高的地方降得越多：SWA 负载 TTFT 降 38%（第 176–200 轮降 42%），全注意力降 10%（最后 25 轮降 18%），混合 SSM 降 5%（7%）——后者更大的 GPU forward 把变化盖住了大半。这些数字背后的残差——总 TTFT 减去 CUDA event 计时的 GPU prefill——还包含调度、采样、detokenize 等未打点的工作，不是 CPU 时间的直接测量。后续的 RFC #32710 定义了目标所有权边界：编排和池管理留在 Python，树核可替换。
+在 200 轮合成对话上对比 Python 树，原型在树开销占比越高的地方降得越多。SWA 负载 TTFT 降 38%（第 176–200 轮降 42%），全注意力降 10%（最后 25 轮降 18%），混合 SSM 降 5%（7%）。混合 SSM 上更大的 GPU forward 把变化盖住了大半。这些数字背后的残差，是总 TTFT 减去 CUDA event 计时的 GPU prefill。残差还包含调度、采样、detokenize 等未打点的工作，所以不是 CPU 时间的直接测量。后续的 RFC #32710 定义了目标所有权边界：编排和池管理留在 Python，树核可替换。
 
 <RustBenchViz client:visible />
 
