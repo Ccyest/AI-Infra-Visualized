@@ -1,8 +1,6 @@
-import { useRef, useState } from "react";
-import type { MouseEvent as ReactMouseEvent } from "react";
 import Legend from "../../components/core/Legend";
 import type { Locale } from "../../lib/i18n";
-import { FRONTIER, frontierPointTooltip } from "./strings";
+import { FRONTIER } from "./strings";
 import "./styles.css";
 
 /* 数据点读自原文 Figure 1(近似):[单请求 tok/s, 总吞吐 K tok/s, batch size] */
@@ -73,60 +71,6 @@ function y(v: number): number {
 }
 
 export default function FrontierViz({ lang = "zh" }: { lang?: Locale }) {
-  const wrapRef = useRef<HTMLDivElement>(null);
-  const svgRef = useRef<SVGSVGElement>(null);
-  const [hover, setHover] = useState<{ x: number; y: number; text: string; key: string } | null>(null);
-  const hoverKey = useRef<string | null>(null);
-
-  /* 鼠标移动时吸附到最近的数据点(而不是靠命中 4px 的小圆点),
-     且只在最近点变化时 setState,避免每次 mousemove 都重渲染 */
-  const onMove = (e: ReactMouseEvent) => {
-    const svg = svgRef.current;
-    const wrap = wrapRef.current;
-    if (!svg || !wrap) return;
-    const rect = svg.getBoundingClientRect();
-    const mx = ((e.clientX - rect.left) / rect.width) * W;
-    const my = ((e.clientY - rect.top) / rect.height) * H;
-    let best: { d: number; key: string; px: number; py: number; text: string } | null = null;
-    for (const arm of ARMS) {
-      for (const [pu, agg, bs] of arm.pts) {
-        const dx = x(pu) - mx;
-        const dy = y(agg) - my;
-        const d = dx * dx + dy * dy;
-        if (!best || d < best.d) {
-          best = {
-            d,
-            key: `${arm.key}-${bs}`,
-            px: x(pu),
-            py: y(agg),
-            text: frontierPointTooltip(lang, FRONTIER[arm.key][lang], bs, pu, agg),
-          };
-        }
-      }
-    }
-    if (!best || best.d > 45 * 45) {
-      if (hoverKey.current !== null) {
-        hoverKey.current = null;
-        setHover(null);
-      }
-      return;
-    }
-    if (hoverKey.current === best.key) return;
-    hoverKey.current = best.key;
-    const wrapRect = wrap.getBoundingClientRect();
-    setHover({
-      x: rect.left - wrapRect.left + wrap.scrollLeft + (best.px / W) * rect.width,
-      y: rect.top - wrapRect.top + (best.py / H) * rect.height,
-      text: best.text,
-      key: best.key,
-    });
-  };
-
-  const onLeave = () => {
-    hoverKey.current = null;
-    setHover(null);
-  };
-
   return (
     <figure className="viz-stage" style={{ margin: "1.6rem 0" }}>
       <div className="viz-head">
@@ -134,16 +78,13 @@ export default function FrontierViz({ lang = "zh" }: { lang?: Locale }) {
         <span className="viz-subtitle">{FRONTIER.subtitle[lang]}</span>
       </div>
 
-      <div className="viz-grid-wrap" ref={wrapRef}>
+      <div className="viz-grid-wrap">
         <svg
-          ref={svgRef}
           className="viz-grid"
           style={{ minWidth: 520 }}
           viewBox={`0 0 ${W} ${H}`}
           role="img"
           aria-label={FRONTIER.title[lang]}
-          onMouseMove={onMove}
-          onMouseLeave={onLeave}
         >
           <line x1={PADL} y1={H - PADB} x2={W - PADR + 8} y2={H - PADB} stroke="var(--axis)" strokeWidth="1" />
           <line x1={PADL} y1={PADT - 4} x2={PADL} y2={H - PADB} stroke="var(--axis)" strokeWidth="1" />
@@ -191,11 +132,10 @@ export default function FrontierViz({ lang = "zh" }: { lang?: Locale }) {
                   <circle
                     cx={x(px)}
                     cy={y(py)}
-                    r={hover?.key === `${arm.key}-${bs}` ? 5.5 : 4}
+                    r={4}
                     fill={arm.color}
                     stroke="var(--surface)"
                     strokeWidth="1.2"
-                    pointerEvents="none"
                   />
                   {LABELED.has(bs) && (
                     <text
@@ -212,14 +152,6 @@ export default function FrontierViz({ lang = "zh" }: { lang?: Locale }) {
             </g>
           ))}
         </svg>
-        {hover && (
-          <div
-            className="viz-tooltip"
-            style={{ left: hover.x, top: hover.y, transform: "translate(-50%, -130%)" }}
-          >
-            {hover.text}
-          </div>
-        )}
       </div>
 
       <div className="viz-footer">
