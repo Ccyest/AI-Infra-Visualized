@@ -98,15 +98,26 @@ DSpark, from DeepSeek, addresses both ends with three draft-side pieces. The
 block drafter still emits a gamma-token block in one forward, but a lightweight
 sequential head (a Markov or RNN head) conditions each position on the previous
 token; this is what semi-autoregressive means, and it is the piece that
-counters suffix decay. The confidence head scores each drafted token's chance
-of surviving verification, and the product across the block is the block's
-survival probability. Sequential Temperature Scaling (STS) calibrates those
-scores, because raw scores are systematically overconfident and any budget
-built on them must reflect true acceptance rates. Those survival scores are
-what makes the verify length schedulable per request: walk down the block's
-survival curve and stop where the expected accepted tokens no longer cover the
-marginal cost of verifying one more token. The diagram below follows one
-request through a draft step:
+counters suffix decay.
+
+The confidence head scores each drafted token's chance of surviving
+verification, and there is nothing mystical about that score. Structurally the
+head is a linear projection plus a sigmoid on the drafter's hidden state, and
+its training label is computed rather than guessed: the further the drafter's
+output distribution at a position strays from the target's, the lower the
+acceptance rate, and the head learns to predict exactly that gap. The score
+therefore knows nothing about topics; it only reflects how predictable the
+next tokens are. Formulas and code pin the next token down, so scores run
+high; free-form prose has many valid continuations, so scores run low. The
+product across the block is the block's survival probability, and Sequential
+Temperature Scaling (STS) applies an order-preserving temperature calibration
+on top, because raw scores are systematically overconfident and the budget
+must track true acceptance rates.
+
+Those survival scores are what makes the verify length schedulable per
+request: walk down the block's survival curve and stop where the expected
+accepted tokens no longer cover the marginal cost of verifying one more token.
+The diagram below follows one request through a draft step:
 
 <BlockDraftViz client:visible lang="en" />
 

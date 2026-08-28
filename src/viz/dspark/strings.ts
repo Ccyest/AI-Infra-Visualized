@@ -120,8 +120,8 @@ export const BLOCK = {
     en: "One drafter forward emits all 6 drafts; the sequential head conditions each position on the previous one",
   },
   stageRaw: {
-    zh: "confidence head 给每个草稿打「通过验证」的原始分",
-    en: "The confidence head scores each draft's raw chance of surviving verification",
+    zh: "confidence head 打原始分：一个线性层 + sigmoid 读 backbone 的 hidden state，输出「这一位能通过验证」的概率",
+    en: "The confidence head scores each position: a linear projection plus sigmoid over the backbone's hidden state, outputting the odds of surviving verification",
   },
   stageSts: {
     zh: "STS 校准原始分：原始分普遍偏自信，校准后才反映真实接受率",
@@ -273,8 +273,8 @@ export function dfBenchTooltip(
 export const TRIM = {
   title: { zh: "confidence scheduler 图示", en: "Confidence scheduler diagram" },
   subtitle: {
-    zh: "每行一个请求，每格一个草稿位置；颜色深浅 = 存活置信度，虚线 = 窗口切点",
-    en: "One request per row, one draft position per cell; shade = survival confidence, dashed line = window cut",
+    zh: "每行一个请求，每格一个草稿位置；颜色深浅 = confidence head 逐位打出的存活分(悬停看具体值)，虚线 = 窗口切点",
+    en: "One request per row, one draft position per cell; shade = the confidence head's per-position survival score (hover for values), dashed line = window cut",
   },
   loadLabel: { zh: "并发负载", en: "Batch load" },
   thresholdStat: {
@@ -313,13 +313,15 @@ export interface TrimRequest {
   conf: number[];
 }
 
+/* 行标签故意用中性的请求编号:置信度是 confidence head 逐位打出来的,
+   scheduler 不知道也不需要知道请求属于什么主题 */
 export const TRIM_REQUESTS: TrimRequest[] = [
-  { label: { zh: "数学推理 A", en: "Math A" }, conf: [0.95, 0.92, 0.88, 0.84, 0.72, 0.5] },
-  { label: { zh: "数学推理 B", en: "Math B" }, conf: [0.93, 0.9, 0.85, 0.7, 0.52, 0.28] },
-  { label: { zh: "代码补全", en: "Code" }, conf: [0.9, 0.82, 0.66, 0.48, 0.32, 0.18] },
-  { label: { zh: "闲聊", en: "Chat" }, conf: [0.85, 0.66, 0.45, 0.28, 0.16, 0.09] },
-  { label: { zh: "自由写作 A", en: "Writing A" }, conf: [0.72, 0.58, 0.34, 0.2, 0.11, 0.05] },
-  { label: { zh: "自由写作 B", en: "Writing B" }, conf: [0.74, 0.56, 0.3, 0.18, 0.1, 0.05] },
+  { label: { zh: "请求 1", en: "request 1" }, conf: [0.95, 0.92, 0.88, 0.84, 0.72, 0.5] },
+  { label: { zh: "请求 2", en: "request 2" }, conf: [0.93, 0.9, 0.85, 0.7, 0.52, 0.28] },
+  { label: { zh: "请求 3", en: "request 3" }, conf: [0.9, 0.82, 0.66, 0.48, 0.32, 0.18] },
+  { label: { zh: "请求 4", en: "request 4" }, conf: [0.85, 0.66, 0.45, 0.28, 0.16, 0.09] },
+  { label: { zh: "请求 5", en: "request 5" }, conf: [0.72, 0.58, 0.34, 0.2, 0.11, 0.05] },
+  { label: { zh: "请求 6", en: "request 6" }, conf: [0.74, 0.56, 0.3, 0.18, 0.1, 0.05] },
 ];
 
 export interface TrimLoad {
