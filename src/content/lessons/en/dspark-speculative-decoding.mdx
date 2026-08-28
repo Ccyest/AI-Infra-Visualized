@@ -132,53 +132,46 @@ schedule into wall-clock time.
 
 ### The confidence scheduler and verify modes
 
-SGLang's confidence scheduler runs the budget rule from the previous section
-every step, for every request in the batch. A predictable request keeps a long
-window. A divergent one gets trimmed to two or three tokens. Higher load raises
-the marginal cost of every verify token, so all windows tighten together:
+In one sentence: this optimization turns "how many tokens to verify" from a
+global constant into a per-request, per-step decision.
+
+Every step, SGLang's confidence scheduler runs the budget rule from the
+previous section for each request: walk down the survival curve and stop where
+the expected gain no longer covers the marginal cost. That marginal cost is
+not guessed. SGLang measures offline, on this server, how much each extra
+verify token adds to the step time, stores it as a cost table, and the
+scheduler prices against the table online. The effect: predictable requests
+keep long windows, divergent ones get trimmed to two or three tokens, and
+higher load tightens every window together:
 
 <TrimViz client:visible lang="en" />
 
-Around the scheduler, SGLang ships three verify modes, and the rest of this
-post keeps referring to them. static verifies the full drafted block every
-step; it is the baseline. compact verifies only the window the scheduler
-picked; it is the production path. cap-accept verifies the full block but
-commits only up to the window, so it produces exactly compact's output while
-also observing what a full verify would have accepted:
+Verification runs in three modes, each with one job. static verifies the full
+block, the baseline. compact verifies only the scheduled window, the
+production path. cap-accept verifies everything but commits only the window,
+so it matches compact's output while measuring how many acceptable tokens the
+trim gave up:
 
 <VerifyModesViz client:visible lang="en" />
 
 ### Ragged verify under full CUDA graphs
 
-Per-request windows do not fit a fixed-shape CUDA graph. A batch where one
-request verifies two tokens and another six has no single query length, and
-padding everyone back up to the block width just pads the trim back in. SGLang
-keeps the batch ragged instead. The verify tokens are front-packed into one
-compact buffer, and the graph is keyed on the total token count, rounded up to
-the nearest captured tier. When budgets trim, the packed total drops to a
-smaller tier, and the replayed graph is genuinely cheaper: fewer attention and
-MLP rows, not a masked full-width forward. Under data-parallel attention the
-ranks share one tier, the largest any rank needs, and step down together:
+In one sentence: this optimization makes the trimmed budget actually show up
+as saved time — a batch with unequal verify lengths runs in a CUDA graph
+without padding the trim back in.
+
+CUDA graphs demand fixed input shapes, and after trimming every request
+verifies a different length; padding everyone back to the block width would
+recompute exactly what was cut. SGLang instead front-packs all verify tokens
+into one compact buffer and keys the graph on the packed total, rounded up to
+the nearest captured tier. When budgets tighten, the total drops to a smaller
+tier, and the replayed graph has genuinely fewer attention and MLP rows. Under
+data-parallel attention the ranks share the largest tier and step down
+together; the packed buffer is a cu_seqlens-style varlen input, so attention
+reuses kernels the backend already has (flash_mla on DeepSeek-V4), with no new
+kernel:
 
 <PackViz client:visible lang="en" />
-
-The packed buffer is a cu_seqlens-style varlen input, so the compact verify
-reuses attention kernels the backend already has. On DeepSeek-V4 it runs the
-model's own sparse-MLA path (flash_mla) with no new kernel. Each supported
-backend just rebuilds its varlen metadata from the packed layout on graph
-replay.
-
-### The cost table behind the budgets
-
-The scheduler prices verify tokens with the additive model from the Background
-figure: T(bs, K) = bias + α(bs) + θ(M), with M = bs + K the step's total
-tokens. α(bs) is the request-scaling floor, the draft pass plus part of
-attention, and trimming cannot move it. θ(M) is the target's verify-token cost,
-the only term trimming recovers, so trim headroom shows up only where θ is
-large. SGLang profiles the table offline by sweeping a batch × verify-fraction
-grid, and the scheduler reads it online, trading expected accepted tokens
-against real marginal cost. The blog validates the model's predictions against
-a live server.
 
 ### Scheduling results
 
@@ -235,21 +228,6 @@ per-step bubble, about 1.5× tighter than with the overlap scheduler off:
 
 <ZosViz client:visible lang="en" />
 
-### Observability
-
-Trimming censors the very number you need to judge it. compact only verifies
-the window, so how many tokens a full-block verify would have accepted at that
-step is never observed, and without that ceiling you cannot tell a good trim
-from a lossy one. A cap-accept run recovers the ceiling exactly: it verifies
-the full block, commits only up to the window, and therefore matches compact's
-output while measuring what trimming left behind.
-
-For production runs where an extra companion arm is unwanted, a block-accept
-estimator recovers an estimated ceiling directly inside a compact run. It uses
-the target tokens of future steps with their logprobs, and computes estimation
-intervals for the counterfactual tail. SGLang also surfaces per-request
-confidence and calibration metrics, such as ECE, for post-hoc analysis.
-
 ## Serving DeepSeek-V4 with SGLang
 
 DeepSeek-V4 ships in two sizes, the 1.6T Pro and the 284B Flash. Each layer
@@ -278,8 +256,8 @@ references.
 The roadmap lives in
 [#30344](https://github.com/sgl-project/sglang/issues/30344): a stronger,
 increasingly online cost model and scheduler; more dense and sparse models;
-broader parallelism coverage; productionizing the block-accept estimator and
-confidence calibration; and hardening the full-CUDA-graph path.
+broader parallelism coverage; production-grade metrics for what trimming gives
+up; and hardening the full-CUDA-graph path.
 
 ## Acknowledgments
 

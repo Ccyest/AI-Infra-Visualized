@@ -74,25 +74,23 @@ SGLang 在 [#30261](https://github.com/sgl-project/sglang/pull/30261)(2026 年 7
 
 ### Confidence scheduler 与 verify 模式
 
-SGLang 的 confidence scheduler 每步对批次里的每个请求执行上一节的预算规则。可预测的请求保住长窗口。发散的请求被裁到两三个 token。负载升高会抬高每个 verify token 的边际成本，所有窗口一起收紧：
+一句话本质：这个优化把「验证多少个 token」从全局常数变成每个请求、每一步的单独决策。
+
+SGLang 的 confidence scheduler 每步给批次里的每个请求执行上一节的预算规则：沿存活率曲线往下走，走到期望收益盖不住边际成本就停。边际成本不是拍的：SGLang 事先在这台 server 上离线量好「每多验一个 token 步时多花多少」，存成成本表，scheduler 在线查表定价。效果是可预测的请求保住长窗口，发散的请求被裁到两三个 token；负载升高，所有窗口一起收紧：
 
 <TrimViz client:visible />
 
-围绕 scheduler，SGLang 提供三种 verify 模式，本文后面会反复用到。static 每步验证整块草稿，是基线。compact 只验证 scheduler 选出的窗口，是生产路径。cap-accept 验证整块但只提交到窗口为止，输出和 compact 完全一致，同时还能观测到整块验证本可以接受多少：
+verify 有三种模式，各管一件事：static 整块全验，是基线；compact 只验 scheduler 给的窗口，是生产路径；cap-accept 全验但只提交到窗口，产出和 compact 一致，专门用来量「裁剪丢掉了多少本可接受的 token」：
 
 <VerifyModesViz client:visible />
 
 ### Ragged verify under full CUDA graphs
 
-逐请求的窗口塞不进固定形状的 CUDA graph。一个批次里，这个请求验证两个 token，那个验证六个，没有统一的 query 长度；把所有请求 pad 回块宽，等于把裁掉的又 pad 回来。SGLang 选择让批次保持参差。verify token 被 front-pack 进一个紧凑 buffer，graph 按总 token 数取 key，向上取整到最近的已捕获档位。预算收紧时，打包后的总数落到更小的档位，回放的 graph 是真正更便宜的：attention 和 MLP 的行数变少了，而不是一个打了 mask 的全宽 forward。data-parallel attention 下，各 rank 共用一个档位(取各 rank 所需的最大值)，一起降档：
+一句话本质：这个优化保证裁掉的预算真的变成省下的时间——验证长度参差不齐的批次直接塞进 CUDA graph，不靠 padding 补齐。
+
+CUDA graph 要求固定的输入形状，而裁剪后每个请求的验证长度都不一样；把大家 pad 回块宽，等于把裁掉的又算了回来。SGLang 的做法是把所有 verify token 首尾相接打包进一个紧凑 buffer，graph 按打包后的总 token 数选档位(向上取整到最近的已捕获档位)。预算一收紧，总数落到更小的档位，回放的就是 attention 和 MLP 行数真正更少的 graph。DP attention 下各 rank 共用最大档位、一起降档；打包后的 buffer 是 cu_seqlens 式变长输入，attention 直接复用后端现成的 kernel(DeepSeek-V4 上就是 flash_mla)，没有新 kernel：
 
 <PackViz client:visible />
-
-打包后的 buffer 是 cu_seqlens 式的变长输入，所以 compact verify 复用后端现成的 attention kernel。DeepSeek-V4 上直接走模型自己的 sparse-MLA 路径(flash_mla)，没有新 kernel。每个支持的后端只需在 graph 回放时从打包布局重建自己的变长 metadata。
-
-### 预算背后的成本表
-
-scheduler 用 Background 那张图里的加法模型给 verify token 定价：T(bs, K) = bias + α(bs) + θ(M)，其中 M = bs + K 是这一步的总 token 数。α(bs) 是随请求数增长的地板，包含 draft pass 和一部分 attention，裁剪动不了它。θ(M) 是 target 的 verify token 成本，是裁剪唯一能省回来的项，所以裁剪的收益只出现在 θ 大的地方。SGLang 离线 profile 这张表：扫一个 batch × verify 比例的网格；scheduler 在线读表，用期望接受的 token 数对照真实边际成本做取舍。原文用真实 server 验证了模型的预测。
 
 ### 调度收益
 
@@ -114,12 +112,6 @@ kernel 侧，SGLang 把 verify 周围成簇的小算子重写成融合的 Triton
 
 <ZosViz client:visible />
 
-### Observability
-
-裁剪恰好审查掉了评判裁剪所需的那个数。compact 只验证窗口，所以「这一步整块验证本可以接受多少个 token」永远观测不到；没有这个上限，就分不清一次裁剪是恰到好处还是有损的。cap-accept 恰好能把上限找回来：它验证整块、只提交到窗口，输出和 compact 一致，同时量出了裁剪丢掉的部分。
-
-生产环境不想多跑一条伴随臂时，block-accept estimator 可以在 compact 运行内部直接估计被审查掉的上限。它利用后续步 target token 的 logprobs，为反事实的尾部计算估计区间。SGLang 还暴露逐请求的置信度与校准指标(如 ECE)供事后分析。
-
 ## 用 SGLang serve DeepSeek-V4
 
 DeepSeek-V4 有两个尺寸，1.6T 的 Pro 和 284B 的 Flash。每一层都把滑动窗口注意力和压缩注意力混着用，撑起 1M token 的上下文；checkpoint 还自带一个原生训练的单层 MTP head。SGLang 从 Day 0 起就支持这个家族，前缀缓存、kernel、并行方式都为混合注意力路径专门做过；那一侧的细节见文末的 Day-0 blog。
@@ -128,7 +120,7 @@ DeepSeek-V4 有两个尺寸，1.6T 的 Pro 和 284B 的 Flash。每一层都把�
 
 ## What's next
 
-路线图在 [#30344](https://github.com/sgl-project/sglang/issues/30344)：更强、逐步在线化的成本模型与调度器；更多稠密与稀疏模型；更广的并行方式覆盖；把 block-accept estimator 和置信度校准做成生产级指标；以及加固 full CUDA graph 路径。
+路线图在 [#30344](https://github.com/sgl-project/sglang/issues/30344)：更强、逐步在线化的成本模型与调度器；更多稠密与稀疏模型；更广的并行方式覆盖；把观测裁剪损失的指标做成生产级；以及加固 full CUDA graph 路径。
 
 ## Acknowledgments
 
