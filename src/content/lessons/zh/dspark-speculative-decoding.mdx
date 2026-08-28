@@ -1,6 +1,6 @@
 ---
 title: "DFlash 到 DSpark in SGLang：解码提速 4.3×，DeepSeek-V4 单请求 383.7 tok/s"
-description: "投机解码是 SGLang 的一条核心加速路径，但它有两处会亏：自回归 drafter 逐 token 起草，快不起来；批次填满 GPU 后，每步还要为 B×K 个草稿 token 付验证开销。DFlash 解决起草侧：块扩散 drafter 一次 forward 出整块，靠 KV injection 从 target 拿上下文，解码达到非投机基线的 **4.3×**。DSpark 解决验证侧：sequential head 压住 suffix decay，SGLang 把校准过的存活分换算成逐请求的验证预算，再回放成真正更小的 CUDA graph。DeepSeek-V4-Flash 的混合流量上，窗口随任务难度从 **5.24** 收缩到 **2.91** 个 token，保持接受上限的 **0.88–0.97**；DeepSeek-V4-Pro 上 batch 1 解码达到 **383.7 tok/s**。"
+description: "投机解码是 SGLang 的一条核心加速路径：小 drafter 先猜几个 token，target 模型一次全部验证。它有两个成本拖后腿：drafter 逐个猜，太慢；server 一忙，还要为一堆注定被拒的猜测付验证开销。SGLang 现在把两边都补上了。用 DFlash，drafter 一次 forward 猜出一整块，解码达到非投机基线的 **4.3×**。用 DSpark，SGLang 每步给每个请求单独定验证预算，不值得验的猜测直接跳过。DeepSeek-V4-Flash 的混合流量上，验证窗口随任务难度从 **5.24** 收缩到 **2.91** 个 token，保持接受上限的 **0.88–0.97**；DeepSeek-V4-Pro 上 batch 1 解码达到 **383.7 tok/s**。"
 order: 6
 tryOnSglang: "https://github.com/sgl-project/sglang"
 references:
