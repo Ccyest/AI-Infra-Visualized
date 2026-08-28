@@ -60,7 +60,7 @@ Z Lab 开发的 DFlash 用一个轻量的块扩散(block diffusion)模型换掉�
 
 来自 DeepSeek 的 DSpark 用 draft 侧的三件东西从两端一起下手。block drafter 仍然一次 forward 产出 gamma 个 token 的块，但一个轻量的 sequential head(Markov 或 RNN)让每一位以前一位为条件，这就是「半自回归」的含义，也正是对付 suffix decay 的那一手。
 
-confidence head 给每个草稿打「能通过验证」的分数。这个分数来源很具体：结构上它只是搭在 drafter hidden state 上的一个线性层加 sigmoid。训练标签也是算出来的：drafter 在这一位的输出分布和 target 的分布差多远，接受率就有多低，头学的就是预测这个差距。所以分数与请求属于什么主题无关，只反映这一位的下文好不好猜：公式和代码把下一个 token 锁得很死，分就高；自由发挥的文本选择空间大，分就低。整块连乘是块的存活率。Sequential Temperature Scaling(STS)再做一次保序的温度校准，因为原始分系统性偏自信，而预算要对着真实接受率做。
+为了解决高并发下整块验证的开销，DSpark 引入 confidence head。它是搭在 drafter hidden state 上的一个线性层加 sigmoid，给每个草稿打「能通过验证」的分数。训练标签就是 drafter 在这一位的输出分布与 target 分布的实测差距，所以分数直接反映下文好不好猜：公式和代码把下一个 token 锁得很死，分就高；自由发挥的文本分就低。整块连乘是块的存活率，Sequential Temperature Scaling(STS)再把它校准到真实接受率。
 
 有了这些存活分，验证长度才能按请求来调度：沿着块的存活率曲线往下走，走到「期望多接受的 token 盖不住多验证一个 token 的边际成本」就停。下图跟着一个请求走完一次 draft：
 

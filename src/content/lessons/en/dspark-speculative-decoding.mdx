@@ -100,19 +100,15 @@ sequential head (a Markov or RNN head) conditions each position on the previous
 token; this is what semi-autoregressive means, and it is the piece that
 counters suffix decay.
 
-The confidence head scores each drafted token's chance of surviving
-verification, and the score has a concrete source. Structurally the head is a
-linear projection plus a sigmoid on the drafter's hidden state. Its training
-label is computed rather than guessed: the further the drafter's
-output distribution at a position strays from the target's, the lower the
-acceptance rate, and the head learns to predict exactly that gap. The score
-therefore knows nothing about topics; it only reflects how predictable the
-next tokens are. Formulas and code pin the next token down, so scores run
-high; free-form prose has many valid continuations, so scores run low. The
-product across the block is the block's survival probability, and Sequential
-Temperature Scaling (STS) applies an order-preserving temperature calibration
-on top, because raw scores are systematically overconfident and the budget
-must track true acceptance rates.
+To tackle the full-block verify problem at high concurrency, DSpark adopts
+the confidence head. The head is a linear projection plus a sigmoid on the
+drafter's hidden state, and it scores each drafted token's chance of surviving
+verification. Its training label is the measured gap between the drafter's
+output distribution and the target's at that position, so the score simply
+tracks how predictable the next tokens are: formulas and code pin the next
+token down and score high, while free-form prose scores low. The product
+across the block is the block's survival probability, and Sequential
+Temperature Scaling (STS) calibrates it to match true acceptance rates.
 
 Those survival scores are what makes the verify length schedulable per
 request: walk down the block's survival curve and stop where the expected
