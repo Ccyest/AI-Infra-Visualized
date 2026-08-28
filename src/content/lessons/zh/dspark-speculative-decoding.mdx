@@ -1,6 +1,6 @@
 ---
 title: "DFlash 到 DSpark in SGLang：解码提速 4.3×，DeepSeek-V4 单请求 383.7 tok/s"
-description: "投机解码有两处会亏：自回归 drafter 逐 token 起草，快不起来；批次填满 GPU 后，每步还要为 B×K 个草稿 token 付验证开销。DFlash 解决起草侧：块扩散 drafter 一次 forward 出整块，靠 KV injection 从 target 拿上下文，解码达到非投机基线的 **4.3×**。DSpark 解决验证侧：sequential head 压住 suffix decay，SGLang 把校准过的存活分换算成逐请求的验证预算，再回放成真正更小的 CUDA graph。窗口随负载从 **5.24** 收缩到 **2.91** 个 token，保持接受上限的 **0.88–0.97**；DeepSeek-V4-Pro 上 batch 1 解码达到 **383.7 tok/s**。"
+description: "投机解码是 SGLang 的一条核心加速路径，但它有两处会亏：自回归 drafter 逐 token 起草，快不起来；批次填满 GPU 后，每步还要为 B×K 个草稿 token 付验证开销。DFlash 解决起草侧：块扩散 drafter 一次 forward 出整块，靠 KV injection 从 target 拿上下文，解码达到非投机基线的 **4.3×**。DSpark 解决验证侧：sequential head 压住 suffix decay，SGLang 把校准过的存活分换算成逐请求的验证预算，再回放成真正更小的 CUDA graph。窗口随负载从 **5.24** 收缩到 **2.91** 个 token，保持接受上限的 **0.88–0.97**；DeepSeek-V4-Pro 上 batch 1 解码达到 **383.7 tok/s**。"
 order: 6
 tryOnSglang: "https://github.com/sgl-project/sglang"
 references:
@@ -40,13 +40,13 @@ import ZosViz from "../../../viz/dspark/ZosViz";
 
 本文余下的部分分三块：解这笔交易的两代算法，SGLang 为 serve 它们做的工程，以及这套栈对 DeepSeek-V4 意味着什么。
 
-## 算法：DFlash 与 DSpark
+## 从 DFlash 到 DSpark
 
 ### DFlash: parallel drafting with KV injection
 
 大多数投机方案，包括 EAGLE 系列和 DeepSeek-V4 这类模型自带的 MTP head，起草是自回归的：小模型逐 token 生成，草稿越长起草开销越大，为了压延迟只能把 drafter 做得很浅。
 
-Z Lab 开发的 DFlash 用一个轻量的块扩散(block diffusion)模型换掉自回归 drafter，一次 forward 并行产出整块草稿。做到这一点不只是换个 drafter 那么简单。从头训练的小扩散模型接受率很低，拿现成的大扩散 LLM 起草又太贵。DFlash 的答案是 KV injection：context 谁最懂？target 模型自己。DFlash 把 target 的 hidden states 抽出来，注入 draft 模型每一层的 KV cache。EAGLE 类方法只在 drafter 的输入端喂一次 target 特征，drafter 一深信号就衰减；逐层注入让 context 信号一直在场，drafter 可以完全不建模 context，把全部容量花在预测这一块上：
+Z Lab 开发的 DFlash 用一个轻量的块扩散(block diffusion)模型换掉自回归 drafter，一次 forward 并行产出整块草稿。做到这一点不只是换个 drafter 那么简单。从头训练的小扩散模型接受率很低，拿现成的大扩散 LLM 起草又太贵。DFlash 的答案是 KV injection：最懂 context 的是 target 模型本身，所以把 target 的 hidden states 抽出来，注入 draft 模型每一层的 KV cache。EAGLE 类方法只在 drafter 的输入端喂一次 target 特征，drafter 一深信号就衰减；逐层注入让 context 信号一直在场，drafter 可以完全不建模 context，把全部容量花在预测这一块上：
 
 <DFlashViz client:visible />
 
@@ -54,13 +54,13 @@ Z Lab 开发的 DFlash 用一个轻量的块扩散(block diffusion)模型换掉�
 
 <DFlashBenchViz client:visible />
 
-### DSpark：半自回归起草，按预算验证
+### DSpark：sequential head 加验证预算
 
 纯并行的块留下了两件事没解决。第一，块内各位置的起草互相独立，没有块内依赖，质量向块尾衰减；DSpark 论文称之为 suffix decay。第二，验证侧原封未动：每个请求照旧整块 verify，高并发下就是 Background 里那笔 B×K 的账。
 
 来自 DeepSeek 的 DSpark 用 draft 侧的三件东西从两端一起下手。block drafter 仍然一次 forward 产出 gamma 个 token 的块，但一个轻量的 sequential head(Markov 或 RNN)让每一位以前一位为条件，这就是「半自回归」的含义，也正是对付 suffix decay 的那一手。
 
-confidence head 给每个草稿打「能通过验证」的分数。这个分不是什么玄学的自信心：结构上它只是搭在 drafter hidden state 上的一个线性层加 sigmoid；训练标签也是算出来的，drafter 在这一位的输出分布和 target 的分布差多远，接受率就有多低，头学的就是预测这个差距。所以分数与请求属于什么主题无关，只反映这一位的下文好不好猜：公式和代码把下一个 token 锁得很死，分就高；自由发挥的文本选择空间大，分就低。整块连乘是块的存活率。Sequential Temperature Scaling(STS)再做一次保序的温度校准，因为原始分系统性偏自信，而预算要对着真实接受率做。
+confidence head 给每个草稿打「能通过验证」的分数。这个分数来源很具体：结构上它只是搭在 drafter hidden state 上的一个线性层加 sigmoid。训练标签也是算出来的：drafter 在这一位的输出分布和 target 的分布差多远，接受率就有多低，头学的就是预测这个差距。所以分数与请求属于什么主题无关，只反映这一位的下文好不好猜：公式和代码把下一个 token 锁得很死，分就高；自由发挥的文本选择空间大，分就低。整块连乘是块的存活率。Sequential Temperature Scaling(STS)再做一次保序的温度校准，因为原始分系统性偏自信，而预算要对着真实接受率做。
 
 有了这些存活分，验证长度才能按请求来调度：沿着块的存活率曲线往下走，走到「期望多接受的 token 盖不住多验证一个 token 的边际成本」就停。下图跟着一个请求走完一次 draft：
 
@@ -80,7 +80,7 @@ SGLang 在 [#30261](https://github.com/sgl-project/sglang/pull/30261)(2026 年 7
 
 一句话本质：这个优化把「验证多少个 token」从全局常数变成每个请求、每一步的单独决策。
 
-SGLang 的 confidence scheduler 每步给批次里的每个请求执行上一节的预算规则：沿存活率曲线往下走，走到期望收益盖不住边际成本就停。边际成本不是拍的：SGLang 事先在这台 server 上离线量好「每多验一个 token 步时多花多少」，存成成本表，scheduler 在线查表定价。效果是可预测的请求保住长窗口，发散的请求被裁到两三个 token；负载升高，所有窗口一起收紧：
+SGLang 的 confidence scheduler 每步给批次里的每个请求执行上一节的预算规则：沿存活率曲线往下走，走到期望收益盖不住边际成本就停。边际成本来自实测：SGLang 事先在这台 server 上离线量好「每多验一个 token 步时多花多少」，存成成本表，scheduler 在线查表定价。效果是可预测的请求保住长窗口，发散的请求被裁到两三个 token；负载升高，所有窗口一起收紧：
 
 <TrimViz client:visible />
 
@@ -90,7 +90,7 @@ verify 有三种模式，各管一件事：static 整块全验，是基线；com
 
 ### Ragged verify under full CUDA graphs
 
-一句话本质：这个优化保证裁掉的预算真的变成省下的时间——验证长度参差不齐的批次直接塞进 CUDA graph，不靠 padding 补齐。
+一句话本质：这个优化保证裁掉的预算真的变成省下的时间。验证长度参差不齐的批次直接进 CUDA graph，不靠 padding 补齐。
 
 CUDA graph 要求固定的输入形状，而裁剪后每个请求的验证长度都不一样；把大家 pad 回块宽，等于把裁掉的又算了回来。SGLang 的做法是把所有 verify token 首尾相接打包进一个紧凑 buffer，graph 按打包后的总 token 数选档位(向上取整到最近的已捕获档位)。预算一收紧，总数落到更小的档位，回放的就是 attention 和 MLP 行数真正更少的 graph。DP attention 下各 rank 共用最大档位、一起降档；打包后的 buffer 是 cu_seqlens 式变长输入，attention 直接复用后端现成的 kernel(DeepSeek-V4 上就是 flash_mla)，没有新 kernel：
 
@@ -121,10 +121,6 @@ kernel 侧，SGLang 把 verify 周围成簇的小算子重写成融合的 Triton
 DeepSeek-V4 有两个尺寸，1.6T 的 Pro 和 284B 的 Flash。每一层都把滑动窗口注意力和压缩注意力混着用，撑起 1M token 的上下文；checkpoint 还自带一个原生训练的单层 MTP head。SGLang 从 Day 0 起就支持这个家族，前缀缓存、kernel、并行方式都为混合注意力路径专门做过；那一侧的细节见文末的 Day-0 blog。
 
 本文讲的一切都架在这之上，是 serving 时的一个选择。投机解码不碰 target 模型的架构，也不改输出分布：drafter 是单独训练的伴随模型，关掉投机就等于加载裸的 checkpoint。同一个 V4 target 上，`--speculative-algorithm` 选的就是 drafter 的代际：EAGLE 跑 checkpoint 里自带的 MTP head，DFLASH 跑块扩散 drafter，DSPARK 跑 DeepSeek 以伴随 checkpoint 形式发布的置信度调度 drafter(DeepSeek-V4-Flash-DSpark、DeepSeek-V4-Pro-DSpark)。DSpark 论文报告，在 DeepSeek 自己的 V4 服务系统里、真实用户流量下，DSpark 在同等吞吐水平上把单用户生成速度比 MTP 基线提高 60–85%。完整的启动配方和复现命令都在文末的原文链接里。
-
-## What's next
-
-路线图在 [#30344](https://github.com/sgl-project/sglang/issues/30344)：更强、逐步在线化的成本模型与调度器；更多稠密与稀疏模型；更广的并行方式覆盖；把观测裁剪损失的指标做成生产级；以及加固 full CUDA graph 路径。
 
 ## Acknowledgments
 

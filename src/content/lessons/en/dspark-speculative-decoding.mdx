@@ -1,6 +1,6 @@
 ---
 title: "DFlash to DSpark in SGLang: 4.3× faster decode, 383.7 tok/s single-user on DeepSeek-V4"
-description: "Speculative decoding has two ways to lose: an autoregressive drafter emits tokens one by one, and once the batch fills the GPU, verifying every drafted token costs B×K tokens per step. DFlash fixes the drafting side with a block-diffusion drafter that emits a whole block in one forward, fed by KV injection from the target — **4.3×** the non-speculative baseline. DSpark fixes the verify side: a sequential head counters suffix decay, and SGLang turns calibrated survival scores into a per-request verify budget, replayed as a genuinely smaller CUDA graph. Windows contract from **5.24** to **2.91** tokens at **0.88–0.97** of the ceiling; batch-1 decode reaches **383.7 tok/s** on DeepSeek-V4-Pro."
+description: "Speculative decoding is a core acceleration path in SGLang, but it loses in two places: an autoregressive drafter emits tokens one by one, and once the batch fills the GPU, verifying every drafted token costs B×K tokens per step. DFlash fixes the drafting side: a block-diffusion drafter emits a whole block in one forward, fed by KV injection from the target, and decodes at **4.3×** the non-speculative baseline. DSpark fixes the verify side: a sequential head counters suffix decay, and SGLang turns calibrated survival scores into a per-request verify budget, replayed as a genuinely smaller CUDA graph. Windows contract from **5.24** to **2.91** tokens at **0.88–0.97** of the ceiling; batch-1 decode reaches **383.7 tok/s** on DeepSeek-V4-Pro."
 order: 6
 tryOnSglang: "https://github.com/sgl-project/sglang"
 references:
@@ -52,7 +52,7 @@ The rest of this post is in three parts: the two algorithm generations that
 attack this trade, the engineering SGLang builds to serve them, and what that
 stack means for DeepSeek-V4.
 
-## The algorithms: DFlash, then DSpark
+## From DFlash to DSpark
 
 ### DFlash: parallel drafting with KV injection
 
@@ -85,7 +85,7 @@ non-speculative baseline and 1.5× MTP at concurrency 1 on HumanEval:
 
 <DFlashBenchViz client:visible lang="en" />
 
-### DSpark: draft semi-autoregressively, verify on a budget
+### DSpark: a sequential head and a verify budget
 
 A purely parallel block leaves two things on the table. First, the block's
 positions are drafted without intra-block dependencies, so quality decays
@@ -101,9 +101,9 @@ token; this is what semi-autoregressive means, and it is the piece that
 counters suffix decay.
 
 The confidence head scores each drafted token's chance of surviving
-verification, and there is nothing mystical about that score. Structurally the
-head is a linear projection plus a sigmoid on the drafter's hidden state, and
-its training label is computed rather than guessed: the further the drafter's
+verification, and the score has a concrete source. Structurally the head is a
+linear projection plus a sigmoid on the drafter's hidden state. Its training
+label is computed rather than guessed: the further the drafter's
 output distribution at a position strays from the target's, the lower the
 acceptance rate, and the head learns to predict exactly that gap. The score
 therefore knows nothing about topics; it only reflects how predictable the
@@ -168,7 +168,7 @@ trim gave up:
 ### Ragged verify under full CUDA graphs
 
 In one sentence: this optimization makes the trimmed budget actually show up
-as saved time — a batch with unequal verify lengths runs in a CUDA graph
+as saved time. A batch with unequal verify lengths runs in a CUDA graph
 without padding the trim back in.
 
 CUDA graphs demand fixed input shapes, and after trimming every request
@@ -261,14 +261,6 @@ serving system, under live user traffic, DSpark accelerates per-user
 generation by 60–85% over the MTP baseline at matched throughput. Full launch
 recipes and reproduction commands live in the original blogs in the
 references.
-
-## What's next
-
-The roadmap lives in
-[#30344](https://github.com/sgl-project/sglang/issues/30344): a stronger,
-increasingly online cost model and scheduler; more dense and sparse models;
-broader parallelism coverage; production-grade metrics for what trimming gives
-up; and hardening the full-CUDA-graph path.
 
 ## Acknowledgments
 
