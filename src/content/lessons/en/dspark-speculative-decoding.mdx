@@ -144,12 +144,12 @@ global constant into a per-request, per-step decision.
 
 Every step, SGLang's confidence scheduler runs the budget rule from the
 previous section for each request: walk down the survival curve and stop where
-the expected gain no longer covers the marginal cost. That marginal cost is
-not guessed. SGLang measures offline, on this server, how much each extra
-verify token adds to the step time, stores it as a cost table, and the
-scheduler prices against the table online. The effect: predictable requests
-keep long windows, divergent ones get trimmed to two or three tokens, and
-higher load tightens every window together:
+the expected gain no longer covers the marginal cost. SGLang measures the
+marginal cost on this server: how much each extra verify token adds to the
+step time, stored as a cost table. The window length falls out of that
+comparison: a request whose drafts score high keeps a long window, a request
+whose scores drop fast gets trimmed to two or three tokens, and higher load
+raises the marginal cost, tightening every window together:
 
 <TrimViz client:visible lang="en" />
 

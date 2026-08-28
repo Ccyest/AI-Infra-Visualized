@@ -80,7 +80,7 @@ SGLang 在 [#30261](https://github.com/sgl-project/sglang/pull/30261)(2026 年 7
 
 一句话本质：这个优化把「验证多少个 token」从全局常数变成每个请求、每一步的单独决策。
 
-SGLang 的 confidence scheduler 每步给批次里的每个请求执行上一节的预算规则：沿存活率曲线往下走，走到期望收益盖不住边际成本就停。边际成本来自实测：SGLang 事先在这台 server 上离线量好「每多验一个 token 步时多花多少」，存成成本表，scheduler 在线查表定价。效果是可预测的请求保住长窗口，发散的请求被裁到两三个 token；负载升高，所有窗口一起收紧：
+SGLang 的 confidence scheduler 每步给批次里的每个请求执行上一节的预算规则：沿存活率曲线往下走，走到期望收益盖不住边际成本就停。边际成本由 SGLang 在这台 server 上实测：每多验一个 token，步时多花多少，存成成本表。窗口长短就是这场比较的结果：草稿分数高的请求保住长窗口，分数掉得快的被裁到两三个 token；负载升高会抬高边际成本，所有窗口一起收紧：
 
 <TrimViz client:visible />
 
