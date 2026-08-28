@@ -1,6 +1,6 @@
 ---
 title: "DFlash to DSpark in SGLang: 4.3× faster decode, 383.7 tok/s single-user on DeepSeek-V4"
-description: "Speculative decoding is a core acceleration path in SGLang: a small drafter guesses tokens ahead, and the target model verifies them in bulk. Two costs hold it back: the drafter guesses one token at a time, and a busy server ends up verifying piles of guesses that will be rejected. SGLang now closes both gaps. With DFlash, the drafter guesses a whole block in one forward, decoding at **4.3×** the non-speculative baseline. With DSpark, SGLang gives every request its own verify budget each step and skips the guesses not worth checking. On DeepSeek-V4-Flash mixed traffic, verify windows contract from **5.24** to **2.91** tokens while holding **0.88–0.97** of the acceptance ceiling; batch-1 decode on DeepSeek-V4-Pro reaches **383.7 tok/s**."
+description: "DFlash and DSpark are two modern speculative decoding algorithms. This blog explains in detail how these two algorithms work. Instead of the traditional AR step, both algorithms adopt a DiT architecture for the draft model. SGLang now fully supports these two algorithms: with DFlash, decode reaches **4.3×** the non-speculative baseline and **1.5×** MTP; with DSpark, verify windows contract from **5.24** to **2.91** tokens on mixed traffic while holding **0.88–0.97** of the acceptance ceiling, and batch-1 decode on DeepSeek-V4-Pro reaches **383.7 tok/s**."
 order: 6
 tryOnSglang: "https://github.com/sgl-project/sglang"
 references:
