@@ -74,17 +74,57 @@ function y(v: number): number {
 
 export default function FrontierViz({ lang = "zh" }: { lang?: Locale }) {
   const wrapRef = useRef<HTMLDivElement>(null);
-  const [hover, setHover] = useState<{ x: number; y: number; text: string } | null>(null);
+  const svgRef = useRef<SVGSVGElement>(null);
+  const [hover, setHover] = useState<{ x: number; y: number; text: string; key: string } | null>(null);
+  const hoverKey = useRef<string | null>(null);
 
-  const showTooltip = (e: ReactMouseEvent, text: string) => {
+  /* 鼠标移动时吸附到最近的数据点(而不是靠命中 4px 的小圆点),
+     且只在最近点变化时 setState,避免每次 mousemove 都重渲染 */
+  const onMove = (e: ReactMouseEvent) => {
+    const svg = svgRef.current;
     const wrap = wrapRef.current;
-    if (!wrap) return;
-    const rect = wrap.getBoundingClientRect();
+    if (!svg || !wrap) return;
+    const rect = svg.getBoundingClientRect();
+    const mx = ((e.clientX - rect.left) / rect.width) * W;
+    const my = ((e.clientY - rect.top) / rect.height) * H;
+    let best: { d: number; key: string; px: number; py: number; text: string } | null = null;
+    for (const arm of ARMS) {
+      for (const [pu, agg, bs] of arm.pts) {
+        const dx = x(pu) - mx;
+        const dy = y(agg) - my;
+        const d = dx * dx + dy * dy;
+        if (!best || d < best.d) {
+          best = {
+            d,
+            key: `${arm.key}-${bs}`,
+            px: x(pu),
+            py: y(agg),
+            text: frontierPointTooltip(lang, FRONTIER[arm.key][lang], bs, pu, agg),
+          };
+        }
+      }
+    }
+    if (!best || best.d > 45 * 45) {
+      if (hoverKey.current !== null) {
+        hoverKey.current = null;
+        setHover(null);
+      }
+      return;
+    }
+    if (hoverKey.current === best.key) return;
+    hoverKey.current = best.key;
+    const wrapRect = wrap.getBoundingClientRect();
     setHover({
-      x: e.clientX - rect.left + wrap.scrollLeft,
-      y: e.clientY - rect.top,
-      text,
+      x: rect.left - wrapRect.left + wrap.scrollLeft + (best.px / W) * rect.width,
+      y: rect.top - wrapRect.top + (best.py / H) * rect.height,
+      text: best.text,
+      key: best.key,
     });
+  };
+
+  const onLeave = () => {
+    hoverKey.current = null;
+    setHover(null);
   };
 
   return (
@@ -96,12 +136,14 @@ export default function FrontierViz({ lang = "zh" }: { lang?: Locale }) {
 
       <div className="viz-grid-wrap" ref={wrapRef}>
         <svg
+          ref={svgRef}
           className="viz-grid"
           style={{ minWidth: 520 }}
           viewBox={`0 0 ${W} ${H}`}
           role="img"
           aria-label={FRONTIER.title[lang]}
-          onMouseLeave={() => setHover(null)}
+          onMouseMove={onMove}
+          onMouseLeave={onLeave}
         >
           <line x1={PADL} y1={H - PADB} x2={W - PADR + 8} y2={H - PADB} stroke="var(--axis)" strokeWidth="1" />
           <line x1={PADL} y1={PADT - 4} x2={PADL} y2={H - PADB} stroke="var(--axis)" strokeWidth="1" />
@@ -149,13 +191,11 @@ export default function FrontierViz({ lang = "zh" }: { lang?: Locale }) {
                   <circle
                     cx={x(px)}
                     cy={y(py)}
-                    r={4}
+                    r={hover?.key === `${arm.key}-${bs}` ? 5.5 : 4}
                     fill={arm.color}
                     stroke="var(--surface)"
                     strokeWidth="1.2"
-                    onMouseEnter={(e) =>
-                      showTooltip(e, frontierPointTooltip(lang, FRONTIER[arm.key][lang], bs, px, py))
-                    }
+                    pointerEvents="none"
                   />
                   {LABELED.has(bs) && (
                     <text
