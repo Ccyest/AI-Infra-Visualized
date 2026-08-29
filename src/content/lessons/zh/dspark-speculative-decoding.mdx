@@ -90,7 +90,7 @@ verify 分三种模式，分的是速度和可观测性的取舍。compact 只�
 
 ### Ragged verify under full CUDA graphs
 
-CUDA graph 要求固定的输入形状，而裁剪后每个请求的验证长度都不一样；padding 在这里不是选项，把大家补齐等于把裁掉的又算回来。打包之所以成立，是因为 transformer 本来就把 token 当成一个 [总 token 数, hidden] 的矩阵来算：MLP 和各个投影的矩阵乘逐行进行，从不关心某一行属于哪个请求。请求归属只在 attention 里才重要，而那是 metadata 不是形状：cu_seqlens 式的变长输入标出每个请求的分段起点，每个 token 只对自己请求的 KV 做 attention，后端现成的 kernel 就能处理(DeepSeek-V4 上是 flash_mla)。所以 SGLang 把调度到的 verify token 首尾相接打包进一个 buffer，graph 按打包后的总 token 数选档位，向上取整到最近的已捕获档位。预算一收紧，总数落到更小的档位，回放的就是 attention 和 MLP 行数真正更少的 graph。DP attention 下各 rank 共用最大档位、一起降档：
+CUDA graph 要求固定的输入形状，而裁剪后每个请求的验证长度都不一样；padding 在这里不是选项，把大家补齐等于把裁掉的又算回来。SGLang 把调度到的 verify token 首尾相接打包进一个 [总 token 数, hidden] 的 buffer，这正是 transformer 做逐行矩阵乘时本来就在用的布局。cu_seqlens 式的变长输入标出每个请求的分段起点，每个 token 只对自己请求的 KV 做 attention，后端现成的 kernel 就能处理(DeepSeek-V4 上是 flash_mla)。graph 则按打包后的总 token 数选档位，向上取整到最近的已捕获档位。预算一收紧，总数落到更小的档位，回放的就是 attention 和 MLP 行数真正更少的 graph。DP attention 下各 rank 共用最大档位、一起降档：
 
 <PackViz client:visible />
 

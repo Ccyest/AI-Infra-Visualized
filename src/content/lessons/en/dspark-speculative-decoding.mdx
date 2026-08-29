@@ -171,18 +171,15 @@ in the mixed-traffic section below come from exactly such runs:
 
 CUDA graphs demand fixed input shapes, but after trimming every request
 verifies a different length, and padding is not an option here: it would put
-the trimmed block back. Packing works because a transformer consumes tokens as
-one [total_tokens, hidden] matrix: the MLP and projection matmuls run per row
-and never care which request a row belongs to. Request identity only matters
-inside attention, and there it is metadata rather than shape: a
-cu_seqlens-style varlen input marks where each request's segment starts, so
-every token attends to its own request's KV, and the backend's existing
-kernels handle it (flash_mla on DeepSeek-V4). SGLang therefore front-packs the
-scheduled verify tokens into one buffer and keys the graph on the packed
-total, rounded up to the nearest captured tier. When budgets tighten, the
-total drops to a smaller tier, and the replayed graph has genuinely fewer
-attention and MLP rows. Under data-parallel attention the ranks share the
-largest tier and step down together:
+the trimmed block back. SGLang front-packs the scheduled verify tokens into
+one [total_tokens, hidden] buffer, the same layout a transformer already uses
+for its per-row matmuls. A cu_seqlens-style varlen input marks where each
+request's segment starts, so every token attends to its own request's KV and
+the backend's existing kernels handle it (flash_mla on DeepSeek-V4). The graph
+is then keyed on the packed total, rounded up to the nearest captured tier.
+When budgets tighten, the total drops to a smaller tier, and the replayed
+graph has genuinely fewer attention and MLP rows. Under data-parallel
+attention the ranks share the largest tier and step down together:
 
 <PackViz client:visible lang="en" />
 
