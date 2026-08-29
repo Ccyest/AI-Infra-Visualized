@@ -169,20 +169,20 @@ in the mixed-traffic section below come from exactly such runs:
 
 ### Ragged verify under full CUDA graphs
 
-In one sentence: this optimization makes the trimmed budget actually show up
-as saved time. A batch with unequal verify lengths runs in a CUDA graph
-without padding the trim back in.
-
-CUDA graphs demand fixed input shapes, and after trimming every request
-verifies a different length; padding everyone back to the block width would
-recompute exactly what was cut. SGLang instead front-packs all verify tokens
-into one compact buffer and keys the graph on the packed total, rounded up to
-the nearest captured tier. When budgets tighten, the total drops to a smaller
-tier, and the replayed graph has genuinely fewer attention and MLP rows. Under
-data-parallel attention the ranks share the largest tier and step down
-together; the packed buffer is a cu_seqlens-style varlen input, so attention
-reuses kernels the backend already has (flash_mla on DeepSeek-V4), with no new
-kernel:
+CUDA graphs demand fixed input shapes, but after trimming every request
+verifies a different length, and padding is not an option here: it would put
+the trimmed block back. Packing works because a transformer consumes tokens as
+one [total_tokens, hidden] matrix: the MLP and projection matmuls run per row
+and never care which request a row belongs to. Request identity only matters
+inside attention, and there it is metadata rather than shape: a
+cu_seqlens-style varlen input marks where each request's segment starts, so
+every token attends to its own request's KV, and the backend's existing
+kernels handle it (flash_mla on DeepSeek-V4). SGLang therefore front-packs the
+scheduled verify tokens into one buffer and keys the graph on the packed
+total, rounded up to the nearest captured tier. When budgets tighten, the
+total drops to a smaller tier, and the replayed graph has genuinely fewer
+attention and MLP rows. Under data-parallel attention the ranks share the
+largest tier and step down together:
 
 <PackViz client:visible lang="en" />
 
