@@ -153,11 +153,17 @@ raises the marginal cost, tightening every window together:
 
 <TrimViz client:visible lang="en" />
 
-Verification runs in three modes, each with one job. static verifies the full
-block, the baseline. compact verifies only the scheduled window, the
-production path. cap-accept verifies everything but commits only the window,
-so it matches compact's output while measuring how many acceptable tokens the
-trim gave up:
+Verification runs in three modes, and the split trades speed against
+visibility. compact verifies only the scheduled window; it is the production
+path, and it is where the budget's savings land. Its blind spot: the trimmed
+positions are never verified, so you cannot see how many tokens a full verify
+would have accepted, or judge whether the scheduler trims well. static
+verifies the full block; it is the no-trim baseline for A/B comparisons.
+cap-accept exists for measurement: it pays static's verify cost but commits
+only the window, so its output matches compact exactly while it records what
+the trim gave up. In practice, traffic runs on compact, and cap-accept serves
+as an audit arm for checking trim quality; the 0.88–0.97 utilization numbers
+in the mixed-traffic section below come from exactly such runs:
 
 <VerifyModesViz client:visible lang="en" />
 

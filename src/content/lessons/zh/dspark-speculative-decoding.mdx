@@ -84,7 +84,7 @@ SGLang 的 confidence scheduler 每步给批次里的每个请求执行上一节
 
 <TrimViz client:visible />
 
-verify 有三种模式，各管一件事：static 整块全验，是基线；compact 只验 scheduler 给的窗口，是生产路径；cap-accept 全验但只提交到窗口，产出和 compact 一致，专门用来量「裁剪丢掉了多少本可接受的 token」：
+verify 分三种模式，分的是速度和可观测性的取舍。compact 只验 scheduler 给的窗口，是生产路径，预算省下的开销全靠它兑现。它有个盲区：被裁掉的位置从没验过，看不到整块验证本可以多接受几个，也就无从判断 scheduler 裁得好不好。static 整块全验，是不裁剪的对照基线，用来做 A/B。cap-accept 为测量而生：付出和 static 一样的验证开销，但只提交到窗口，产出和 compact 完全一致，同时记下裁剪放弃了多少。实际生产用 compact 跑流量，cap-accept 当审计臂检查裁剪质量；下文混合流量里 0.88–0.97 的利用率就是这么测出来的：
 
 <VerifyModesViz client:visible />
 
