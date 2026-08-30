@@ -197,20 +197,13 @@ lower-accept workload, because lower acceptance leaves more tail to trim.
 
 <TrimGainViz client:visible lang="en" />
 
-The scheduler behind these numbers is a first, vanilla version, and the blog
-treats it that way: a proof that the mechanism works end to end. The two
-example workloads also differ slightly in setup beyond acceptance, so the
-trend across them is the result, not absolute cross-panel numbers. And the
-budgets are only as good as the cost tables behind them; the current fit is a
-first approximation that may not fully account for context length.
-
-Homogeneous sweeps also hide the real point of confidence scheduling: two
-requests in the same batch should not get the same verify window if one is far
-more predictable than the other. On a mix of gsm8k, arena-hard, and poetry,
-the window contracts with acceptance difficulty, 5.24 to 3.78 to 2.91 tokens,
-while utilization against the ceiling stays at 0.88–0.97. The per-step
-distribution shows the same thing: about 55% of gsm8k steps fill the full
-window of six, while about 80% of poetry steps use three or fewer:
+This scheduler is a first, vanilla version, so the trend is the result, not
+the exact numbers. Homogeneous sweeps also hide its real point: two requests
+in the same batch should not get the same window if one is far more
+predictable than the other. On a mix of gsm8k, arena-hard, and poetry, the
+window contracts with difficulty, 5.24 to 3.78 to 2.91 tokens, while
+utilization against the ceiling stays at 0.88–0.97. About 55% of gsm8k steps
+fill the full window of six; about 80% of poetry steps use three or fewer:
 
 <MixedTrafficViz client:visible lang="en" />
 
