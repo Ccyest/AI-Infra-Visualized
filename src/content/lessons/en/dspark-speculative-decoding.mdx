@@ -1,5 +1,5 @@
 ---
-title: "DFlash to DSpark in SGLang: 4.3× faster decode, 383.7 tok/s single-user on DeepSeek-V4"
+title: "DFlash to DSpark in SGLang: 4.3× faster decode, and DeepSeek-V4 support"
 description: "DFlash and DSpark are two modern speculative decoding algorithms. This blog explains in detail how these two algorithms work. Instead of the traditional AR step, both algorithms adopt a DiT architecture for the draft model. SGLang now fully supports these two algorithms: with DFlash, decode reaches **4.3×** the non-speculative baseline and **1.5×** MTP; with DSpark, verify windows contract from **5.24** to **2.91** tokens on mixed traffic while holding **0.88–0.97** of the acceptance ceiling, and batch-1 decode on DeepSeek-V4-Pro reaches **383.7 tok/s**."
 order: 6
 tryOnSglang: "https://github.com/sgl-project/sglang"
