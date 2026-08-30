@@ -26,6 +26,7 @@ import TrimViz from "../../../viz/dspark/TrimViz";
 import VerifyModesViz from "../../../viz/dspark/VerifyModesViz";
 import PackViz from "../../../viz/dspark/PackViz";
 import MixedTrafficViz from "../../../viz/dspark/MixedTrafficViz";
+import TrimGainViz from "../../../viz/dspark/TrimGainViz";
 import ZosViz from "../../../viz/dspark/ZosViz";
 
 ## Background
@@ -97,6 +98,8 @@ CUDA graph 要求固定的输入形状，而裁剪后每个请求的验证长度
 ### 调度收益
 
 动态预算到底买到了多少？原文把 compact 和 no-trim 对比，后者是把 static 的整块调度跑在同一条 ragged 路径上，比较对象是两个接受率不同的示例负载。收益主要是高批次效应。batch 1 时，target verify 几乎不因多验几个 token 变慢，裁剪省不了什么，两臂打平。并发上去、吞吐开始进入平台期后，裁剪缩短了每一步，compact 拉开领先。在接受率更低的负载上，差距更大、拉开得更早，因为更低的接受率留下了更多可裁的尾巴。
+
+<TrimGainViz client:visible />
 
 这些数字背后的 scheduler 是第一版朴素实现，原文也这么定位它：证明机制端到端可行。两个示例负载除接受率外还有细微的设置差异，所以结论是跨负载的趋势，而不是面板间的绝对数字。预算的质量也取决于背后的成本表；当前的拟合是初版，可能还没有完全考虑 context 长度对步时的影响。
 

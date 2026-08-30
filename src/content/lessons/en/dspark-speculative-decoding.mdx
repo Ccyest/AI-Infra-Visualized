@@ -26,6 +26,7 @@ import TrimViz from "../../../viz/dspark/TrimViz";
 import VerifyModesViz from "../../../viz/dspark/VerifyModesViz";
 import PackViz from "../../../viz/dspark/PackViz";
 import MixedTrafficViz from "../../../viz/dspark/MixedTrafficViz";
+import TrimGainViz from "../../../viz/dspark/TrimGainViz";
 import ZosViz from "../../../viz/dspark/ZosViz";
 
 ## Background
@@ -193,6 +194,8 @@ down with more tokens, so trimming saves little and the two arms tie. As
 concurrency grows and throughput starts to plateau, trimming shortens the step
 and compact pulls ahead. The gap is larger, and opens earlier, on the
 lower-accept workload, because lower acceptance leaves more tail to trim.
+
+<TrimGainViz client:visible lang="en" />
 
 The scheduler behind these numbers is a first, vanilla version, and the blog
 treats it that way: a proof that the mechanism works end to end. The two

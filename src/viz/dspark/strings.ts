@@ -570,3 +570,19 @@ export function frontierPointTooltip(
     ? `${arm} · batch ${bs} · 单请求 ≈ ${perUser} tok/s · 总吞吐 ≈ ${agg.toFixed(1)}K tok/s`
     : `${arm} · batch ${bs} · per-user ≈ ${perUser} tok/s · aggregate ≈ ${agg.toFixed(1)}K tok/s`;
 }
+
+/* ---------------------------------------------------------------- */
+
+export const GAIN = {
+  title: { zh: "裁剪收益图示", en: "Trim gain diagram" },
+  subtitle: {
+    zh: "compact(逐请求裁剪) vs no-trim(整块验证)，同一条 ragged 路径；batch 1→256，数据点读自原文 Figure 3(近似)",
+    en: "compact (per-request trim) vs no-trim (full block), same ragged path; batch 1→256, points read from the blog's Figure 3 (approximate)",
+  },
+  panelHigh: { zh: "高接受负载", en: "High-accept workload" },
+  panelLow: { zh: "低接受负载", en: "Low-accept workload" },
+  armTrim: { zh: "compact", en: "compact" },
+  armNoTrim: { zh: "no-trim", en: "no-trim" },
+  xAxis: { zh: "单请求解码速度 (tokens/s)", en: "Per-user decode speed (tokens/s)" },
+  yAxis: { zh: "总吞吐 (K tokens/s)", en: "Aggregate throughput (K tokens/s)" },
+} satisfies Record<string, Localized>;
