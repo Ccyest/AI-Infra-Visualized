@@ -107,9 +107,7 @@ CUDA graph 要求固定的输入形状，而裁剪后每个请求的验证长度
 
 ### Zero-overhead scheduling 与 kernel
 
-把调度变成墙钟时间靠两类工程：压低每一步的成本，以及把 scheduler 藏到 forward 背后。两者合起来，在 DeepSeek-V4-Pro(TP8，B300)上 batch 1、接受长度约 5 时达到 383.7 tok/s。
-
-kernel 侧，SGLang 把 verify 周围成簇的小算子重写成融合的 Triton kernel：compact scatter、SWA page-index、验证长度的 top-k 调度、ragged 窗口打包。block drafter 的采样路径折叠进融合 kernel，矩阵乘做了 shard。在一个示例 profile 里，target verify 之外的部分缩短了 1.7 ms，而 verify 本身是 7.3 ms。
+把调度变成墙钟时间靠两类工程。kernel 侧，SGLang 把 verify 周围成簇的小算子重写成融合的 Triton kernel：compact scatter、SWA page-index、验证长度的 top-k 调度、ragged 窗口打包。block drafter 的采样路径折叠进融合 kernel，矩阵乘做了 shard。在一个示例 profile 里，target verify 之外的部分缩短了 1.7 ms，而 verify 本身是 7.3 ms。
 
 调度侧，DSpark 几乎不加特判就接入了 SGLang 的 zero-overhead(overlap)scheduler。spec-v2 运行时是随 DFlash 集成一起上线的，当时它的 overlap scheduling 在初版实现之上又多拿了 33% 的吞吐。它在独立 stream 上把下一步的调度和当前 forward 重叠，DSpark 作为一等 worker 加入：forward 输出以 async future 返回，跨迭代的顺序靠运行时的 device 侧 barrier，页表在 device 上，每步不需要 host 同步。confidence relay 走同一条通道，读两步之前的值。解码循环于是完全没有逐步气泡，比关掉 overlap scheduler 紧约 1.5×：
 
@@ -117,9 +115,9 @@ kernel 侧，SGLang 把 verify 周围成簇的小算子重写成融合的 Triton
 
 ## 用 SGLang serve DeepSeek-V4
 
-DeepSeek-V4 有两个尺寸，1.6T 的 Pro 和 284B 的 Flash。每一层都把滑动窗口注意力和压缩注意力混着用，撑起 1M token 的上下文；checkpoint 还自带一个原生训练的单层 MTP head。SGLang 从 Day 0 起就支持这个家族，前缀缓存、kernel、并行方式都为混合注意力路径专门做过；那一侧的细节见文末的 Day-0 blog。
+DeepSeek-V4 有 1.6T 的 Pro 和 284B 的 Flash 两个尺寸，SGLang 从 Day 0 起就支持这个家族，前缀缓存、kernel、并行方式都为它的混合注意力路径专门做过。投机解码架在这之上，是 serving 时的一个选择：`--speculative-algorithm` 选 EAGLE(跑 checkpoint 自带的 MTP head)、DFLASH 或 DSPARK，三者都不改 target 模型的架构与输出分布。
 
-本文讲的一切都架在这之上，是 serving 时的一个选择。投机解码不碰 target 模型的架构，也不改输出分布：drafter 是单独训练的伴随模型，关掉投机就等于加载裸的 checkpoint。同一个 V4 target 上，`--speculative-algorithm` 选的就是 drafter 的代际：EAGLE 跑 checkpoint 里自带的 MTP head，DFLASH 跑块扩散 drafter，DSPARK 跑 DeepSeek 以伴随 checkpoint 形式发布的置信度调度 drafter(DeepSeek-V4-Flash-DSpark、DeepSeek-V4-Pro-DSpark)。DSpark 论文报告，在 DeepSeek 自己的 V4 服务系统里、真实用户流量下，DSpark 在同等吞吐水平上把单用户生成速度比 MTP 基线提高 60–85%。完整的启动配方和复现命令都在文末的原文链接里。
+Day-0 blog 在 B200 上测得 V4-Pro 单请求解码 199 tok/s，用的是接受长度约 2.5 的 EAGLE，且从 4K 到 900K 上下文几乎持平。本文开头的 383.7 tok/s 是同一个模型换上新一代栈的结果：DSpark，接受长度约 5，B300 加 TP8。两者硬件不同代，所以是参照而不是严格 A/B，但方向正是全文一直在讲的那条：每步接受的块越长，单请求解码越快。DeepSeek 在自家 V4 服务系统里报告了同样的效果，同等吞吐下 DSpark 把单用户生成速度比 MTP 基线提高 60–85%。
 
 ## Acknowledgments
 

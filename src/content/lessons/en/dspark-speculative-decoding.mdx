@@ -209,12 +209,8 @@ fill the full window of six; about 80% of poetry steps use three or fewer:
 
 ### Zero-overhead scheduling and kernels
 
-Two kinds of engineering turn the schedule into wall-clock time: cutting the
-cost of each step, and hiding the scheduler behind the forward. Together they
-reach 383.7 tok/s at accept length ~5 at batch size 1, on DeepSeek-V4-Pro with
-TP8 on B300.
-
-On the kernel side, SGLang rewrote the clusters of tiny ops around the verify
+Turning the schedule into wall-clock time takes two kinds of engineering. On
+the kernel side, SGLang rewrote the clusters of tiny ops around the verify
 as fused Triton kernels: the compact scatter, the SWA page-index, the
 verify-length top-k schedule, and the ragged-window packing. The block
 drafter's sampling path folds into fused kernels, and its matrix multiplication
@@ -236,26 +232,22 @@ per-step bubble, about 1.5× tighter than with the overlap scheduler off:
 
 ## Serving DeepSeek-V4 with SGLang
 
-DeepSeek-V4 ships in two sizes, the 1.6T Pro and the 284B Flash. Each layer
-mixes sliding-window attention with compressed attention to keep the 1M-token
-context tractable, and the checkpoint includes a natively trained single-layer
-MTP head. SGLang has served the family since day 0, with prefix caching,
-kernels, and parallelism built for the hybrid attention path; the day-0 blog in
-the references covers that side.
+DeepSeek-V4 ships as the 1.6T Pro and the 284B Flash, and SGLang has served
+the family since day 0, with prefix caching, kernels, and parallelism built for
+its hybrid attention path. Speculation sits on top as a serving-time choice:
+`--speculative-algorithm` picks EAGLE, which runs the MTP head inside the
+checkpoint, or DFLASH, or DSPARK, and none of them changes the target model's
+architecture or output distribution.
 
-Everything in this post sits on top of that as a serving-time choice.
-Speculation never touches the target model's architecture or its output
-distribution: the drafter is a separately trained companion model, and turning
-speculation off just means loading the plain checkpoint. On the same V4
-target, `--speculative-algorithm` selects the generation of drafter: EAGLE
-runs the MTP head that ships inside the checkpoint, DFLASH runs a
-block-diffusion drafter, and DSPARK runs the confidence-scheduled drafter that
-DeepSeek releases as companion checkpoints (DeepSeek-V4-Flash-DSpark,
-DeepSeek-V4-Pro-DSpark). The DSpark paper reports that in DeepSeek's own V4
-serving system, under live user traffic, DSpark accelerates per-user
-generation by 60–85% over the MTP baseline at matched throughput. Full launch
-recipes and reproduction commands live in the original blogs in the
-references.
+The day-0 blog measured V4-Pro single-user decode at 199 tok/s on B200, running
+EAGLE at accept length ~2.5, and held it nearly flat from 4K to 900K context.
+The 383.7 tok/s quoted earlier is the same model on the newer stack: DSpark at
+accept length ~5, on B300 with TP8. The hardware generations differ, so the two
+are a reference pair rather than a controlled A/B, but the direction is the one
+this post has been tracing: longer accepted blocks per step mean faster
+single-user decode. DeepSeek reports the same effect in its own V4 serving
+system, where DSpark raises per-user generation by 60–85% over the MTP baseline
+at matched throughput.
 
 ## Acknowledgments
 
