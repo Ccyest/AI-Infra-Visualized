@@ -117,7 +117,13 @@ CUDA graph 要求固定的输入形状，而裁剪后每个请求的验证长度
 
 DeepSeek-V4 有 1.6T 的 Pro 和 284B 的 Flash 两个尺寸，SGLang 从 Day 0 起就支持这个家族，前缀缓存、kernel、并行方式都为它的混合注意力路径专门做过。投机解码架在这之上，是 serving 时的一个选择：`--speculative-algorithm` 选 EAGLE(跑 checkpoint 自带的 MTP head)、DFLASH 或 DSPARK，三者都不改 target 模型的架构与输出分布。
 
-Day-0 blog 在 B200 上测得 V4-Pro 单请求解码 199 tok/s，用的是接受长度约 2.5 的 EAGLE，且从 4K 到 900K 上下文几乎持平。本文开头的 383.7 tok/s 是同一个模型换上新一代栈的结果：DSpark，接受长度约 5，B300 加 TP8。两者硬件不同代，所以是参照而不是严格 A/B，但方向正是全文一直在讲的那条：每步接受的块越长，单请求解码越快。DeepSeek 在自家 V4 服务系统里报告了同样的效果，同等吞吐下 DSpark 把单用户生成速度比 MTP 基线提高 60–85%。
+| 投机方案 | 目标模型 · 硬件 | 接受长度 | 单请求解码 |
+| --- | --- | --- | --- |
+| EAGLE(MTP head) | V4-Pro · B200 TP8 | ~2.5 | 199 tok/s |
+| EAGLE(MTP head) | V4-Flash · H200 TP4 | ~2.5 | 266 tok/s |
+| DSpark | V4-Pro · B300 TP8 | ~5 | 383.7 tok/s |
+
+前两行来自 Day-0 blog，第三行来自 DSpark blog。硬件不同代，所以这是参照表，不是严格 A/B；同一台 server 上的对照是本文前面那张吞吐-延迟频谱图。
 
 ## Acknowledgments
 

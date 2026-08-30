@@ -239,15 +239,16 @@ its hybrid attention path. Speculation sits on top as a serving-time choice:
 checkpoint, or DFLASH, or DSPARK, and none of them changes the target model's
 architecture or output distribution.
 
-The day-0 blog measured V4-Pro single-user decode at 199 tok/s on B200, running
-EAGLE at accept length ~2.5, and held it nearly flat from 4K to 900K context.
-The 383.7 tok/s quoted earlier is the same model on the newer stack: DSpark at
-accept length ~5, on B300 with TP8. The hardware generations differ, so the two
-are a reference pair rather than a controlled A/B, but the direction is the one
-this post has been tracing: longer accepted blocks per step mean faster
-single-user decode. DeepSeek reports the same effect in its own V4 serving
-system, where DSpark raises per-user generation by 60–85% over the MTP baseline
-at matched throughput.
+| Speculation | Target · hardware | Accept length | Single-user decode |
+| --- | --- | --- | --- |
+| EAGLE (MTP head) | V4-Pro · B200 TP8 | ~2.5 | 199 tok/s |
+| EAGLE (MTP head) | V4-Flash · H200 TP4 | ~2.5 | 266 tok/s |
+| DSpark | V4-Pro · B300 TP8 | ~5 | 383.7 tok/s |
+
+The first two rows come from the day-0 blog, the third from the DSpark blog.
+The hardware generations differ, so read this as a reference table, not a
+controlled A/B; the same-server comparison is the frontier figure earlier in
+this post.
 
 ## Acknowledgments
 
