@@ -1,0 +1,93 @@
+---
+title: "SGLang Unified Memory：显存吃紧时，前缀保留量达到 1.9 倍"
+description: "SGLang 的混合模型同时保存不断增长的注意力缓存和循环状态。固定分池可能让一边耗尽、另一边闲置，限制 GPU 能接纳的请求数。Unified Memory 让这些缓存共用一个 GPU 缓冲区，容量随负载调整。本文通过交互图解释分配、页面搬移和缓存驱逐。后续驱逐优化在 Qwen3.5-4B 的受控缓存压力实验中，将重放总耗时降低 **37.9%**。这项结果比较的是两种已启用 Unified Memory 的实现；共享池本身的价值是减少固定分区造成的容量闲置。"
+order: 7
+concepts: []
+tryOnSglang: "https://github.com/sgl-project/sglang"
+references:
+  - label: "LMSYS Blog: SGLang and Miles Add Day-0 Support for Kimi K3"
+    url: "https://www.lmsys.org/blog/2026-07-27-kimi-k3-day0-support"
+  - label: "SGLang Cookbook: Kimi K3"
+    url: "https://docs.sglang.io/cookbook/autoregressive/Moonshotai/Kimi-K3"
+  - label: "sglang#29678: feat(mem_cache): unified memory pool for hybrid Mamba / SWA models"
+    url: "https://github.com/sgl-project/sglang/pull/29678"
+  - label: "sglang#33091: [unified-memory] Stop eviction when shared allocation capacity is sufficient"
+    url: "https://github.com/sgl-project/sglang/pull/33091"
+  - label: "sglang#35177: feat(unified-memory): three sub-pools for mamba + hybrid-SWA models"
+    url: "https://github.com/sgl-project/sglang/pull/35177"
+  - label: "sglang#34613: feat(unified-memory): read unified pool from attention backends fa3/flashinfer/trtllm_mha/flashmla"
+    url: "https://github.com/sgl-project/sglang/pull/34613"
+  - label: "sglang#32971: [unified-memory] Support MLA-hybrid-Mamba (Kimi-Linear) on the Triton backend"
+    url: "https://github.com/sgl-project/sglang/pull/32971"
+  - label: "sglang#33362: [PD] Support --enable-unified-memory with PD disaggregation (kimi-linear MLA hybrid-Mamba)"
+    url: "https://github.com/sgl-project/sglang/pull/33362"
+  - label: "sglang#33974: [unified memory] Support DSPARK speculative decoding + fix two NaN root causes (page hand-out zeroing, CuTe int32 slot-stride wrap)"
+    url: "https://github.com/sgl-project/sglang/pull/33974"
+  - label: "SGLang v0.5.19 release notes"
+    url: "https://github.com/sgl-project/sglang/releases/tag/v0.5.19"
+---
+
+import CapacityViz from "../../../viz/unified-memory/CapacityViz";
+import CompactionViz from "../../../viz/unified-memory/CompactionViz";
+import BenchmarkViz from "../../../viz/unified-memory/BenchmarkViz";
+import HistoryViz from "../../../viz/unified-memory/HistoryViz";
+
+## 背景
+
+混合模型会保存多种推理状态。Full-attention KV 随请求中的 token 增长。循环层则维护一个大小固定的状态，每处理一个 token 就更新一次。并发请求越多，需要的状态槽位越多；上下文越长，需要的 KV 越多。滑动窗口注意力又增加了一种模式：只保存有限尾部窗口内的 KV。
+
+分别定容的池要求服务器在尚不知道实际负载时，就选好容量比例。大量短请求可能用完状态槽位，KV 空间却闲着；长上下文可能用完 KV，状态池却还有余量。两种情况下，GPU 都还有空闲显存，却已经有请求需要等待。
+
+下图固定总容量，用简化的单位展示分配限制。每个被接纳的请求都需要一个状态块和对应的 KV。最后一个预设会触及物理容量上限，此时仅靠共享也无法再接纳更多请求。
+
+<CapacityViz client:visible />
+
+## Unified Memory
+
+### 设计与机制
+
+SGLang 分配一个连续的 GPU 字节缓冲区。在双池设计中，循环状态从一端向内增长，full-attention KV 从另一端向内增长，两者都从中间的空闲区取得容量。每个子池保留自己的块大小。Kimi K3 博客给出的 TP8 例子中，一个请求的 KDA 状态跨循环层合计约 54 MB，一个 token 的 MLA KV 跨注意力层合计约 27 KB。
+
+要让搬移真正释放出一段可用空间，一页数据在不同层的部分就需要一起移动。SGLang 把这些数据放进连续的 page envelope。分配器可以将一个已占用的 envelope 搬进空洞，把原来的位置让给相邻子池。图中使用归一化的块大小，让两种数据都能看清。
+
+<CompactionViz client:visible />
+
+### 稳定的页面引用
+
+B 被释放后，C 仍把内部空洞和共享空闲区隔开。把 C 搬到 B 原来的位置，就能把可用空间连起来。但请求可能仍引用 C，如果直接保存物理地址，这些引用就会指向旧位置。
+
+SGLang 在分配器之上保存虚拟页号，在访问显存时翻译到当前的物理位置。C 搬移后，虚拟编号不变，映射表随之更新。图里展示的是一次完成的压实步骤。实际实现可以延迟压实，不会每释放一页就立刻复制。页面搬移和索引翻译仍有成本，也必须与 GPU 执行协调。
+
+### 三种状态
+
+同样的设计现在可以让 full-attention KV、滑动窗口 KV 和循环状态共用一个缓冲区。三个子池的扩展增加了一个中间子池，它可以在相邻子池之间搬移。Inkling 这类模型因此能让三种状态共享容量，不必在启动时保留三个固定区域。
+
+Unified Radix Cache 记录哪些 token 前缀有可复用的 KV 或状态 checkpoint。Unified Memory 分配保存这些数据的 GPU 字节。树负责找到请求可复用的数据，池负责提供物理存储。[Unified Radix Cache 课程](../unified-radix-cache/)进一步解释了前缀匹配规则。
+
+## 缓存驱逐
+
+共享字节也改变了驱逐应该何时停止。显存吃紧时，缓存会删除可复用的前缀，为新分配腾出空间。释放一个前缀，可能同时释放 KV 和循环状态块。压实后，释放的状态字节也能变成 KV 的可用空间。
+
+如果驱逐循环只统计释放了多少 KV 条目，就可能在共享容量已经足够后继续删除前缀。SGLang 的后续改动 #33091 会检查共享分配器能否满足当前分配，一旦可以就停止。这样能为后来的请求留下更多缓存前缀，减少重复的 prefill 计算。
+
+### 实测结果
+
+实验先预热一组可复用前缀，再用一个不相关的长请求制造显存压力，最后重放原来的前缀。两组都已经启用 Unified Memory，只改变分配触发的驱逐行为。池被限制为 8,192 个 FULL token 和 32 个 Mamba 状态，chunked prefill 设为 8,192 tokens。
+
+<BenchmarkViz client:visible />
+
+耗时结果取六次运行的中位数。实验在缓存压力下检查了输出 token 一致性，对比请求都没有发生回撤或分配失败。报告中的总吞吐没有稳定变化。把 prefill chunk 缩小到 2,048 tokens 后，两组都保留了 28 段前缀中的 17 段，因此收益取决于分配压力如何释放共享容量。
+
+共享池初版 PR 没有发布速度基准。后续三个子池的 PR 在匹配注意力后端的条件下比较了共享池和固定池，各模型的 token 间延迟中位数变化从 −0.81% 到 +1.32%。这符合该功能主要改善显存容量分配的定位，运行时开销仍需按具体负载测量。
+
+## 发布历史
+
+SGLang 最初将共享池作为需要显式开启的功能引入。随后 Kimi K3 博客介绍了设计，后续版本继续扩展模型和执行路径。时间线分别标明 PR 合入日期和版本发布日期。
+
+<HistoryViz client:visible />
+
+在受支持的模型与后端上，通过 `--enable-unified-memory` 开启。截至 2026 年 9 月 9 日，v0.5.19 已包含三个子池和更多注意力后端；更早的 v0.5.18 包含 DSpark 接入和 Kimi-Linear MLA 混合路径的 PD 支持。兼容性取决于模型、后端与服务配置，这些版本并不代表投机解码、PD 与分层缓存的任意组合都受支持。
+
+## 来源与致谢
+
+本文依据 SGLang 团队 Kimi K3 博客中的 Unified Memory 章节及所链接的实现 PR 编写。基准数据来自 #33091 和 #35177；容量与搬移图是教学模型，不是新的性能测量。感谢参与实现、测试和文档工作的 SGLang 贡献者。

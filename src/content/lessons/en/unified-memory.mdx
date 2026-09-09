@@ -1,0 +1,93 @@
+---
+title: "Unified Memory in SGLang: 1.9× prefix retention under cache pressure"
+description: "SGLang's hybrid models keep growing attention caches alongside recurrent states. With fixed memory partitions, one pool can fill up while another still has room, limiting the requests a GPU can serve. Unified Memory lets these caches share one GPU buffer and adjusts their capacity as traffic changes. This article shows how allocation, page movement, and cache eviction fit together. A follow-up eviction improvement reduced total replay time by **37.9%** in a controlled Qwen3.5-4B cache-pressure experiment. That result compares two unified-memory implementations; the feature's broader benefit is less capacity stranded behind fixed pool boundaries."
+order: 7
+concepts: []
+tryOnSglang: "https://github.com/sgl-project/sglang"
+references:
+  - label: "LMSYS Blog: SGLang and Miles Add Day-0 Support for Kimi K3"
+    url: "https://www.lmsys.org/blog/2026-07-27-kimi-k3-day0-support"
+  - label: "SGLang Cookbook: Kimi K3"
+    url: "https://docs.sglang.io/cookbook/autoregressive/Moonshotai/Kimi-K3"
+  - label: "sglang#29678: feat(mem_cache): unified memory pool for hybrid Mamba / SWA models"
+    url: "https://github.com/sgl-project/sglang/pull/29678"
+  - label: "sglang#33091: [unified-memory] Stop eviction when shared allocation capacity is sufficient"
+    url: "https://github.com/sgl-project/sglang/pull/33091"
+  - label: "sglang#35177: feat(unified-memory): three sub-pools for mamba + hybrid-SWA models"
+    url: "https://github.com/sgl-project/sglang/pull/35177"
+  - label: "sglang#34613: feat(unified-memory): read unified pool from attention backends fa3/flashinfer/trtllm_mha/flashmla"
+    url: "https://github.com/sgl-project/sglang/pull/34613"
+  - label: "sglang#32971: [unified-memory] Support MLA-hybrid-Mamba (Kimi-Linear) on the Triton backend"
+    url: "https://github.com/sgl-project/sglang/pull/32971"
+  - label: "sglang#33362: [PD] Support --enable-unified-memory with PD disaggregation (kimi-linear MLA hybrid-Mamba)"
+    url: "https://github.com/sgl-project/sglang/pull/33362"
+  - label: "sglang#33974: [unified memory] Support DSPARK speculative decoding + fix two NaN root causes (page hand-out zeroing, CuTe int32 slot-stride wrap)"
+    url: "https://github.com/sgl-project/sglang/pull/33974"
+  - label: "SGLang v0.5.19 release notes"
+    url: "https://github.com/sgl-project/sglang/releases/tag/v0.5.19"
+---
+
+import CapacityViz from "../../../viz/unified-memory/CapacityViz";
+import CompactionViz from "../../../viz/unified-memory/CompactionViz";
+import BenchmarkViz from "../../../viz/unified-memory/BenchmarkViz";
+import HistoryViz from "../../../viz/unified-memory/HistoryViz";
+
+## Background
+
+A hybrid model stores more than one kind of inference state. Full-attention KV grows as a request accumulates tokens. A recurrent layer keeps a fixed-size state that it updates for each token. More concurrent requests need more state slots; longer contexts need more KV. Sliding-window attention adds a third pattern: KV for a bounded trailing window.
+
+Separately sized pools force the server to choose a capacity split before it knows the traffic. A batch of short requests can exhaust state slots while KV space sits idle. Long contexts can exhaust KV while the state pool has spare room. Both cases leave requests waiting even though some GPU memory is still unused.
+
+The comparison below holds total capacity fixed. Its units are deliberately simplified to expose the allocation limit. Every admitted request needs both a state block and KV. The last preset reaches the physical capacity limit, where sharing alone cannot admit more requests.
+
+<CapacityViz client:visible lang="en" />
+
+## Unified Memory
+
+### Design and mechanism
+
+SGLang allocates one contiguous GPU byte buffer. In the two-pool design, recurrent states grow inward from one end and full-attention KV grows inward from the other. Both draw from the free region between them. Each sub-pool keeps its own block size. In the Kimi K3 blog's TP8 example, one request's KDA state is about 54 MB across its recurrent layers, while one token's MLA KV is about 27 KB across its attention layers.
+
+For movement to release a usable region, a page's data across its layers must travel together. SGLang groups that data in a contiguous page envelope. The allocator can then move an occupied envelope into a hole and return the vacated space to a neighboring sub-pool. The diagram uses normalized block sizes so both kinds remain visible.
+
+<CompactionViz client:visible lang="en" />
+
+### Stable page references
+
+After B is freed, C still separates the interior hole from the shared free region. Moving C into B's old position joins the available space. But requests may still refer to C, so storing its physical address directly would leave those references pointing at the old location.
+
+SGLang keeps virtual page IDs above the allocator and translates them to current physical locations for memory access. When C moves, its virtual ID stays the same and the mapping changes. The diagram shows one completed compaction step. The implementation can defer compaction; it does not copy pages immediately after every free. Page movement and index translation still have costs and must be coordinated with GPU execution.
+
+### Three kinds of state
+
+The same design now supports full-attention KV, sliding-window KV, and recurrent state in one buffer. The three-pool extension adds a middle sub-pool that can relocate between its neighbors. Models such as Inkling therefore share capacity across all three kinds instead of reserving three fixed regions at startup.
+
+Unified Radix Cache tracks which token prefixes have reusable KV or state checkpoints. Unified Memory allocates the GPU bytes that hold those values. The tree answers which stored values a request can reuse; the pool supplies their physical storage. The [Unified Radix Cache lesson](../unified-radix-cache/) explains the prefix-matching rules in more detail.
+
+## Cache eviction
+
+Sharing bytes also changes when eviction should stop. Under pressure, the cache removes reusable prefixes to make room for a new allocation. Releasing one prefix can free both KV and a recurrent-state block. After compaction, the freed state bytes can also provide space for KV.
+
+An eviction loop that counts only freed KV entries may keep deleting prefixes after enough shared capacity is already available. SGLang's follow-up change, #33091, checks whether the shared allocator can satisfy the pending allocation and stops at that point. More cached prefixes remain available for later requests, reducing repeated prefill work.
+
+### Measured results
+
+The experiment first fills the cache with reusable prefixes, adds an unrelated long request to create memory pressure, then replays the original prefixes. Both variants already use Unified Memory. Only the allocation-driven eviction behavior changes. The pool is constrained to 8,192 FULL tokens and 32 Mamba states, and chunked prefill is set to 8,192 tokens.
+
+<BenchmarkViz client:visible lang="en" />
+
+The timing results are medians over six runs. Output-token parity was checked under cache pressure, and the compared requests completed without retractions or allocation failures. The reported aggregate throughput showed no stable change. With a smaller 2,048-token prefill chunk, both variants retained 17 of 28 prefixes, so the improvement depends on how allocation pressure releases shared capacity.
+
+The initial pool PR did not publish a speed benchmark. The later three-pool PR compared unified and static pools at matched attention backends; its model-level median inter-token latency changes ranged from −0.81% to +1.32%. That is consistent with a feature aimed at flexible memory capacity, with runtime overhead that still needs measurement for each workload.
+
+## Release history
+
+SGLang introduced the shared pool as an opt-in feature. The Kimi K3 blog then explained the design, and later releases expanded the supported models and execution paths. The timeline distinguishes a PR's merge date from a version's publication date.
+
+<HistoryViz client:visible lang="en" />
+
+Enable it with `--enable-unified-memory` on a supported model and backend. As of September 9, 2026, v0.5.19 includes three sub-pools and additional attention backends; the earlier v0.5.18 includes DSpark integration and PD support for the Kimi-Linear MLA-hybrid path. Compatibility is specific to the model, backend, and serving configuration. These releases do not imply that every combination of speculative decoding, PD, and hierarchical caching is supported.
+
+## Sources and credits
+
+This lesson follows the Unified Memory section of the SGLang team's Kimi K3 blog and the linked implementation PRs. Benchmark results are reported by #33091 and #35177; the capacity and movement diagrams are teaching models, not new performance measurements. Thanks to the SGLang contributors who built, tested, and documented this work.
