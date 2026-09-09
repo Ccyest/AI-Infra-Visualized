@@ -19,12 +19,12 @@ export default function CompactionViz({ lang = "zh" }: { lang?: Locale }) {
       { label: S.unused[lang], swatch: { background: "var(--page-2)", border: "1px solid var(--grid)" } },
     ]} />}>
     <div className="um-steps">{FRAMES.map((f, i) => <button type="button" key={f.event}
-      className={`viz-btn${player.t === i ? " primary" : ""}`} aria-pressed={player.t === i}
+      className={`um-phase${player.t === i ? " active" : ""}`} aria-pressed={player.t === i}
       onClick={() => player.seek(i)}>{i + 1}. {S[f.event][lang]}</button>)}</div>
     <div className="um-reference-grid">
-      <div className="um-reference"><span>{S.virtualIds[lang]}</span><b>{S.request[lang]} C → C</b></div>
+      <div className="um-reference"><span>{S.virtualIds[lang]}</span><b className="um-page-ref um-stable">C → C</b></div>
       <div className="um-reference"><span>{S.mapping[lang]}</span>
-        <div className="um-mapping">{frame.stateMap.map((m) => <b key={m.id} className={m.id === "C" && player.t >= 2 ? "um-highlight" : ""}>{m.id} → {m.physical}</b>)}</div>
+        <div className="um-mapping">{frame.stateMap.map((m) => <b key={m.id} className={`um-page-ref${m.id === "C" && player.t >= 2 ? " um-highlight" : ""}`}>{m.id} → {m.physical}</b>)}</div>
       </div>
     </div>
     <div className="um-move-track" aria-live="polite">
@@ -32,11 +32,11 @@ export default function CompactionViz({ lang = "zh" }: { lang?: Locale }) {
     </div>
     <PoolStrip blocks={frame.blocks} lang={lang} label={`${S[frame.event][lang]}: ${S.sharedGap[lang]} ${frame.gapSize}, ${S.hole[lang]} ${frame.holeSize}`} />
     <div className="um-gap-track" aria-hidden="true">
-      {frame.gapSize > 0 && <span style={{ marginLeft: `${frame.gapStart / 24 * 100}%`, width: `${frame.gapSize / 24 * 100}%` }}>{S.sharedGap[lang]}</span>}
+      {frame.gapSize > 0 && <span style={{ marginLeft: `${frame.gapStart / 24 * 100}%`, width: `${frame.gapSize / 24 * 100}%` }} />}
     </div>
-    <div className="viz-stats" aria-live="polite">
-      <span className="viz-stat">{S.sharedGap[lang]} <b>{frame.gapSize}</b></span>
-      <span className="viz-stat">{S.hole[lang]} <b>{frame.holeSize}</b></span>
+    <div className="um-stats" aria-live="polite">
+      <span>{S.sharedGap[lang]} <b>{frame.gapSize}</b></span>
+      <span>{S.hole[lang]} <b>{frame.holeSize}</b></span>
     </div>
   </VizStage>;
 }

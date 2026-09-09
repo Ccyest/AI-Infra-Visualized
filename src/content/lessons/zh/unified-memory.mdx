@@ -1,6 +1,6 @@
 ---
 title: "SGLang Unified Memory：显存吃紧时，前缀保留量达到 1.9 倍"
-description: "SGLang 的混合模型同时保存不断增长的注意力缓存和循环状态。固定分池可能让一边耗尽、另一边闲置，限制 GPU 能接纳的请求数。Unified Memory 让这些缓存共用一个 GPU 缓冲区，容量随负载调整。本文通过交互图解释分配、页面搬移和缓存驱逐。后续驱逐优化在 Qwen3.5-4B 的受控缓存压力实验中，将重放总耗时降低 **37.9%**。这项结果比较的是两种已启用 Unified Memory 的实现；共享池本身的价值是减少固定分区造成的容量闲置。"
+description: "SGLang 的 Unified Memory 让注意力缓存和循环状态共用一个 GPU 缓冲区。容量随负载调整：短请求可以借用空闲的 KV 空间增加状态槽位，长上下文可以借用空闲的状态空间保存更多 KV。数据搬移后，虚拟页号保持不变。缓存驱逐也按共享容量判断，下一次分配能放下就停止。在 Qwen3.5-4B 的缓存压力实验中，这项驱逐改动将 28 段前缀中的保留量从 10 段提高到 19 段，重放耗时降低 **37.9%**。两组都已启用 Unified Memory。"
 order: 7
 concepts: []
 tryOnSglang: "https://github.com/sgl-project/sglang"

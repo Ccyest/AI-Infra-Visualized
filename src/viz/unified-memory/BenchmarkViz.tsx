@@ -8,7 +8,7 @@ import "./styles.css";
 
 const METRICS: Metric[] = ["retained", "replay", "prefill"];
 const DELTA = { retained: "retentionDelta", replay: "replayDelta", prefill: "prefillDelta" } as const;
-const ARMS = [{ id: "before", color: "var(--series-4)" }, { id: "after", color: "var(--series-1)" }] as const;
+const ARMS = [{ id: "before", color: "var(--series-2)" }, { id: "after", color: "var(--series-1)" }] as const;
 
 export default function BenchmarkViz({ lang = "zh" }: { lang?: Locale }) {
   const [metric, setMetric] = useState<Metric>("retained");
@@ -18,24 +18,25 @@ export default function BenchmarkViz({ lang = "zh" }: { lang?: Locale }) {
     <div className="viz-presets">{METRICS.map((m) => <button key={m} type="button"
       className={`viz-btn${metric === m ? " primary" : ""}`} aria-pressed={metric === m}
       onClick={() => setMetric(m)}>{S[m][lang]}</button>)}</div>
-    <div className="um-result" aria-live="polite"><b>{S[DELTA[metric]][lang]}</b></div>
+    <div className="um-bench-head" aria-live="polite"><span>{S[metric][lang]}</span><b>{S[DELTA[metric]][lang]}</b></div>
     {ARMS.map((arm) => <div className="um-bench-row" key={arm.id}>
       <span>{S[arm.id][lang]}</span>
       <div>
         {metric === "retained" ? <div className="um-prefixes" role="img" aria-label={`${S[arm.id][lang]}: ${data[arm.id]} / 28`}>
           {Array.from({ length: 28 }, (_, i) => <span key={i}
+            className={i < data[arm.id] ? undefined : "um-evicted"}
             title={S[i < data[arm.id] ? "retainedLegend" : "evictedLegend"][lang]}
-            style={{ background: i < data[arm.id] ? arm.color : "var(--grid)" }} />)}
+            style={i < data[arm.id] ? { background: arm.color } : undefined} />)}
         </div> : <div className="um-bench-track"><span className="um-bench-fill"
           style={{ width: `${data[arm.id] / data.max * 100}%`, background: arm.color }} /></div>}
       </div>
       <output>{data[arm.id]}{metric === "retained" ? " / 28" : metric === "replay" ? " s" : " ms"}</output>
     </div>)}
-    {metric === "retained" && <Legend items={[
-      { label: S.before[lang], swatch: { background: "var(--series-4)" } },
+    {metric === "retained" && <div className="um-bench-legend"><Legend items={[
+      { label: S.before[lang], swatch: { background: "var(--series-2)" } },
       { label: S.after[lang], swatch: { background: "var(--series-1)" } },
-      { label: S.evictedLegend[lang], swatch: { background: "var(--grid)" } },
-    ]} />}
+      { label: S.evictedLegend[lang], swatch: { background: "var(--um-hatch)", opacity: 0.55 } },
+    ]} /></div>}
     <div className="um-note">{S.benchNote[lang]} <a href="https://github.com/sgl-project/sglang/pull/33091" target="_blank" rel="noreferrer">{S.source[lang]}</a></div>
   </figure>;
 }

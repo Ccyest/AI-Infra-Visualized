@@ -1,6 +1,6 @@
 ---
 title: "Unified Memory in SGLang: 1.9× prefix retention under cache pressure"
-description: "SGLang's hybrid models keep growing attention caches alongside recurrent states. With fixed memory partitions, one pool can fill up while another still has room, limiting the requests a GPU can serve. Unified Memory lets these caches share one GPU buffer and adjusts their capacity as traffic changes. This article shows how allocation, page movement, and cache eviction fit together. A follow-up eviction improvement reduced total replay time by **37.9%** in a controlled Qwen3.5-4B cache-pressure experiment. That result compares two unified-memory implementations; the feature's broader benefit is less capacity stranded behind fixed pool boundaries."
+description: "SGLang's Unified Memory lets attention caches and recurrent states share one GPU buffer. Capacity moves between them as traffic changes, so short requests can use spare KV space for more state slots, and long contexts can use spare state space for more KV. Page IDs stay stable even when data moves. Cache eviction follows the shared capacity too: once the next allocation fits, it can stop. In a Qwen3.5-4B cache-pressure test, this eviction change retained 19 of 28 prefixes instead of 10 and cut replay time by **37.9%**. Both variants already used Unified Memory."
 order: 7
 concepts: []
 tryOnSglang: "https://github.com/sgl-project/sglang"

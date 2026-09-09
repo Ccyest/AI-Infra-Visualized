@@ -26,12 +26,12 @@ export default function CapacityViz({ lang = "zh" }: { lang?: Locale }) {
       const result = allocate(requests, kv, unified);
       const name = S[unified ? "unified" : "static"][lang];
       return <section className="um-lane" key={name}>
-        <div className="viz-section-head"><b>{name}</b>{!unified && <span>{S.fixedWall[lang]}: 8 / 16</span>}</div>
+        <div className="um-lane-head"><b>{name}</b>{!unified && <span>{S.fixedWall[lang]}: 8 / 16</span>}</div>
         <PoolStrip blocks={result.blocks} fixed={!unified} lang={lang} label={`${name}: ${result.admitted}/${requests} ${S.admitted[lang]}`} />
-        <div className="viz-stats" aria-live="polite">
-          <span className="viz-stat">{S.admitted[lang]} <b>{result.admitted} / {requests}</b></span>
-          <span className="viz-stat">{S.waiting[lang]} <b>{result.waiting}</b></span>
-          <span className="viz-stat">{S.free[lang]} <b>{result.free}</b></span>
+        <div className="um-stats" aria-live="polite">
+          <span>{S.admitted[lang]} <b>{result.admitted} / {requests}</b></span>
+          <span>{S.waiting[lang]} <b>{result.waiting}</b></span>
+          <span>{S.free[lang]} <b>{result.free}</b></span>
         </div>
       </section>;
     })}
