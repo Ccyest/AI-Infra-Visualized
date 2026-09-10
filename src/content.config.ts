@@ -8,6 +8,8 @@ const lessons = defineCollection({
   schema: z.object({
     title: z.string(),
     description: z.string(),
+    publishedDate: z.string().date().optional(),
+    updatedDate: z.string().date().optional(),
     /** 排序与上一篇/下一篇导航用,新文章递增 */
     order: z.number(),
     concepts: z.array(z.string()).default([]),

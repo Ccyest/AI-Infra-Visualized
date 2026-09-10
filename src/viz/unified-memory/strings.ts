@@ -1,6 +1,56 @@
 import type { Localized } from "../../lib/i18n";
 
 export const S = {
+  mlaTitle: { en: "MLA page addressing", zh: "MLA 页面寻址" },
+  mlaSub: { en: "Schematic \u00b7 2 MLA layers \u00b7 4 tokens/page \u00b7 page 0 reserved", zh: "示意模型 · 2 个 MLA 层 · 每页 4 tokens · 第 0 页预留" },
+  beforeMove: { en: "Before compaction", zh: "压实前" },
+  afterMove: { en: "After compaction", zh: "压实后" },
+  layer: { en: "Layer", zh: "层" },
+  pageOffset: { en: "Token offset within page", zh: "页内 token 偏移" },
+  virtualToken: { en: "Virtual token ID", zh: "虚拟 token 编号" },
+  physicalToken: { en: "Physical token ID", zh: "物理 token 编号" },
+  kernelIndex: { en: "Kernel row index", zh: "Kernel 行索引" },
+  viewOrigin: { en: "Layer-view origin", zh: "层视图起点" },
+  rawRow: { en: "Raw-buffer row", zh: "原始缓冲区行号" },
+  reserved: { en: "Reserved", zh: "预留" },
+  selectedRow: { en: "Selected row", zh: "选中行" },
+  specTitle: { en: "DSpark verification", zh: "DSpark 验证" },
+  specSub: { en: "Schematic \u00b7 4 draft tokens \u00b7 accepted draft prefix only", zh: "示意模型 · 4 个 draft tokens · 仅展示草稿前缀的接纳" },
+  reserveSpec: { en: "Allocate", zh: "分配" },
+  verifySpec: { en: "Verify", zh: "验证" },
+  commitSpec: { en: "Commit", zh: "提交" },
+  acceptedTokens: { en: "Accepted draft tokens", zh: "接纳的 draft tokens" },
+  draftPool: { en: "Draft pool", zh: "Draft 池" },
+  virtualIdsOnly: { en: "Virtual IDs", zh: "虚拟编号" },
+  targetKv: { en: "Target KV", zh: "Target KV" },
+  denseIdsOnly: { en: "Kernel indices", zh: "Kernel 索引" },
+  stateSnapshots: { en: "State snapshots", zh: "状态快照" },
+  physicalIdsOnly: { en: "Physical slots", zh: "物理槽位" },
+  currentState: { en: "Committed state", zh: "已提交状态" },
+  zeroed: { en: "Zeroed", zh: "已清零" },
+  candidateLegend: { en: "Candidate", zh: "候选" },
+  acceptedLegend: { en: "Committed", zh: "已提交" },
+  rejectedLegend: { en: "Discarded candidate", zh: "已丢弃候选" },
+  pdTitle: { en: "PD envelope transfer", zh: "PD 整页传输" },
+  pdSub: { en: "Schematic \u00b7 independent IDs on P and D \u00b7 KV pages + recurrent slots", zh: "示意模型 · P、D 使用独立编号 · KV 页与循环状态槽位" },
+  reservePd: { en: "Allocate", zh: "分配" },
+  publishPd: { en: "Publish addresses", zh: "公布地址" },
+  transferPd: { en: "RDMA", zh: "RDMA" },
+  completePd: { en: "Complete", zh: "完成" },
+  compactPd: { en: "Compact", zh: "压实" },
+  prefillNode: { en: "Prefill node", zh: "Prefill 节点" },
+  decodeNode: { en: "Decode node", zh: "Decode 节点" },
+  kvEnvelope: { en: "KV page envelope", zh: "KV 页 envelope" },
+  stateEnvelope: { en: "State-slot envelope", zh: "状态槽位 envelope" },
+  convAll: { en: "Conv \u00b7 all layers", zh: "Conv · 全部层" },
+  stateAll: { en: "State \u00b7 all layers", zh: "State · 全部层" },
+  moveGate: { en: "Compaction moves", zh: "压实搬移" },
+  blocked: { en: "Paused", zh: "暂停" },
+  allowed: { en: "Allowed", zh: "允许" },
+  decodeReady: { en: "Decode state", zh: "Decode 状态" },
+  ready: { en: "Ready", zh: "就绪" },
+  pending: { en: "Pending", zh: "等待" },
+  emptyDestination: { en: "Allocated, not received", zh: "已分配，未接收" },
   capacityTitle: { en: "Pool capacity", zh: "显存池容量" },
   capacitySub: { en: "Teaching model · 24 units · state: 2 units/request · no prefix sharing", zh: "示意模型 · 总量 24 单位 · 状态占 2 单位/请求 · 不含前缀共享" },
   requests: { en: "Requests", zh: "请求数量" },
@@ -48,8 +98,8 @@ export const S = {
   evictedLegend: { en: "Evicted", zh: "已驱逐" },
   benchNote: { en: "28 prefixes × ~390 tokens → 7,000-token pressure request → 28 replays · timing: median of 6 runs", zh: "28 段前缀 × 约 390 tokens → 7,000-token 压力请求 → 28 次重放 · 耗时：6 次运行中位数" },
   source: { en: "Source: sglang#33091", zh: "来源：sglang#33091" },
-  historyTitle: { en: "Implementation history", zh: "实现与发布" },
-  historySub: { en: "2026 · UTC dates · checked September 9", zh: "2026 年 · UTC 日期 · 9 月 9 日核实" },
+  historyTitle: { en: "PR merge timeline", zh: "PR 合入时间线" },
+  historySub: { en: "UTC · merge dates of the PRs discussed here", zh: "UTC · 本文涉及的关键 PR 合入日期" },
   pr: { en: "Merged PR", zh: "PR 合入" },
   blog: { en: "Official blog", zh: "官方博客" },
   releaseType: { en: "Release", zh: "版本发布" },
@@ -59,39 +109,138 @@ export const S = {
 
 export const HISTORY = [
   {
-    date: "2026-07-01", type: "pr", label: "#29678",
-    title: { en: "Initial shared pool", zh: "共享池初版" },
-    detail: { en: "Hybrid Mamba/GDN and SWA support. Two sub-pools grow from opposite ends and keep page IDs stable during compaction.", zh: "支持混合 Mamba/GDN 与 SWA。两个子池从两端增长，压实后保留虚拟页号。" },
-    links: [{ label: "#29678", url: "https://github.com/sgl-project/sglang/pull/29678" }, { label: "4a8e768", url: "https://github.com/sgl-project/sglang/commit/4a8e76805c27d8fffed4b8759593310a6ebde298" }],
+    "number": 29678,
+    "date": "2026-07-01",
+    "mergedAt": "2026-07-01T20:21:59Z",
+    "prTitle": "feat(mem_cache): unified memory pool for hybrid Mamba / SWA models",
+    "title": {
+      "en": "Shared-pool foundation",
+      "zh": "共享池初版"
+    },
+    "detail": {
+      "en": "Two ends share one buffer; virtual page IDs survive physical movement.",
+      "zh": "两个子池共用缓冲区，数据搬移后保留虚拟页号。"
+    },
+    "url": "https://github.com/sgl-project/sglang/pull/29678"
   },
   {
-    date: "2026-07-27", type: "blog", label: "LMSYS",
-    title: { en: "Kimi K3 design write-up", zh: "Kimi K3 设计介绍" },
-    detail: { en: "The Kimi K3 launch blog explains the shared pool for KV and recurrent state and announces a later implementation deep dive.", zh: "Kimi K3 发布博客介绍 KV 与循环状态为什么需要共享池，并预告后续实现详解。" },
-    links: [{ label: "LMSYS Blog", url: "https://www.lmsys.org/blog/2026-07-27-kimi-k3-day0-support#unified-memory-one-pool-for-both-kinds-of-state" }],
+    "number": 32971,
+    "date": "2026-07-31",
+    "mergedAt": "2026-07-31T05:10:35Z",
+    "prTitle": "[unified-memory] Support MLA-hybrid-Mamba (Kimi-Linear) on the Triton backend",
+    "title": {
+      "en": "MLA hybrid models",
+      "zh": "MLA 混合模型"
+    },
+    "detail": {
+      "en": "Dense layer views and kernel index translation add Kimi-Linear support.",
+      "zh": "通过连续层视图与 kernel 索引翻译支持 Kimi-Linear。"
+    },
+    "url": "https://github.com/sgl-project/sglang/pull/32971"
   },
   {
-    date: "2026-08-08", type: "releaseType", label: "v0.5.17",
-    title: { en: "MLA hybrid support", zh: "支持 MLA 混合模型" },
-    detail: { en: "Kimi-Linear gains Triton MLA-hybrid-Mamba support and paged MLA backend integration.", zh: "Kimi-Linear 增加 Triton MLA-hybrid-Mamba 支持及分页 MLA 后端接入。" },
-    links: [{ label: "v0.5.17", url: "https://github.com/sgl-project/sglang/releases/tag/v0.5.17" }, { label: "#32971", url: "https://github.com/sgl-project/sglang/pull/32971" }],
+    "number": 32972,
+    "date": "2026-07-31",
+    "mergedAt": "2026-07-31T08:32:09Z",
+    "prTitle": "[unified-memory] Let Kimi-Linear use the paged MLA attention backends",
+    "title": {
+      "en": "Paged MLA backends",
+      "zh": "分页 MLA 后端"
+    },
+    "detail": {
+      "en": "Paged attention backends reuse the same buffer through translated indices and stable graph metadata.",
+      "zh": "分页注意力后端通过翻译后的索引和固定地址的 graph metadata 读取同一缓冲区。"
+    },
+    "url": "https://github.com/sgl-project/sglang/pull/32972"
   },
   {
-    date: "2026-08-22", type: "releaseType", label: "v0.5.18",
-    title: { en: "DSpark and PD integration", zh: "接入 DSpark 与 PD 分离" },
-    detail: { en: "DSpark integration and PD disaggregation for the Kimi-Linear MLA-hybrid path.", zh: "接入 DSpark，并支持 Kimi-Linear MLA 混合路径的 PD 分离。" },
-    links: [{ label: "v0.5.18", url: "https://github.com/sgl-project/sglang/releases/tag/v0.5.18" }, { label: "#33974", url: "https://github.com/sgl-project/sglang/pull/33974" }, { label: "#33362", url: "https://github.com/sgl-project/sglang/pull/33362" }],
+    "number": 33046,
+    "date": "2026-07-31",
+    "mergedAt": "2026-07-31T18:46:47Z",
+    "prTitle": "[unified-memory] Support fa3, the default MLA backend on pre-Blackwell hosts",
+    "title": {
+      "en": "MLA on Hopper defaults",
+      "zh": "Hopper 默认 MLA 后端"
+    },
+    "detail": {
+      "en": "FA3 support makes the default H100/H200 MLA configuration work with unified memory.",
+      "zh": "接入 FA3，让 H100/H200 默认的 MLA 配置能使用共享池。"
+    },
+    "url": "https://github.com/sgl-project/sglang/pull/33046"
   },
   {
-    date: "2026-08-26", type: "pr", label: "#33091",
-    title: { en: "Shared-capacity eviction", zh: "按共享容量停止驱逐" },
-    detail: { en: "Allocation-triggered eviction stops when the shared allocator can fulfill the request, including capacity released by another sub-pool.", zh: "分配触发的驱逐在共享分配器能够满足请求时停止，并计入其他子池释放出的容量。" },
-    links: [{ label: "#33091", url: "https://github.com/sgl-project/sglang/pull/33091" }],
+    "number": 33974,
+    "date": "2026-08-10",
+    "mergedAt": "2026-08-10T17:35:07Z",
+    "prTitle": "[unified memory] Support DSPARK speculative decoding + fix two NaN root causes (page hand-out zeroing, CuTe int32 slot-stride wrap)",
+    "title": {
+      "en": "DSpark verification",
+      "zh": "DSpark 验证"
+    },
+    "detail": {
+      "en": "Adds chain verification, state write-back translation, page clearing, and wide address arithmetic.",
+      "zh": "接入链式验证、状态写回翻译、页面清零及宽位地址计算。"
+    },
+    "url": "https://github.com/sgl-project/sglang/pull/33974"
   },
   {
-    date: "2026-09-05", type: "releaseType", label: "v0.5.19",
-    title: { en: "Three sub-pools and more backends", zh: "三个子池与更多后端" },
-    detail: { en: "Full KV, SWA KV and recurrent state can share one buffer. This release also includes more attention backends and the eviction improvement above.", zh: "Full KV、SWA KV 与循环状态可共用一个缓冲区。该版本还包含更多注意力后端与上面的驱逐优化。" },
-    links: [{ label: "v0.5.19", url: "https://github.com/sgl-project/sglang/releases/tag/v0.5.19" }, { label: "#35177", url: "https://github.com/sgl-project/sglang/pull/35177" }, { label: "#34613", url: "https://github.com/sgl-project/sglang/pull/34613" }],
+    "number": 33362,
+    "date": "2026-08-10",
+    "mergedAt": "2026-08-10T23:07:59Z",
+    "prTitle": "[PD] Support --enable-unified-memory with PD disaggregation (kimi-linear MLA hybrid-Mamba)",
+    "title": {
+      "en": "PD disaggregation",
+      "zh": "PD 分离"
+    },
+    "detail": {
+      "en": "Transfers complete envelopes by physical ID and pauses movement while RDMA can be in flight.",
+      "zh": "按物理编号传输完整 envelope，并在 RDMA 可能进行时暂停搬移。"
+    },
+    "url": "https://github.com/sgl-project/sglang/pull/33362"
   },
+  {
+    "number": 33091,
+    "date": "2026-08-26",
+    "mergedAt": "2026-08-26T09:06:33Z",
+    "prTitle": "[unified-memory] Stop eviction when shared allocation capacity is sufficient",
+    "title": {
+      "en": "Shared-capacity eviction",
+      "zh": "按共享容量停止驱逐"
+    },
+    "detail": {
+      "en": "Stops eviction once the allocator can satisfy the pending allocation.",
+      "zh": "分配器能满足当前分配时就停止驱逐。"
+    },
+    "url": "https://github.com/sgl-project/sglang/pull/33091"
+  },
+  {
+    "number": 34613,
+    "date": "2026-08-31",
+    "mergedAt": "2026-08-31T06:58:24Z",
+    "prTitle": "feat(unified-memory): read unified pool from attention backends fa3/flashinfer/trtllm_mha/flashmla",
+    "title": {
+      "en": "More attention backends",
+      "zh": "更多注意力后端"
+    },
+    "detail": {
+      "en": "Routes additional backend families through the shared read-index path.",
+      "zh": "让更多注意力后端接入统一的读取索引路径。"
+    },
+    "url": "https://github.com/sgl-project/sglang/pull/34613"
+  },
+  {
+    "number": 35177,
+    "date": "2026-08-31",
+    "mergedAt": "2026-08-31T22:10:13Z",
+    "prTitle": "feat(unified-memory): three sub-pools for mamba + hybrid-SWA models",
+    "title": {
+      "en": "Three sub-pools",
+      "zh": "三个子池"
+    },
+    "detail": {
+      "en": "Full KV, SWA KV and recurrent state share one buffer, with a movable middle sub-pool.",
+      "zh": "FULL KV、SWA KV 与循环状态共用一个缓冲区，中间子池可搬移。"
+    },
+    "url": "https://github.com/sgl-project/sglang/pull/35177"
+  }
 ] as const;

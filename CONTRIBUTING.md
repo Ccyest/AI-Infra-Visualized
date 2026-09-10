@@ -30,6 +30,7 @@
 | --- | --- | --- |
 | `title` | string | 文章标题 |
 | `description` | string | 一句话简介(首页卡片与 `<meta>` 均用它) |
+| `publishedDate` / `updatedDate` | YYYY-MM-DD | 文章发布日期与更新日期，按需填写 |
 | `order` | number | 排序与上一篇/下一篇导航用,新文章递增(首页按新→旧展示) |
 | `concepts` | string[] | 已弃用:文章不加概念标签,留空即可 |
 | `tryOnSglang` | url | SGLang cookbook 对应章节,渲染为文末引流按钮(可省略) |

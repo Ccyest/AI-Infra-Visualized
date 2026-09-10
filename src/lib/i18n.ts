@@ -14,6 +14,8 @@ export type Localized = { zh: string; en: string };
 export const HTML_LANG: Record<Locale, string> = { zh: "zh-CN", en: "en" };
 
 export const CHROME = {
+  published: { zh: "发布", en: "Published" },
+  updated: { zh: "更新", en: "Updated" },
   tagline: {
     zh: "用交互式可视化，把 AI Infra 的核心机制讲明白",
     en: "Interactive visualizations that make AI infra mechanisms click",

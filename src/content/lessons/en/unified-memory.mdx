@@ -1,6 +1,8 @@
 ---
 title: "Unified Memory in SGLang: 1.9× prefix retention under cache pressure"
-description: "SGLang's Unified Memory lets attention caches and recurrent states share one GPU buffer. Capacity moves between them as traffic changes, so short requests can use spare KV space for more state slots, and long contexts can use spare state space for more KV. Page IDs stay stable even when data moves. Cache eviction follows the shared capacity too: once the next allocation fits, it can stop. In a Qwen3.5-4B cache-pressure test, this eviction change retained 19 of 28 prefixes instead of 10 and cut replay time by **37.9%**. Both variants already used Unified Memory."
+description: "SGLang's hybrid models need attention KV and recurrent states, but a fixed capacity split can leave one pool full while the other sits idle. Unified Memory lets them share one GPU buffer and adjusts the split as traffic changes. This article follows the implementation from the first shared pool through MLA backends, DSpark verification and prefill/decode disaggregation. Each extension must preserve correct reads and writes when pages move. A later cache-eviction improvement retained 19 of 28 prefixes instead of 10 and reduced replay time by **37.9%** in one Qwen3.5-4B experiment. Both benchmark variants already used Unified Memory."
+publishedDate: "2026-09-09"
+updatedDate: "2026-09-11"
 order: 7
 concepts: []
 tryOnSglang: "https://github.com/sgl-project/sglang"
@@ -23,71 +25,175 @@ references:
     url: "https://github.com/sgl-project/sglang/pull/33362"
   - label: "sglang#33974: [unified memory] Support DSPARK speculative decoding + fix two NaN root causes (page hand-out zeroing, CuTe int32 slot-stride wrap)"
     url: "https://github.com/sgl-project/sglang/pull/33974"
-  - label: "SGLang v0.5.19 release notes"
-    url: "https://github.com/sgl-project/sglang/releases/tag/v0.5.19"
+  - label: "sglang#32972: [unified-memory] Let Kimi-Linear use the paged MLA attention backends"
+    url: "https://github.com/sgl-project/sglang/pull/32972"
+  - label: "sglang#33046: [unified-memory] Support fa3, the default MLA backend on pre-Blackwell hosts"
+    url: "https://github.com/sgl-project/sglang/pull/33046"
+  - label: "sglang#36890: [Feature] Unified memory: support decode context parallelism for Kimi-Linear"
+    url: "https://github.com/sgl-project/sglang/pull/36890"
 ---
 
 import CapacityViz from "../../../viz/unified-memory/CapacityViz";
 import CompactionViz from "../../../viz/unified-memory/CompactionViz";
+import MlaAddressViz from "../../../viz/unified-memory/MlaAddressViz";
+import SpeculationViz from "../../../viz/unified-memory/SpeculationViz";
+import TransferViz from "../../../viz/unified-memory/TransferViz";
 import BenchmarkViz from "../../../viz/unified-memory/BenchmarkViz";
 import HistoryViz from "../../../viz/unified-memory/HistoryViz";
 
 ## Background
 
-A hybrid model stores more than one kind of inference state. Full-attention KV grows as a request accumulates tokens. A recurrent layer keeps a fixed-size state that it updates for each token. More concurrent requests need more state slots; longer contexts need more KV. Sliding-window attention adds a third pattern: KV for a bounded trailing window.
+Hybrid models store several kinds of inference state. Full-attention KV grows with the number of tokens. A recurrent layer, such as KDA or GDN, updates a fixed-size state as tokens arrive. Sliding-window attention keeps KV for a bounded trailing window. A recurrent state slot has a fixed size, but the number of slots still grows with active requests and cached checkpoints.
 
-Separately sized pools force the server to choose a capacity split before it knows the traffic. A batch of short requests can exhaust state slots while KV space sits idle. Long contexts can exhaust KV while the state pool has spare room. Both cases leave requests waiting even though some GPU memory is still unused.
+These demands do not grow together. Many short requests need many state slots but relatively little KV. A few long requests need much more KV. With separate pools, SGLang has to choose their capacity split at startup. One pool can fill up while the other still has room, leaving requests waiting despite unused GPU memory.
 
-The comparison below holds total capacity fixed. Its units are deliberately simplified to expose the allocation limit. Every admitted request needs both a state block and KV. The last preset reaches the physical capacity limit, where sharing alone cannot admit more requests.
+The comparison below fixes total capacity and gives each request both a state block and KV. The units are simplified. Sharing can remove the fixed boundary, but it cannot admit a request whose combined allocation exceeds the buffer.
 
 <CapacityViz client:visible lang="en" />
 
-## Unified Memory
+## Implementation history
 
-### Design and mechanism
-
-SGLang allocates one contiguous GPU byte buffer. In the two-pool design, recurrent states grow inward from one end and full-attention KV grows inward from the other. Both draw from the free region between them. Each sub-pool keeps its own block size. In the Kimi K3 blog's TP8 example, one request's KDA state is about 54 MB across its recurrent layers, while one token's MLA KV is about 27 KB across its attention layers.
-
-For movement to release a usable region, a page's data across its layers must travel together. SGLang groups that data in a contiguous page envelope. The allocator can then move an occupied envelope into a hole and return the vacated space to a neighboring sub-pool. The diagram uses normalized block sizes so both kinds remain visible.
-
-<CompactionViz client:visible lang="en" />
-
-### Stable page references
-
-After B is freed, C still separates the interior hole from the shared free region. Moving C into B's old position joins the available space. But requests may still refer to C, so storing its physical address directly would leave those references pointing at the old location.
-
-SGLang keeps virtual page IDs above the allocator and translates them to current physical locations for memory access. When C moves, its virtual ID stays the same and the mapping changes. The diagram shows one completed compaction step. The implementation can defer compaction; it does not copy pages immediately after every free. Page movement and index translation still have costs and must be coordinated with GPU execution.
-
-### Three kinds of state
-
-The same design now supports full-attention KV, sliding-window KV, and recurrent state in one buffer. The three-pool extension adds a middle sub-pool that can relocate between its neighbors. Models such as Inkling therefore share capacity across all three kinds instead of reserving three fixed regions at startup.
-
-Unified Radix Cache tracks which token prefixes have reusable KV or state checkpoints. Unified Memory allocates the GPU bytes that hold those values. The tree answers which stored values a request can reuse; the pool supplies their physical storage. The [Unified Radix Cache lesson](../unified-radix-cache/) explains the prefix-matching rules in more detail.
-
-## Cache eviction
-
-Sharing bytes also changes when eviction should stop. Under pressure, the cache removes reusable prefixes to make room for a new allocation. Releasing one prefix can free both KV and a recurrent-state block. After compaction, the freed state bytes can also provide space for KV.
-
-An eviction loop that counts only freed KV entries may keep deleting prefixes after enough shared capacity is already available. SGLang's follow-up change, #33091, checks whether the shared allocator can satisfy the pending allocation and stops at that point. More cached prefixes remain available for later requests, reducing repeated prefill work.
-
-### Measured results
-
-The experiment first fills the cache with reusable prefixes, adds an unrelated long request to create memory pressure, then replays the original prefixes. Both variants already use Unified Memory. Only the allocation-driven eviction behavior changes. The pool is constrained to 8,192 FULL tokens and 32 Mamba states, and chunked prefill is set to 8,192 tokens.
-
-<BenchmarkViz client:visible lang="en" />
-
-The timing results are medians over six runs. Output-token parity was checked under cache pressure, and the compared requests completed without retractions or allocation failures. The reported aggregate throughput showed no stable change. With a smaller 2,048-token prefill chunk, both variants retained 17 of 28 prefixes, so the improvement depends on how allocation pressure releases shared capacity.
-
-The initial pool PR did not publish a speed benchmark. The later three-pool PR compared unified and static pools at matched attention backends; its model-level median inter-token latency changes ranged from −0.81% to +1.32%. That is consistent with a feature aimed at flexible memory capacity, with runtime overhead that still needs measurement for each workload.
-
-## Release history
-
-SGLang introduced the shared pool as an opt-in feature. The Kimi K3 blog then explained the design, and later releases expanded the supported models and execution paths. The timeline distinguishes a PR's merge date from a version's publication date.
+SGLang first built the shared allocator, then adapted attention backends to its movable pages. DSpark and PD introduced two more requirements: committing the correct state after speculative verification, and keeping physical addresses valid during transfers. The later eviction and three-pool changes build on that foundation.
 
 <HistoryViz client:visible lang="en" />
 
-Enable it with `--enable-unified-memory` on a supported model and backend. As of September 9, 2026, v0.5.19 includes three sub-pools and additional attention backends; the earlier v0.5.18 includes DSpark integration and PD support for the Kimi-Linear MLA-hybrid path. Compatibility is specific to the model, backend, and serving configuration. These releases do not imply that every combination of speculative decoding, PD, and hierarchical caching is supported.
+## The shared pool
+
+### Allocation units
+
+In [#29678](https://github.com/sgl-project/sglang/pull/29678), SGLang introduced one contiguous GPU byte buffer with two sub-pools growing inward from opposite ends. The initial combinations were full-attention KV plus recurrent state, or full-attention KV plus sliding-window KV. Each side kept its own allocation unit. Both could claim bytes from the gap between their frontiers. The buffer remains on the same GPU; the feature changes how its capacity is divided.
+
+A KV page holds several tokens. A recurrent-state slot holds the convolution and recurrent state needed to continue a request across its recurrent layers. Their byte costs can differ greatly. In the Kimi K3 blog's TP8 example, one request's KDA state is about 54 MB across its recurrent layers, while one token's MLA KV is about 27 KB across its attention layers. Giving the two pools a fixed number of entries therefore does not give them a useful fixed ratio for every workload.
+
+Sharing the allocation alone is insufficient. In a conventional layer-major layout, one logical page's data is spread across separate layer buffers. Freeing that page leaves a small region in every layer. SGLang instead groups the page's data from all relevant layers into one contiguous **page envelope**. A recurrent slot similarly groups its convolution and recurrent-state data. Moving one envelope now releases a contiguous region that another sub-pool can use.
+
+### Reclaiming space
+
+Free space can sit inside a sub-pool, away from the shared gap. In the example below, freeing B creates a hole between A and C. C still blocks the boundary from moving. Copying C into B's old position joins the hole to the gap. KV can then occupy those bytes without changing the total GPU allocation.
+
+<CompactionViz client:visible lang="en" />
+
+Requests and cached prefixes must still find C after the copy. SGLang therefore stores **virtual page IDs** above the allocator and keeps a table from those IDs to physical slots. C's ID stays C; its table entry changes from offset 8 to 4. The allocator copies the page data and updates the mapping. It does not walk through every request and cached prefix to rewrite their references.
+
+SGLang can defer this compaction. Freeing a page first updates allocation bookkeeping; a later allocation can trigger the work needed to recover space. The scheduler must also coordinate copies and page reuse with an in-flight GPU forward. A free region on a CPU-side list is not permission to overwrite bytes that a kernel is still using.
+
+Admission uses the same shared budget. A new request may need KV and a new recurrent slot together, so the scheduler reserves both costs. It also checks whether enough state capacity can actually be recovered. Counting all evictable KV bytes as immediately available state slots could admit a request whose state allocation cannot be fulfilled.
+
+### CUDA Graph replay
+
+Virtual IDs solve reference stability, but GPU kernels need usable read and write locations. In the initial implementation, SGLang translated those IDs while preparing forward metadata, before replaying the CUDA Graph. It filled buffers whose device addresses stayed fixed across replays. A page could move between forwards while the captured graph continued to read the same metadata buffers, now containing updated locations.
+
+The distinction is between a stable **buffer address** and changing **index values inside that buffer**. A new translation tensor is not enough if the captured graph still reads the old tensor. This becomes especially important when adding MLA backends and speculative verification.
+
+## MLA hybrid models
+
+### The page layout
+
+Kimi-Linear combines KDA recurrent layers with MLA attention layers. MLA stores a compressed latent row and positional-key information rather than separate expanded K and V arrays for every head. For the Kimi-Linear configuration in [#32971](https://github.com/sgl-project/sglang/pull/32971), the cached row is 576 elements wide: 512 latent elements and 64 positional-key elements. The validated model has 20 KDA layers and 7 MLA layers.
+
+The initial shared-pool layout described MHA-shaped KV. Adding MLA required the correct byte size and tensor views for its single cached row. SGLang could retain the page envelopes: all MLA layers in this configuration have uniform row sizes. For each layer, it exposes a contiguous tensor view beginning at that layer's offset inside the first envelope. These views share the original buffer; they do not copy the cache into a second allocation.
+
+Within one layer view, the next logical KV page is separated from the current one by the other layers' rows. SGLang accounts for that by renumbering the indices passed to kernels. There are now three useful numbers for one token: the virtual ID saved by a request, the physical location chosen by the allocator, and the row index used with a particular tensor view. The early implementation calls the last one a *dense* index.
+
+<MlaAddressViz client:visible lang="en" />
+
+In this two-layer example, each page has four tokens per layer. Virtual page 7 initially maps to physical page 2. Its token at offset 1 has virtual token ID 29 and physical token ID 9. The kernel receives row index 17. Layer 0's view begins at row 0; layer 1's begins at row 4, so the same kernel index reaches raw-buffer rows 17 and 21 respectively. After moving the page to physical page 1, the virtual ID stays 29 and the kernel index becomes 9. Switching layers changes the view origin, not that index.
+
+This is why the existing MLA kernels can work with the shared buffer. The pool provides a compatible view, and metadata supplies indices that account for its layout. Compaction and transfer code still use physical page locations; a kernel-facing index must not be mistaken for a byte address.
+
+### Attention backends
+
+[#32971](https://github.com/sgl-project/sglang/pull/32971) first enabled the Triton path. [#32972](https://github.com/sgl-project/sglang/pull/32972) then connected the paged MLA backends, and [#33046](https://github.com/sgl-project/sglang/pull/33046) covered FA3, the default MLA backend on Hopper at the time.
+
+| Backend path | What SGLang adapted |
+| --- | --- |
+| Triton MLA | Read and write indices for the contiguous layer views |
+| TRT-LLM MLA; CuTe DSL and TokenSpeed decode paths | Page-table indices, plus stable write-location metadata for captured decode |
+| FlashInfer MLA | Token indices translated back into the existing index buffer |
+| FA3 MLA | Page-table construction, including the default H100/H200 path |
+
+The FlashInfer case shows why this is more than an allowlist change. The first translation produced a fresh tensor, while captured decode kept reading its original index buffer. Eager execution could work while replay still used virtual IDs as kernel indices. The merged fix writes translated indices into the buffer the graph actually reads, limited to the valid prefix. TRT-LLM MLA similarly refreshes a stable write-location buffer and clears its padded tail so a smaller replay cannot reuse stale locations from an earlier larger batch.
+
+The recurrent side also needed layout-aware addressing. A KDA kernel had assumed that consecutive state slots were tightly packed. In a shared envelope, the slot stride includes data from other layers. SGLang changed that path to use the tensor's actual stride and wide address arithmetic. Correct MLA reads alone would not make the hybrid model correct if its KDA layers updated the wrong state.
+
+## DSpark
+
+### Verification and state commit
+
+DSpark produces a candidate token sequence with a draft model, then lets the target model verify several tokens together. The target accepts a prefix of those candidates. Attention KV for accepted tokens remains useful; rejected candidates must not become part of the request's committed cache. For recurrent layers, the selected state must match the end of the accepted prefix. Keeping the state after the entire candidate sequence would include rejected tokens.
+
+[#33974](https://github.com/sgl-project/sglang/pull/33974) connected **chain-mode DSpark** to Unified Memory. Its target verification path needed the same translation discipline as decode. The TRT-LLM MLA verify graph receives a prefilled, fixed-address buffer of kernel write indices. After verification, recurrent-state write-back translates the request's virtual tracking IDs to physical slots before scattering the selected convolution and recurrent state.
+
+<SpeculationViz client:visible lang="en" />
+
+Here S0 is the state before the draft, and Si is the state corresponding to the first i draft tokens. Accepting two candidates commits S2 and retains their KV. Accepting none leaves S0. The diagram follows only the candidate prefix; the target's correction or bonus token is outside this example. It depicts the state-selection rule, not a requirement that every implementation allocate a persistent full-state copy for every candidate.
+
+The draft model has its own cache. That cache is indexed directly by the target allocator's virtual token IDs, whose range can exceed the current token budget of one sub-pool. SGLang sizes the draft cache for that virtual-ID range and keeps the draft's ordinary contiguous layout. The target's page-envelope layout is not automatically suitable for the draft backend.
+
+### Recycled pages and state strides
+
+Verification also exposed two correctness problems. First, a recycled shared page can contain bytes left by a different use of the pool. The MLA kernel in this path reads a whole page, including the unused tail after the sequence ends. Its arithmetic masking does not reliably remove NaNs from those unused rows. Clearing the raw buffer only at startup therefore does not protect later allocations.
+
+SGLang clears each page envelope when the allocator hands it out. This gives the unwritten tail a defined value before verification writes valid KV. The clear must be ordered after earlier GPU users of the recycled page. Clearing at the wrong time would replace one corruption bug with another.
+
+Second, the Kimi K3 CuTe verification kernel multiplied a state-slot ID by a large envelope stride using 32-bit arithmetic. At higher slot IDs, the product could wrap and point into another slot or outside the allocation. SGLang promotes the slot ID to 64 bits **before** multiplying. This explains why a small, freshly started server could appear correct while a loaded server failed.
+
+The PR tested both deliberately poisoned memory and real-draft acceptance. Its random-draft poison test recovered the no-spec baseline score after both fixes. Its real-draft run exercised committing multiple accepted tokens. However, the reported short-sequence stress run did not dynamically exercise a compaction move racing a verify write. The PR kept lazy compaction based on the verified scheduler ordering; that particular test was not a complete concurrency stress result. This integration also did not enable every speculative algorithm: its scope was the audited chain DSpark path. The [DSpark lesson](../dspark-speculative-decoding/) explains the draft algorithm itself; the integration above concerns where its target reads and writes land.
+
+## PD disaggregation
+
+### Moving the complete cache
+
+With prefill/decode disaggregation, a prefill node processes the prompt and a decode node continues generation. A hybrid model must transfer both attention KV and the recurrent state at the hand-off boundary. Transferring KV alone leaves the decode node without the state its KDA or Mamba layers need.
+
+[#33362](https://github.com/sgl-project/sglang/pull/33362) made that transfer aware of page envelopes. A normal per-layer transfer scheme cannot simply treat the MLA layer views as independent buffers: those views overlap and are addressed through renumbered kernel indices. SGLang instead registers the raw buffer and transfers each physical page envelope as one item, carrying the page's data from all its attention layers. A recurrent-state item similarly contains the whole slot's convolution and recurrent state across layers.
+
+The source and destination have separate allocators. Their virtual IDs and physical placements can differ. Before publishing transfer locations, each side translates its own virtual IDs to physical page or state-slot indices. RDMA addresses the registered buffer using the physical index and the envelope's byte size. It does not use the MLA kernel index from the previous section. Registration also deduplicates the raw region because KV and recurrent-state views share that allocation.
+
+<TransferViz client:visible lang="en" />
+
+### Keeping addresses valid
+
+A GPU forward and a network transfer have different ordering rules. Once a physical source or destination address has been handed to the transfer engine, copying that page elsewhere would invalidate the transfer. Updating a virtual-to-physical table cannot redirect an RDMA operation already using the old address.
+
+SGLang therefore uses lazy compaction and a transfer-aware move gate. **The protected interval begins when addresses are published**, before the transfer necessarily appears in an in-flight queue, and ends when it is safe for the network operation to be finished. The gate tracks pending prefill chunks and decode destinations that have already been published, as well as queued transfers. Checking only whether a transfer queue is empty would miss these gaps in the hand-off.
+
+While the gate is closed, allocator bookkeeping can continue, but compaction cannot relocate data. This can temporarily reduce the capacity that an allocation can recover by moving pages. The final step in the diagram shows compaction after transfer completion; it is an example of when movement becomes permissible, not a mandatory copy after every transfer.
+
+### Supported transfer layout
+
+This first PD integration targets MLA-hybrid-Mamba models such as Kimi-Linear, with Mooncake transfers, matching attention tensor parallelism on both sides, pipeline parallel size 1, and Unified Memory enabled at both ends. These restrictions follow from the transfer unit: a complete envelope cannot be split into a different TP shard or a subset of PP layers by the original per-tensor transfer logic. The decode node also reserves request-table rows for requests whose destination memory is allocated before they enter the running batch.
+
+Validation included a small-model comparison of PD and non-PD unified execution, a multi-chunk prefill variant, and a Kimi-Linear-48B run on H200. These check the hand-off and transferred state; they do not establish that every backend or combination of PD and speculative decoding is supported.
+
+## Shared-capacity eviction
+
+Sharing bytes changes when cache eviction should stop. Evicting a reusable prefix can free both KV and a recurrent-state checkpoint. Once the allocator can reclaim those state bytes, they can satisfy a pending KV allocation too. An eviction loop that counts only freed KV entries can keep deleting prefixes after enough combined capacity is available.
+
+[#33091](https://github.com/sgl-project/sglang/pull/33091) asks whether the shared allocator can fulfill the pending allocation and stops when it can. The remaining prefixes can still serve later requests. The [Unified Radix Cache lesson](../unified-radix-cache/) covers how the tree finds reusable KV and state checkpoints; Unified Memory supplies the physical storage for those entries.
+
+The experiment below warms 28 reusable prefixes, applies a long unrelated request, then replays the original prefixes. Both variants already use Unified Memory. The pool is constrained to 8,192 FULL tokens and 32 Mamba states, with an 8,192-token prefill chunk. The changed variable is the allocation-driven eviction behavior.
+
+<BenchmarkViz client:visible lang="en" />
+
+Timings are medians over six runs. The requests completed without retractions or allocation failures, and output-token parity was checked under cache pressure. Aggregate throughput showed no stable change. With a smaller 2,048-token prefill chunk, both variants retained 17 of 28 prefixes. The benefit depends on how the workload releases shared capacity; this is not a universal speedup from enabling the pool.
+
+## Further extensions
+
+### More attention backends
+
+Later work consolidated the read-index preparation path. [#34613](https://github.com/sgl-project/sglang/pull/34613) moved additional backend families onto shared page-table construction. Uniform-row MHA and SWA models gained FA3/FA4, FlashInfer and TRT-LLM MHA paths, and MLA gained FlashMLA. Each kernel still receives the index representation its tensor view expects. An asymmetric K/V layout was not automatically covered by the same dense-view path.
+
+### Three sub-pools
+
+[#35177](https://github.com/sgl-project/sglang/pull/35177) addressed models such as Inkling that contain full attention, sliding-window attention and recurrent layers together. Two ends are no longer enough. SGLang adds a middle sub-pool that can move between its neighbors and lets all three share one buffer.
+
+The allocator now follows neighboring sub-pools when recovering space. It can compact holes, check the outstanding demand again, and move the middle region when necessary. Admission still has to satisfy the coupled request: enough bytes in total do not help if the required combination of FULL pages, SWA pages and recurrent slots cannot be allocated. The change also updates accounting so moving boundaries do not appear as leaked or newly created capacity.
+
+This remains a capacity feature with runtime costs. The three-pool PR compared unified and static pools at matched attention backends. Model-level median inter-token latency changes ranged from −0.81% to +1.32%; Inkling's reported median was +0.85%. The original shared-pool PR did not publish a speed benchmark.
+
+The implementation has continued beyond these milestones. For example, [#36890](https://github.com/sgl-project/sglang/pull/36890) later combined Kimi-Linear's pool with decode context parallelism by composing rank-local KV ownership with virtual-to-physical translation. The common requirement is that every consumer of a page agrees on its index space and on when its physical location may change.
 
 ## Sources and credits
 
-This lesson follows the Unified Memory section of the SGLang team's Kimi K3 blog and the linked implementation PRs. Benchmark results are reported by #33091 and #35177; the capacity and movement diagrams are teaching models, not new performance measurements. Thanks to the SGLang contributors who built, tested, and documented this work.
+This lesson follows SGLang's Kimi K3 blog and the linked implementation PRs. The timeline uses GitHub PR merge timestamps in UTC. Addressing, verification and transfer diagrams use normalized examples; benchmark values come from the cited PRs. The integration sections describe the designs introduced by those changes, so later refactors may use different internal names. Thanks to the SGLang contributors who implemented and validated the shared pool and its execution paths.

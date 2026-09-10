@@ -1,6 +1,8 @@
 ---
 title: "SGLang Unified Memory：显存吃紧时，前缀保留量达到 1.9 倍"
-description: "SGLang 的 Unified Memory 让注意力缓存和循环状态共用一个 GPU 缓冲区。容量随负载调整：短请求可以借用空闲的 KV 空间增加状态槽位，长上下文可以借用空闲的状态空间保存更多 KV。数据搬移后，虚拟页号保持不变。缓存驱逐也按共享容量判断，下一次分配能放下就停止。在 Qwen3.5-4B 的缓存压力实验中，这项驱逐改动将 28 段前缀中的保留量从 10 段提高到 19 段，重放耗时降低 **37.9%**。两组都已启用 Unified Memory。"
+description: "SGLang 的混合模型同时需要注意力 KV 和循环状态，固定的容量划分却可能让一边耗尽、另一边闲置。Unified Memory 让它们共用一个 GPU 缓冲区，容量比例随负载调整。本文沿着实现过程，介绍共享池初版、MLA 后端、DSpark 验证和 prefill/decode 分离。每一步都需要保证页面搬移后仍能正确读写。后续的缓存驱逐优化在一组 Qwen3.5-4B 实验中，将 28 段前缀的保留量从 10 段提高到 19 段，重放耗时降低 **37.9%**。对比的两组均已启用 Unified Memory。"
+publishedDate: "2026-09-09"
+updatedDate: "2026-09-11"
 order: 7
 concepts: []
 tryOnSglang: "https://github.com/sgl-project/sglang"
@@ -23,71 +25,175 @@ references:
     url: "https://github.com/sgl-project/sglang/pull/33362"
   - label: "sglang#33974: [unified memory] Support DSPARK speculative decoding + fix two NaN root causes (page hand-out zeroing, CuTe int32 slot-stride wrap)"
     url: "https://github.com/sgl-project/sglang/pull/33974"
-  - label: "SGLang v0.5.19 release notes"
-    url: "https://github.com/sgl-project/sglang/releases/tag/v0.5.19"
+  - label: "sglang#32972: [unified-memory] Let Kimi-Linear use the paged MLA attention backends"
+    url: "https://github.com/sgl-project/sglang/pull/32972"
+  - label: "sglang#33046: [unified-memory] Support fa3, the default MLA backend on pre-Blackwell hosts"
+    url: "https://github.com/sgl-project/sglang/pull/33046"
+  - label: "sglang#36890: [Feature] Unified memory: support decode context parallelism for Kimi-Linear"
+    url: "https://github.com/sgl-project/sglang/pull/36890"
 ---
 
 import CapacityViz from "../../../viz/unified-memory/CapacityViz";
 import CompactionViz from "../../../viz/unified-memory/CompactionViz";
+import MlaAddressViz from "../../../viz/unified-memory/MlaAddressViz";
+import SpeculationViz from "../../../viz/unified-memory/SpeculationViz";
+import TransferViz from "../../../viz/unified-memory/TransferViz";
 import BenchmarkViz from "../../../viz/unified-memory/BenchmarkViz";
 import HistoryViz from "../../../viz/unified-memory/HistoryViz";
 
 ## 背景
 
-混合模型会保存多种推理状态。Full-attention KV 随请求中的 token 增长。循环层则维护一个大小固定的状态，每处理一个 token 就更新一次。并发请求越多，需要的状态槽位越多；上下文越长，需要的 KV 越多。滑动窗口注意力又增加了一种模式：只保存有限尾部窗口内的 KV。
+混合模型会保存多种推理状态。Full-attention KV 随 token 数量增长。KDA、GDN 这样的循环层则在处理 token 时更新一个大小固定的状态。滑动窗口注意力只保留有限尾部窗口内的 KV。单个循环状态槽位的大小固定，但活跃请求和缓存 checkpoint 越多，需要的槽位也越多。
 
-分别定容的池要求服务器在尚不知道实际负载时，就选好容量比例。大量短请求可能用完状态槽位，KV 空间却闲着；长上下文可能用完 KV，状态池却还有余量。两种情况下，GPU 都还有空闲显存，却已经有请求需要等待。
+这些需求并不同步增长。大量短请求需要很多状态槽位，KV 用量却不大；少量长请求则需要更多 KV。分别分池时，SGLang 必须在启动时选好容量比例。一边可能已经耗尽，另一边却还有空闲，结果是 GPU 仍有余量，请求却必须等待。
 
-下图固定总容量，用简化的单位展示分配限制。每个被接纳的请求都需要一个状态块和对应的 KV。最后一个预设会触及物理容量上限，此时仅靠共享也无法再接纳更多请求。
+下图固定总容量，每个请求都需要状态块和 KV。图中的单位经过简化。共享池可以去掉固定边界，但如果请求的两项分配加起来已经超过整个缓冲区，共享也无法让它放得下。
 
 <CapacityViz client:visible />
 
-## Unified Memory
+## 实现历程
 
-### 设计与机制
-
-SGLang 分配一个连续的 GPU 字节缓冲区。在双池设计中，循环状态从一端向内增长，full-attention KV 从另一端向内增长，两者都从中间的空闲区取得容量。每个子池保留自己的块大小。Kimi K3 博客给出的 TP8 例子中，一个请求的 KDA 状态跨循环层合计约 54 MB，一个 token 的 MLA KV 跨注意力层合计约 27 KB。
-
-要让搬移真正释放出一段可用空间，一页数据在不同层的部分就需要一起移动。SGLang 把这些数据放进连续的 page envelope。分配器可以将一个已占用的 envelope 搬进空洞，把原来的位置让给相邻子池。图中使用归一化的块大小，让两种数据都能看清。
-
-<CompactionViz client:visible />
-
-### 稳定的页面引用
-
-B 被释放后，C 仍把内部空洞和共享空闲区隔开。把 C 搬到 B 原来的位置，就能把可用空间连起来。但请求可能仍引用 C，如果直接保存物理地址，这些引用就会指向旧位置。
-
-SGLang 在分配器之上保存虚拟页号，在访问显存时翻译到当前的物理位置。C 搬移后，虚拟编号不变，映射表随之更新。图里展示的是一次完成的压实步骤。实际实现可以延迟压实，不会每释放一页就立刻复制。页面搬移和索引翻译仍有成本，也必须与 GPU 执行协调。
-
-### 三种状态
-
-同样的设计现在可以让 full-attention KV、滑动窗口 KV 和循环状态共用一个缓冲区。三个子池的扩展增加了一个中间子池，它可以在相邻子池之间搬移。Inkling 这类模型因此能让三种状态共享容量，不必在启动时保留三个固定区域。
-
-Unified Radix Cache 记录哪些 token 前缀有可复用的 KV 或状态 checkpoint。Unified Memory 分配保存这些数据的 GPU 字节。树负责找到请求可复用的数据，池负责提供物理存储。[Unified Radix Cache 课程](../unified-radix-cache/)进一步解释了前缀匹配规则。
-
-## 缓存驱逐
-
-共享字节也改变了驱逐应该何时停止。显存吃紧时，缓存会删除可复用的前缀，为新分配腾出空间。释放一个前缀，可能同时释放 KV 和循环状态块。压实后，释放的状态字节也能变成 KV 的可用空间。
-
-如果驱逐循环只统计释放了多少 KV 条目，就可能在共享容量已经足够后继续删除前缀。SGLang 的后续改动 #33091 会检查共享分配器能否满足当前分配，一旦可以就停止。这样能为后来的请求留下更多缓存前缀，减少重复的 prefill 计算。
-
-### 实测结果
-
-实验先预热一组可复用前缀，再用一个不相关的长请求制造显存压力，最后重放原来的前缀。两组都已经启用 Unified Memory，只改变分配触发的驱逐行为。池被限制为 8,192 个 FULL token 和 32 个 Mamba 状态，chunked prefill 设为 8,192 tokens。
-
-<BenchmarkViz client:visible />
-
-耗时结果取六次运行的中位数。实验在缓存压力下检查了输出 token 一致性，对比请求都没有发生回撤或分配失败。报告中的总吞吐没有稳定变化。把 prefill chunk 缩小到 2,048 tokens 后，两组都保留了 28 段前缀中的 17 段，因此收益取决于分配压力如何释放共享容量。
-
-共享池初版 PR 没有发布速度基准。后续三个子池的 PR 在匹配注意力后端的条件下比较了共享池和固定池，各模型的 token 间延迟中位数变化从 −0.81% 到 +1.32%。这符合该功能主要改善显存容量分配的定位，运行时开销仍需按具体负载测量。
-
-## 发布历史
-
-SGLang 最初将共享池作为需要显式开启的功能引入。随后 Kimi K3 博客介绍了设计，后续版本继续扩展模型和执行路径。时间线分别标明 PR 合入日期和版本发布日期。
+SGLang 先实现共享分配器，再让注意力后端适配可搬移的页面。DSpark 和 PD 又带来两个要求：投机验证后必须提交正确的状态，传输期间必须保持物理地址有效。后续的驱逐优化和三个子池都建立在这套机制上。
 
 <HistoryViz client:visible />
 
-在受支持的模型与后端上，通过 `--enable-unified-memory` 开启。截至 2026 年 9 月 9 日，v0.5.19 已包含三个子池和更多注意力后端；更早的 v0.5.18 包含 DSpark 接入和 Kimi-Linear MLA 混合路径的 PD 支持。兼容性取决于模型、后端与服务配置，这些版本并不代表投机解码、PD 与分层缓存的任意组合都受支持。
+## 共享池初版
+
+### 分配单位
+
+在 [#29678](https://github.com/sgl-project/sglang/pull/29678) 中，SGLang 引入一个连续的 GPU 字节缓冲区，让两个子池从两端向内增长。初版支持的组合是 full-attention KV 加循环状态，或 full-attention KV 加滑动窗口 KV。每一边保留自己的分配单位，都可以从两条边界之间的空闲区取得容量。这块缓冲区仍在同一张 GPU 上，变化的是其内部容量如何划分。
+
+一个 KV 页保存多个 token 的数据。一个循环状态槽位保存继续处理请求所需的卷积状态和循环状态，覆盖模型中的循环层。两种单位的字节成本可能相差很大。Kimi K3 博客给出的 TP8 例子中，一个请求的 KDA 状态跨循环层合计约 54 MB，一个 token 的 MLA KV 跨注意力层合计约 27 KB。因此，给两个池各自固定的条目数，并不能为所有负载提供合适的容量比例。
+
+只把分配合并还不够。在传统的 layer-major 布局中，同一个逻辑页的数据分散在各层独立的缓冲区里。释放一页，只会在每层留下一个小空隙。SGLang 改为把一页在相关层中的数据连续放在一起，形成 **page envelope**。循环状态槽位也将自己的卷积状态和循环状态放在一起。这样，搬移一个 envelope 就能腾出连续空间，供另一种子池使用。
+
+### 回收空闲空间
+
+空闲空间可能位于子池内部，并没有连到共享空闲区。下图中，释放 B 后，A 和 C 之间留下一个空洞，但 C 仍挡在边界上。把 C 复制到 B 原来的位置，就能把空洞和共享空闲区连起来。KV 随后可以使用这些字节，整个 GPU 缓冲区的大小没有变化。
+
+<CompactionViz client:visible />
+
+请求和缓存前缀在复制之后仍然必须找到 C。因此，SGLang 在分配器之上保存**虚拟页号**，由映射表记录它对应的物理槽位。C 的编号仍是 C，表中的物理偏移从 8 改成 4。分配器复制页面数据并修改映射，不需要遍历每个请求和缓存前缀去重写引用。
+
+SGLang 可以延迟进行这种压实。释放页面时先更新分配记录，之后某次分配需要回收空间时，再执行必要的搬移。同时，调度器必须让复制和页面复用与尚未结束的 GPU forward 正确排序。CPU 侧的空闲列表出现一段空间，并不代表可以覆盖仍被 kernel 使用的字节。
+
+请求接纳也要使用同一个共享预算。新请求可能同时需要 KV 和一个新的循环状态槽位，调度器必须为两项开销都留出空间，还要检查是否确实能回收到足够的状态容量。如果把所有可驱逐的 KV 字节都当成立刻可用的状态槽位，就可能接纳一个实际分配不出状态的请求。
+
+### CUDA Graph 回放
+
+虚拟编号保证引用稳定，但 GPU kernel 需要能直接使用的读写位置。初版实现中，SGLang 在准备 forward metadata 时完成编号翻译，再回放 CUDA Graph。翻译结果写入地址固定的缓冲区。即使页面在两次 forward 之间搬移，捕获的 graph 仍读取同一块 metadata 缓冲区，只是里面的位置已经更新。
+
+这里需要区分两件事：**缓冲区地址固定**，以及**缓冲区里的索引值随执行更新**。如果捕获的 graph 仍读取旧 tensor，那么新建一个装着正确翻译结果的 tensor 并没有用。接入 MLA 后端和投机验证时，这个区别尤其重要。
+
+## MLA 混合模型
+
+### 页面布局
+
+Kimi-Linear 同时包含 KDA 循环层和 MLA 注意力层。MLA 保存压缩后的 latent row 与位置 key 信息，而不是为每个 head 分别保存展开后的 K、V 数组。[#32971](https://github.com/sgl-project/sglang/pull/32971) 中的 Kimi-Linear 配置每行缓存宽度为 576 个元素，其中 512 个属于 latent，64 个属于位置 key。验证使用的模型包含 20 个 KDA 层和 7 个 MLA 层。
+
+初版共享池描述的是 MHA 形状的 KV。接入 MLA，需要为这条缓存行计算正确的字节大小，并提供合适的 tensor view。Page envelope 本身可以保留，因为这份配置中各个 MLA 层的行宽相同。SGLang 为每层创建一个连续视图，其起点位于第一个 envelope 中该层数据的偏移处。这些视图共享原来的缓冲区，没有再分配一份缓存或复制数据。
+
+从某一层的视图看，当前逻辑页和下一个逻辑页之间隔着其他层的数据。SGLang 通过重新编号传给 kernel 的索引来跨过这些行。同一个 token 因而对应三个不同的数：请求保存的虚拟编号、分配器安排的物理位置，以及在 tensor view 中使用的行索引。早期实现将最后一种称为 *dense* 索引。
+
+<MlaAddressViz client:visible />
+
+图中有两个 MLA 层，每页每层保存四个 token。虚拟页 7 最初映射到物理页 2，其中偏移为 1 的 token，虚拟 token 编号是 29，物理 token 编号是 9，传给 kernel 的行索引则是 17。第 0 层的视图从第 0 行开始，第 1 层从第 4 行开始，因此同一个 kernel 索引分别访问原始缓冲区的第 17 行和第 21 行。将页面搬到物理页 1 后，虚拟编号仍为 29，kernel 索引变成 9。切换层时，变化的是视图起点，不是这个索引。
+
+这就是现有 MLA kernel 能使用共享池的原因：池提供兼容的视图，metadata 提供考虑过该布局的索引。压实和传输仍然使用物理页位置，不能把供 kernel 使用的索引当成字节地址。
+
+### 注意力后端
+
+[#32971](https://github.com/sgl-project/sglang/pull/32971) 先打通 Triton 路径。[#32972](https://github.com/sgl-project/sglang/pull/32972) 随后接入分页 MLA 后端，[#33046](https://github.com/sgl-project/sglang/pull/33046) 再覆盖当时 Hopper 上默认使用的 MLA 后端 FA3。
+
+| 后端路径 | SGLang 适配的部分 |
+| --- | --- |
+| Triton MLA | 连续层视图对应的读写索引 |
+| TRT-LLM MLA，以及 CuTe DSL、TokenSpeed 的 decode 路径 | 页表索引，以及 captured decode 使用的固定地址写入 metadata |
+| FlashInfer MLA | 将 token 索引翻译后写回原有索引缓冲区 |
+| FA3 MLA | 页表构建，包括 H100/H200 的默认路径 |
+
+FlashInfer 的经历说明，这不只是改一条允许列表。最初的翻译产生了一个新 tensor，captured decode 却继续读取原来的索引缓冲区。Eager 执行可以正常工作，回放却仍把虚拟编号当成 kernel 索引。最终合入的修复把翻译结果写回 graph 真正读取的缓冲区，并限定在有效前缀内。TRT-LLM MLA 也会刷新固定地址的写入位置缓冲区，并清空 padding 尾部，避免较小的 batch 复用前一次较大 batch 遗留的位置。
+
+循环层一侧同样需要按真实布局寻址。一个 KDA kernel 原先假设相邻状态槽位紧密排列，而共享 envelope 的槽位步长包含了其他层的数据。SGLang 将这条路径改为使用 tensor 的实际 stride 和宽位地址运算。即使 MLA 读取已经正确，如果 KDA 层仍更新错误的状态，整个混合模型也不会正确。
+
+## DSpark
+
+### 验证与状态提交
+
+DSpark 用 draft 模型生成一串候选 token，再由 target 模型一起验证多个 token。Target 接纳其中的一个前缀。已接纳 token 的注意力 KV 可以保留，被拒绝的候选则不能进入请求已提交的缓存。对于循环层，选中的状态必须恰好对应接纳前缀的末尾。如果保留整串候选之后的状态，就把被拒绝的 token 也算进去了。
+
+[#33974](https://github.com/sgl-project/sglang/pull/33974) 将**链式 DSpark** 接入 Unified Memory。Target 验证需要遵守与 decode 相同的编号翻译规则。TRT-LLM MLA 的 verify graph 接收一个预先填好、地址固定的 kernel 写入索引缓冲区。验证完成后，循环状态写回先将请求的虚拟 tracking 编号翻译为物理槽位，再把选中的卷积状态和循环状态 scatter 到正确位置。
+
+<SpeculationViz client:visible />
+
+这里 S0 表示 draft 之前的状态，Si 表示处理前 i 个草稿 token 后对应的状态。接纳两个候选，就提交 S2 并保留它们的 KV；一个也不接纳，就保留 S0。图中只跟踪候选前缀，target 的纠正 token 或额外 token 不在这个例子内。它展示的是状态选择规则，不代表每种实现都要为每个候选分配一份长期保存的完整状态副本。
+
+Draft 模型有自己的缓存。它直接用 target 分配器的虚拟 token 编号索引，而这个编号的范围可能大于某个子池当前的 token 容量预算。SGLang 因此按虚拟编号空间为 draft 缓存定容，同时保留 draft 原来的连续布局。Target 的 page-envelope 布局不会自动适用于 draft 后端。
+
+### 页面复用与状态步长
+
+验证还暴露出两个正确性问题。第一，共享页面被回收再分配后，里面可能残留它之前用于另一种数据时留下的字节。这条路径的 MLA kernel 会读取整页，包括序列末尾之后尚未使用的部分。其算术掩码无法可靠消除这些行中的 NaN，因此仅在启动时清零整个缓冲区，保护不了后续的页面分配。
+
+SGLang 在分配器交出页面时清零整个 envelope，让尚未写入的尾部具有确定的值，再由验证写入有效 KV。这次清零还必须排在旧的 GPU 使用者结束之后。清零时机不对，只会用一种数据损坏替换另一种。
+
+第二，Kimi K3 的 CuTe 验证 kernel 用 32 位运算计算状态槽位编号与 envelope 大步长的乘积。槽位编号较大时，乘积可能溢出，指向另一个槽位或整个分配区之外。SGLang 在乘法**之前**将槽位编号提升到 64 位。这也解释了为什么刚启动、负载很小的服务可能看起来正常，带负载运行后却出错。
+
+该 PR 同时验证了故意填入异常值的显存和真实 draft 的接纳路径。两个修复都加上后，随机 draft 的异常值测试恢复了无投机解码基线的分数；真实 draft 测试则覆盖了多个 token 被接纳后的提交。不过，报告中的短序列压力测试没有动态触发“压实搬移与 verify 写入竞争”这一场景。PR 基于核实过的调度顺序保留了延迟压实，这次测试本身并不等于完整的并发压力验证。该接入也没有开放所有投机算法，范围是经过检查的链式 DSpark 路径。[DSpark 课程](../dspark-speculative-decoding/)进一步介绍 draft 算法本身，这里的接入关注 target 的读写最终落在哪些位置。
+
+## PD 分离
+
+### 传输完整缓存
+
+在 prefill/decode 分离中，prefill 节点处理 prompt，decode 节点接着生成。混合模型需要同时传输注意力 KV，以及交接位置对应的循环状态。如果只传 KV，decode 节点的 KDA 或 Mamba 层就缺少继续计算所需的状态。
+
+[#33362](https://github.com/sgl-project/sglang/pull/33362) 让传输理解 page envelope。普通的逐层传输不能直接把各个 MLA 层视图当成独立缓冲区，因为这些视图互相重叠，并通过重新编号后的 kernel 索引访问。SGLang 改为注册原始缓冲区，把每个物理页 envelope 作为一个传输项，携带该页在所有注意力层中的数据。循环状态的传输项则包含整个槽位跨层的卷积状态和循环状态。
+
+发送端与接收端拥有各自的分配器，虚拟编号和物理位置可以不同。公布传输位置之前，两端分别将自己的虚拟编号翻译成物理页或状态槽位编号。RDMA 使用物理编号和 envelope 的字节大小，在已注册的缓冲区中寻址，不使用上一节的 MLA kernel 索引。由于 KV 和循环状态视图共用同一块原始分配，注册过程还会对这个显存区域去重。
+
+<TransferViz client:visible />
+
+### 保持地址有效
+
+GPU forward 与网络传输遵守不同的执行顺序。一旦把物理源地址或目标地址交给传输引擎，再把页面复制到其他位置，就会使原来的传输地址失效。修改虚拟到物理的映射表，无法重定向一个已经使用旧地址的 RDMA 操作。
+
+因此，SGLang 使用延迟压实，并用传输状态控制是否允许搬移。**保护区间从地址公布时就开始**，此时传输不一定已经出现在进行中的队列里；只有网络操作结束且搬移安全后，才解除保护。这个判断同时跟踪尚未完成的 prefill chunk、已经公布的 decode 目标地址，以及传输队列。只检查传输队列是否为空，会漏掉交接过程中的这些间隙。
+
+搬移被禁止时，分配器仍然可以更新分配记录，但压实不能改变数据位置。这会暂时减少某次分配能够通过搬移回收的容量。图中最后一步演示的是传输完成后再压实，表示此时允许搬移，不是说每次传输后都必须复制一次。
+
+### 支持的传输布局
+
+这次 PD 初始接入面向 Kimi-Linear 这样的 MLA-hybrid-Mamba 模型，使用 Mooncake 传输，两端 attention tensor parallelism 相同，pipeline parallel size 为 1，且两端都启用 Unified Memory。这些限制来自传输单位本身：原来的逐 tensor 传输逻辑无法把一个完整 envelope 重新切成不同的 TP 分片或一部分 PP 层。Decode 节点还需要额外预留请求表行，容纳那些已经分配目标显存、但尚未进入运行 batch 的请求。
+
+验证包含小模型的 PD 与非 PD unified 执行对比、多 chunk prefill 变体，以及 H200 上的 Kimi-Linear-48B 运行。这些测试检查交接和传输后的状态，并不证明所有后端或 PD 与投机解码的任意组合都已得到支持。
+
+## 按共享容量驱逐
+
+共享字节会改变缓存驱逐的停止条件。驱逐一个可复用前缀，可能同时释放 KV 和一个循环状态 checkpoint。分配器能够回收这些状态字节后，它们也可以满足待处理的 KV 分配。如果驱逐循环只统计已经释放的 KV 条目，就可能在共享容量已经足够时继续删除前缀。
+
+[#33091](https://github.com/sgl-project/sglang/pull/33091) 会询问共享分配器能否满足当前分配，一旦可以就停止。留下来的前缀仍然能服务后续请求。[Unified Radix Cache 课程](../unified-radix-cache/)介绍树如何找到可复用的 KV 和状态 checkpoint，Unified Memory 则为这些条目提供物理存储。
+
+下面的实验先预热 28 段可复用前缀，再用一个不相关的长请求制造压力，最后重放原来的前缀。两组均已启用 Unified Memory。池被限制为 8,192 个 FULL token 和 32 个 Mamba 状态，prefill chunk 为 8,192 tokens。变化的是由分配触发的驱逐行为。
+
+<BenchmarkViz client:visible />
+
+耗时取六次运行的中位数。请求没有发生回撤或分配失败，并且在缓存压力下检查了输出 token 一致性。总吞吐没有稳定变化。将 prefill chunk 缩小到 2,048 tokens 后，两组都保留了 28 段前缀中的 17 段。收益取决于负载如何释放共享容量，不能把这项结果当成开启共享池后普遍存在的加速。
+
+## 后续扩展
+
+### 更多注意力后端
+
+后续工作进一步合并了读取索引的准备路径。[#34613](https://github.com/sgl-project/sglang/pull/34613) 让更多后端共用页表构建。行宽一致的 MHA、SWA 模型增加了 FA3/FA4、FlashInfer 和 TRT-LLM MHA 路径，MLA 增加了 FlashMLA。每个 kernel 仍接收其 tensor view 所需的索引表示。非对称 K/V 布局并不会自动被同一条 dense-view 路径覆盖。
+
+### 三个子池
+
+[#35177](https://github.com/sgl-project/sglang/pull/35177) 面向 Inkling 这类同时包含全注意力、滑动窗口注意力和循环层的模型。此时两个端点不够用了。SGLang 增加一个能在相邻子池之间移动的中间子池，让三种数据共用一个缓冲区。
+
+回收空间时，分配器会沿相邻子池继续查找。它可以先压实空洞，再检查尚未满足的需求，必要时移动中间区域。请求接纳仍须同时满足多项需求：总字节数足够，但分配不出所需的 FULL 页、SWA 页和循环状态槽位组合，请求仍无法运行。该改动也更新了容量统计，避免移动边界被误认为容量泄漏或凭空增加。
+
+这仍然是一项改善容量使用的功能，也有运行时开销。三个子池的 PR 在相同注意力后端下比较了共享池与固定池，各模型的 token 间延迟中位数变化从 −0.81% 到 +1.32%，其中 Inkling 报告的中位数是 +0.85%。共享池初版 PR 没有发布速度基准。
+
+实现并没有停在这些节点。例如，后来的 [#36890](https://github.com/sgl-project/sglang/pull/36890) 通过组合各 rank 的 KV 归属规则与虚拟到物理的翻译，让 Kimi-Linear 的共享池与 decode context parallelism 一起工作。这些扩展都要求每个页面使用者明确两件事：自己持有的是哪种编号，以及页面的物理位置什么时候允许改变。
 
 ## 来源与致谢
 
-本文依据 SGLang 团队 Kimi K3 博客中的 Unified Memory 章节及所链接的实现 PR 编写。基准数据来自 #33091 和 #35177；容量与搬移图是教学模型，不是新的性能测量。感谢参与实现、测试和文档工作的 SGLang 贡献者。
+本文依据 SGLang 的 Kimi K3 博客和所链接的实现 PR 编写，时间线使用 GitHub 提供的 UTC PR 合入时间。寻址、验证和传输图采用归一化示例，基准数值来自对应 PR。接入章节描述这些改动引入时的设计，后续重构可能已经使用不同的内部名称。感谢实现并验证共享池及相关执行路径的 SGLang 贡献者。

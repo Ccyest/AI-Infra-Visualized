@@ -75,3 +75,50 @@ export const BENCHMARK = {
   prefill: { before: 105.65, after: 59.54, max: 120 },
 } as const;
 export type Metric = keyof typeof BENCHMARK;
+
+/** Schematic addressing example using the page-major rule from #32971. */
+export const MLA_DEMO = { pageSize: 4, layers: 2, virtualPage: 7, beforePage: 2, afterPage: 1 } as const;
+
+export function mlaCoordinates(compacted: boolean, layer: number, offset: number) {
+  const { pageSize, layers, virtualPage, beforePage, afterPage } = MLA_DEMO;
+  const physicalPage = compacted ? afterPage : beforePage;
+  const kernelIndex = physicalPage * pageSize * layers + offset;
+  const viewOrigin = layer * pageSize;
+  return {
+    physicalPage,
+    virtualToken: virtualPage * pageSize + offset,
+    physicalToken: physicalPage * pageSize + offset,
+    kernelIndex,
+    viewOrigin,
+    rawRow: viewOrigin + kernelIndex,
+  };
+}
+
+export const DRAFT_TOKENS = 4;
+export const SPEC_PHASES = ["reserveSpec", "verifySpec", "commitSpec"] as const;
+
+export function speculationSnapshot(phase: number, accepted: number) {
+  return {
+    isVerified: phase >= 1,
+    stateIndex: phase >= 2 ? accepted : 0,
+    kvStates: Array.from({ length: DRAFT_TOKENS }, (_, i) => {
+      if (phase === 0) return "zero";
+      if (phase === 1) return "tentative";
+      return i < accepted ? "retained" : "discarded";
+    }),
+  };
+}
+
+export const PD_PHASES = ["reservePd", "publishPd", "transferPd", "completePd", "compactPd"] as const;
+
+/** Independent source/destination IDs; no throughput or byte-size simulation. */
+export function transferSnapshot(phase: number) {
+  return {
+    isMoveBlocked: phase === 1 || phase === 2,
+    isReceived: phase >= 3,
+    sourceKv: phase === 4 ? 1 : 2,
+    destinationKv: phase === 4 ? 3 : 5,
+    sourceState: phase === 4 ? 3 : 4,
+    destinationState: phase === 4 ? 4 : 6,
+  };
+}
