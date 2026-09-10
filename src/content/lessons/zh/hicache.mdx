@@ -1,0 +1,106 @@
+---
+title: "SGLang HiCache：分层 KV 缓存让吞吐最高提升至 6 倍"
+description: "SGLang 通过复用 KV 缓存，避免反复处理相同前缀，但 GPU 显存无法保留所有长对话。一旦旧 KV 被驱逐，后续请求就得重复昂贵的 prefill 计算。SGLang HiCache 把缓存扩展到 CPU 内存和外部存储，再把可复用的 KV 搬回 GPU。高效的内存布局、逐层加载和可配置的预取策略，减少了数据搬运对收益的侵蚀。2025 年 9 月的博客报告，其基准中吞吐最高达到 **6 倍**，首 token 延迟最多降低 **80%**。实际收益取决于前缀复用程度、可用容量和传输速度。"
+order: 8
+concepts: []
+tryOnSglang: "https://github.com/sgl-project/sglang"
+references:
+  - label: "LMSYS Blog：SGLang HiCache: Fast Hierarchical KV Caching with Your Favorite Storage Backends"
+    url: "https://www.lmsys.org/blog/2025-09-10-sglang-hicache/"
+  - label: "sglang#8651：Support page first layout  zero copy for mooncake store"
+    url: "https://github.com/sgl-project/sglang/pull/8651"
+  - label: "sglang#9109：3fs zerocopy"
+    url: "https://github.com/sgl-project/sglang/pull/9109"
+  - label: "SGLang Cookbook：HiCache"
+    url: "https://sgl-project-sglang-93.mintlify.app/optimization/hicache"
+  - label: "SGLang：HiCache 基准测试"
+    url: "https://github.com/sgl-project/sglang/tree/main/benchmark/hicache"
+---
+
+import CacheTreeViz from "../../../viz/hicache/CacheTreeViz";
+import LayoutViz from "../../../viz/hicache/LayoutViz";
+import OverlapViz from "../../../viz/hicache/OverlapViz";
+import PrefetchViz from "../../../viz/hicache/PrefetchViz";
+import ResultsViz from "../../../viz/hicache/ResultsViz";
+
+## 背景
+
+模型为读入的 token 计算 key 和 value，简称 KV。生成时，attention 通过这些 KV 读取前文。如果后续请求以相同的 token 前缀开头，SGLang 就能复用对应的 KV，只计算新增的后缀。这既减少了 prefill 工作，也缩短了首 token 延迟，即 TTFT。
+
+难点在于保住旧 KV。长对话每一轮都占用更多空间，更多客户端又带来更多历史。GPU 缓存满了以后，某段前缀可能刚被驱逐，下一个请求就需要它。扩大缓存要有收益，还得满足一个条件：加载旧 KV 比重新计算更便宜。
+
+## HiCache
+
+### 设计与机制
+
+SGLang HiCache 在 GPU HBM、CPU DRAM 和外部存储中保留可复用的 KV。Attention 仍由 GPU 执行。CPU 内存和存储保留原本会被丢弃的 KV，cache controller 负责层间传输。
+
+HiRadixTree 用 token 序列索引本地缓存。每个节点存一段 token，以及对应 KV 在 GPU 和 CPU 池中的索引。沿一条路径把 token 段连起来，就是共享前缀。GPU 命中可以直接使用；CPU 命中则需要把数据传到新分配的 GPU 槽位。如果前缀不在本地，controller 可以用前缀派生的键查询外部存储，把命中的页预取到 CPU 内存。本地树未命中，并不意味着外部存储一定命中。
+
+<CacheTreeViz client:visible />
+
+图中用短 token 段和任意池索引作示意。对于前缀 A → B，A 已在 GPU 上，B 从 CPU 内存取回。对于 A → C，C 最初不在本地树上，成功从存储读取后才出现。备份可以同时存在于多个层级。搬运 KV 不要求删除来源层中的所有副本。
+
+### 存储后端
+
+2025 年的设计支持 Mooncake、DeepSeek 3FS、NIXL 和本地文件后端。后端提供键查询、读和写，中央 controller 负责调度与同步。NIXL 是连接其他存储系统的传输库，因此不能把这四个后端理解成四种完全等价的存储设备。
+
+## 数据搬运
+
+### 内存布局
+
+模型逐层使用 KV，因此 GPU 内存保留计算 kernel 所需的 layer-first 布局。存储 I/O 则受益于更大的连续传输。HiCache 让 host 池采用 page-first 布局，把同一页在不同层的 KV 放在一起。两边是同一份数据，但物理排列顺序不同。
+
+<LayoutViz client:visible />
+
+SGLang 用 GPU 辅助的 I/O kernel 搬运 CPU–GPU 数据。博客报告，相比标准的 `cudaMemcpyAsync` 路径，传输吞吐最高达到 3 倍。Page-first 布局结合 zero-copy I/O，在典型部署中让 host 内存与存储之间的吞吐最高达到 2 倍。这些优化作用于不同的传输路径，不能相乘当作端到端加速比。Mooncake 和 3FS 的改动链接见参考资料。
+
+### 逐层加载
+
+CPU 命中时，不必等全部层的 KV 都加载完才开始计算。第 0 层加载好以后，GPU 就能执行这一层，同时继续传输后续层的 KV。每层都必须等自己的 KV 就绪，但不需要等待所有后续层。这种重叠可以隐藏一部分传输时间。
+
+<OverlapViz client:visible />
+
+第一次加载仍然需要时间。如果传输比计算更慢，后续层仍可能停下来等数据。动画假设传输和计算耗时固定，用来展示依赖关系；时间轴不是硬件基准。
+
+## 缓存策略
+
+### 预取
+
+存储延迟通常比 CPU–GPU 延迟更高，也更难预测。HiCache 在请求等待调度时，开始把数据预取到 CPU 内存。尽力预取可以在请求准备运行时停止，复用已就绪的前缀，重新计算缺失部分。多等一会儿可能保住更多复用机会，也会推迟请求执行。超时策略则为等待设置上限。
+
+<PrefetchViz client:visible />
+
+示例把请求前缀视为一个不可拆的块，真实请求可以复用较大传输中已完成的一段前缀。存储快时，两种策略都会在调度前完成读取。读取稍晚时，等待可能省下更长的重算。存储很慢时，等待反而吃亏。命中更多缓存，本身并不保证 TTFT 更低。
+
+### 备份
+
+备份每段缓存，会在当前消耗带宽，以提高后续复用的机会。HiCache 提供三种选择：
+
+| 策略 | 备份时机 | 主要取舍 |
+| --- | --- | --- |
+| Write-through | 主动备份已缓存的 KV | 保留更多数据，增加 I/O |
+| Write-through-selective | 根据命中次数备份热点 | 减少 I/O，降低冷数据覆盖率 |
+| Write-back | 延迟到较快层驱逐时再备份 | 减少提前备份的流量，在驱逐路径上增加工作 |
+
+合适的配置取决于传输带宽和较低层的容量。增加存储并不会消除这些限制。
+
+## 基准结果
+
+### 长上下文
+
+原文的 LooGLE 基准在八张 H20-3e 上运行 DeepSeek-R1。图中比较仅 GPU 缓存、增加 CPU L2、增加 3FS L3，以及单独预先填充 L3 的情况。切换指标可以比较平均 TTFT 和输入吞吐。
+
+<ResultsViz client:visible />
+
+普通 L3 的输入吞吐为 51,168 tokens/s，平均 TTFT 为 1.83 秒。预先填充 L3 后，结果为 76,322 tokens/s 和 1.43 秒，但缓存预热条件已经改变。理解标题中的收益时，要区分这些条件。缓存复用场景中的输入吞吐包含已缓存输入的处理进度，不等于 GPU 为每个 token 新计算 KV 的速度。
+
+### 多轮对话
+
+Mooncake 实验在八张 H800 和八张 RDMA 网卡上运行 Qwen3-235B-A22B-Instruct-2507。80 个客户端进行 10 轮对话，每个请求新增 2,048 个输入 token、生成一个输出 token，用来近似 prefill/decode 分离中的 prefill 一侧。最后一轮，原图中仅 GPU 的 TTFT 约为 4.5 秒，L3 约为 0.8 秒。L3 命中率约为 90%，较小的缓存层则已丢失大量可复用历史。这些是从图中读取的近似值，不是公开的原始采样数据。
+
+社区报告来自不同工作负载。Novita AI 在使用 3FS 的 Qwen3-Coder-480B 编程 agent 中，报告平均 TTFT 降低 56%、推理吞吐翻倍。蚂蚁集团在使用 Mooncake 的 DeepSeek-R1-671B 问答请求中，报告缓存命中相比完整重算降低了 84% 的 TTFT。两者都不是这两个后端之间的受控对比。
+
+## 致谢
+
+原博客由 Zhiqiang Xie 撰写。文中感谢阿里云 TairKVCache 团队完成 3FS 集成；蚂蚁集团、阿里云、Approaching.AI 和 Mooncake 社区的贡献者推进 Mooncake 集成；NVIDIA Dynamo 团队完成 NIXL 集成。同时感谢 SGLang、LMCache、NVIDIA 和 Stanford 的贡献者参与设计与实现，以及 LMCache、AIBrix、PrisDB 和字节跳动 EIC 团队的生态工作。完整个人名单见原文。

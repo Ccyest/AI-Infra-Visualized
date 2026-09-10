@@ -1,0 +1,174 @@
+---
+title: "HiCache in SGLang: up to 6× throughput with hierarchical KV caching"
+description: "SGLang reuses KV caches to avoid processing the same prefix again, but GPU memory cannot retain every long conversation. Once old KV is evicted, later requests must repeat expensive prefill work. SGLang HiCache extends this cache into CPU memory and external storage, then brings reusable KV back to the GPU. Efficient memory layouts, layer-wise loading, and configurable prefetching keep data movement from consuming the savings. The September 2025 blog reports up to **6× throughput** and up to **80% lower time to first token** in its benchmarks. The benefit depends on prefix reuse, available capacity, and transfer speed."
+order: 8
+concepts: []
+tryOnSglang: "https://github.com/sgl-project/sglang"
+references:
+  - label: "LMSYS Blog: SGLang HiCache: Fast Hierarchical KV Caching with Your Favorite Storage Backends"
+    url: "https://www.lmsys.org/blog/2025-09-10-sglang-hicache/"
+  - label: "sglang#8651: Support page first layout  zero copy for mooncake store"
+    url: "https://github.com/sgl-project/sglang/pull/8651"
+  - label: "sglang#9109: 3fs zerocopy"
+    url: "https://github.com/sgl-project/sglang/pull/9109"
+  - label: "SGLang Cookbook: HiCache"
+    url: "https://sgl-project-sglang-93.mintlify.app/optimization/hicache"
+  - label: "SGLang: HiCache benchmarks"
+    url: "https://github.com/sgl-project/sglang/tree/main/benchmark/hicache"
+---
+
+import CacheTreeViz from "../../../viz/hicache/CacheTreeViz";
+import LayoutViz from "../../../viz/hicache/LayoutViz";
+import OverlapViz from "../../../viz/hicache/OverlapViz";
+import PrefetchViz from "../../../viz/hicache/PrefetchViz";
+import ResultsViz from "../../../viz/hicache/ResultsViz";
+
+## Background
+
+A model computes keys and values, or KV, for the tokens it reads. During generation,
+attention uses this KV to look back at the context. If a later request starts with
+the same token prefix, SGLang can reuse the corresponding KV and compute only the
+new suffix. This saves prefill work and shortens time to first token, or TTFT.
+
+The difficulty is keeping the old KV available. Long conversations take more space
+with every turn. More clients add more histories. When the GPU cache fills up,
+eviction can remove a prefix just before the next request needs it. A larger cache
+helps only if loading the saved KV costs less than computing it again.
+
+## HiCache
+
+### Design and mechanism
+
+SGLang HiCache keeps reusable KV across GPU HBM, CPU DRAM, and external storage.
+The GPU still performs attention. CPU memory and storage retain KV that would
+otherwise be discarded, and the cache controller handles transfers between tiers.
+
+HiRadixTree indexes the local cache by token sequence. Each node holds a token
+segment and references to its KV in the GPU and CPU pools. Concatenating the
+segments along a path gives the shared prefix. A GPU hit is ready to use; a CPU hit
+needs a transfer to newly allocated GPU slots. If the prefix is absent locally,
+the controller can query external storage using prefix-derived keys and prefetch
+matching pages into CPU memory. A local tree miss does not by itself prove a
+storage hit.
+
+<CacheTreeViz client:visible lang="en" />
+
+The diagram uses short token segments and arbitrary pool indices. For prefix
+A → B, A is already on the GPU and B comes from CPU memory. For A → C, C starts
+outside the local tree and appears only after a successful storage read. Backup
+copies can coexist across tiers. Moving KV does not require deleting every copy
+from the tier it came from.
+
+### Storage backends
+
+The 2025 design supports Mooncake, DeepSeek 3FS, NIXL, and a local file backend.
+The backend supplies key lookup, reads, and writes; the central controller handles
+scheduling and synchronization. NIXL is a transfer library that can connect to
+other storage systems, so these backends should not be read as four equivalent
+storage devices.
+
+## Data movement
+
+### Memory layout
+
+A model consumes KV one layer at a time. GPU memory therefore keeps the
+layer-first layout expected by its computation kernels. Storage I/O benefits from
+larger contiguous transfers. HiCache gives the host pool a page-first layout,
+placing one page's KV for different layers next to each other. The same data has
+a different physical order on the two sides.
+
+<LayoutViz client:visible lang="en" />
+
+SGLang uses GPU-assisted I/O kernels for CPU–GPU movement. The blog reports up to
+3× the transfer throughput of the standard `cudaMemcpyAsync` path. Page-first
+layout together with zero-copy I/O reaches up to 2× higher throughput between
+host memory and storage in typical deployments. These are improvements to
+different transfer paths, not factors to multiply into an end-to-end speedup.
+The Mooncake and 3FS changes are linked in the references.
+
+### Layer-wise loading
+
+A CPU hit does not need to wait for every layer's KV before computation starts.
+Once layer 0 is loaded, the GPU can execute it while later layers are still being
+transferred. Each layer must wait for its own KV, but it does not need the KV for
+all later layers. This overlap can hide part of the transfer time.
+
+<OverlapViz client:visible lang="en" />
+
+The first load still takes time. If transfers are slower than computation,
+later layers can still stall. The animation assumes fixed transfer and compute
+durations to show the dependency; its timeline is not a hardware benchmark.
+
+## Cache policies
+
+### Prefetch
+
+Storage latency is usually higher and less predictable than CPU–GPU latency.
+HiCache starts prefetching into CPU memory while a request waits for scheduling.
+Best-effort prefetch can stop when the request is ready to run, using the
+available prefix and recomputing what is missing. Waiting longer can preserve
+more reuse, but also delays the request. A timeout policy bounds that wait.
+
+<PrefetchViz client:visible lang="en" />
+
+The example treats the requested prefix as one indivisible block. Real requests
+can reuse a completed prefix of a larger transfer. With fast storage, both
+policies finish the read before scheduling. With a moderately late read,
+waiting can avoid a larger recomputation. With very slow storage, waiting loses.
+More cache hits alone do not guarantee a lower TTFT.
+
+### Backup
+
+Backing up every cached region spends bandwidth now to improve the chance of
+reuse later. HiCache exposes three choices:
+
+| Policy | Backup timing | Main tradeoff |
+| --- | --- | --- |
+| Write-through | Back up cached KV proactively | More retained data, more I/O |
+| Write-through-selective | Use hit counts to back up hot regions | Less I/O, less coverage for cold regions |
+| Write-back | Defer backup until eviction from the faster tier | Less early backup traffic, work on the eviction path |
+
+The useful setting depends on transfer bandwidth and capacity in the lower tiers.
+Adding storage does not remove those limits.
+
+## Benchmark results
+
+### Long context
+
+The original LooGLE benchmark uses DeepSeek-R1 on eight H20-3e GPUs. The chart
+compares GPU-only caching, an added CPU L2, an added 3FS L3, and a separately
+prepopulated L3. Switch the metric to compare average TTFT and input throughput.
+
+<ResultsViz client:visible lang="en" />
+
+The ordinary L3 result is 51,168 input tokens/s with 1.83-second average TTFT.
+Prepopulating L3 produces 76,322 input tokens/s and 1.43 seconds under a different
+warmup condition. Keep these conditions separate when interpreting the headline.
+Input throughput under cache reuse includes progress through cached input;
+it is not the rate at which the GPU newly computes every token's KV.
+
+### Multi-turn conversations
+
+The Mooncake experiment uses Qwen3-235B-A22B-Instruct-2507 on eight H800 GPUs with
+eight RDMA NICs. It runs 80 clients for 10 rounds, adding 2,048 input tokens and
+generating one output token per request to approximate the prefill side of a
+prefill/decode split. By the final round, the original plot shows GPU-only TTFT
+at about 4.5 seconds and L3 at about 0.8 seconds. The L3 hit rate is about 90%,
+while the smaller tiers have lost much of their reusable history. These values
+are approximate readings from the plot, not published raw samples.
+
+The community reports cover different workloads. Novita AI reports a 56%
+reduction in average TTFT and doubled inference throughput for a
+Qwen3-Coder-480B coding agent using 3FS. Ant Group reports an 84% TTFT reduction
+for cache hits versus full recomputation on DeepSeek-R1-671B QA requests with
+Mooncake. Neither result is a controlled comparison between the two backends.
+
+## Acknowledgments
+
+The original blog was written by Zhiqiang Xie. It credits the Alibaba Cloud
+TairKVCache team for 3FS integration; contributors from Ant Group, Alibaba Cloud,
+Approaching.AI, and the Mooncake community for Mooncake integration; and NVIDIA's
+Dynamo team for NIXL. It also thanks contributors from SGLang, LMCache, NVIDIA,
+and Stanford for the design and implementation, and the LMCache, AIBrix, PrisDB,
+and ByteDance EIC teams for ecosystem work. The original article lists the
+individual contributors.
