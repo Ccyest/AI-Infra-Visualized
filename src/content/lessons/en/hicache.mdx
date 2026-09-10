@@ -1,6 +1,8 @@
 ---
-title: "HiCache in SGLang: up to 6× throughput with hierarchical KV caching"
-description: "SGLang reuses KV caches to avoid processing the same prefix again, but GPU memory cannot retain every long conversation. Once old KV is evicted, later requests must repeat expensive prefill work. SGLang HiCache extends this cache into CPU memory and external storage, then brings reusable KV back to the GPU. Efficient memory layouts, layer-wise loading, and configurable prefetching keep data movement from consuming the savings. The September 2025 blog reports up to **6× throughput** and up to **80% lower time to first token** in its benchmarks. The benefit depends on prefix reuse, available capacity, and transfer speed."
+title: "HiCache in SGLang: hybrid-model caching with up to 15.5× input throughput"
+description: "SGLang reuses cached prefixes, but long agent conversations exhaust GPU memory and new hybrid models need more than ordinary KV. HiCache extends reuse across CPU memory and external storage, and now preserves recurrent states, sliding-window caches, and speculative draft state. This lesson explains the original design and follows its evolution through September 2026: hybrid-model support, DCP with DSpark, session-aware eviction, buffer-only host memory, and new platform adaptations. In the 2026 DeepSeek-V4-Flash multi-turn benchmark, Mooncake L3 raises effective input throughput from 9.4K to 145.5K tokens/s, about **15.5×**, with cache hits near **98%**."
+publishedDate: "2026-09-10"
+updatedDate: "2026-09-11"
 order: 8
 concepts: []
 tryOnSglang: "https://github.com/sgl-project/sglang"
@@ -15,6 +17,58 @@ references:
     url: "https://sgl-project-sglang-93.mintlify.app/optimization/hicache"
   - label: "SGLang: HiCache benchmarks"
     url: "https://github.com/sgl-project/sglang/tree/main/benchmark/hicache"
+  - label: "sglang#2693: Hierarchical Caching for SGLang"
+    url: "https://github.com/sgl-project/sglang/pull/2693"
+  - label: "sglang#7313: Kernels for efficient KV cache IO"
+    url: "https://github.com/sgl-project/sglang/pull/7313"
+  - label: "sglang#7704: Hicache Storage Layer Prototype"
+    url: "https://github.com/sgl-project/sglang/pull/7704"
+  - label: "sglang#7280: Add hf3fs support for hicache storage (based on #7704)"
+    url: "https://github.com/sgl-project/sglang/pull/7280"
+  - label: "sglang#7211: Support l3 cache (mooncake store) for hiradix cache"
+    url: "https://github.com/sgl-project/sglang/pull/7211"
+  - label: "sglang#8488: SGLang HiCache NIXL Connector"
+    url: "https://github.com/sgl-project/sglang/pull/8488"
+  - label: "sglang#21206: [RaidxTree Refactor]: Support Unified HybridRadixTree V2"
+    url: "https://github.com/sgl-project/sglang/pull/21206"
+  - label: "sglang#21259: [HiCache & HybridModel] mooncake backend support DSA & mamba  model"
+    url: "https://github.com/sgl-project/sglang/pull/21259"
+  - label: "sglang#25377: [HiCache][AMD] Add UMBP tiered DRAM + SSD L3 storage backend with hugepage host allocator  "
+    url: "https://github.com/sgl-project/sglang/pull/25377"
+  - label: "sglang#29417: [AMD] Enable unified-KV HiCache on DeepSeek-V4"
+    url: "https://github.com/sgl-project/sglang/pull/29417"
+  - label: "sglang#29191: [HiCache & HybridModel] nixl hicache backend support hybrid models"
+    url: "https://github.com/sgl-project/sglang/pull/29191"
+  - label: "sglang#29173: feat: Session-reference-aware Unified Radix Cache for agentic multi-turn workloads"
+    url: "https://github.com/sgl-project/sglang/pull/29173"
+  - label: "sglang#33112: [Feat] DCP + HiCache L2 Support (ported from kimi-k3)"
+    url: "https://github.com/sgl-project/sglang/pull/33112"
+  - label: "sglang#30393: [HiCache] Support packed and sidecar draft caches for MTP/EAGLE/DSpark"
+    url: "https://github.com/sgl-project/sglang/pull/30393"
+  - label: "sglang#33639: [Hicache][2/2]Support Mamba branching in Unified Radix Cache with HiCache"
+    url: "https://github.com/sgl-project/sglang/pull/33639"
+  - label: "sglang#34798: [HiCache] Buffer-only mode for HiCache host memory layer"
+    url: "https://github.com/sgl-project/sglang/pull/34798"
+  - label: "sglang#35221: [HiCache] Support DCP with DSpark"
+    url: "https://github.com/sgl-project/sglang/pull/35221"
+  - label: "sglang#37424: [HiCache] Buffer mode support sidecar pool"
+    url: "https://github.com/sgl-project/sglang/pull/37424"
+  - label: "sglang#36800: [HiCache] Add MLA host-dedup primitives"
+    url: "https://github.com/sgl-project/sglang/pull/36800"
+  - label: "sglang#38826: [NPU][Hicache] Optimize HiCache L2 IO with Memfabric acc_offload"
+    url: "https://github.com/sgl-project/sglang/pull/38826"
+  - label: "sglang#31920: [HiCache] Add model-aware key isolation to Mooncake Store"
+    url: "https://github.com/sgl-project/sglang/pull/31920"
+  - label: "sglang#37050: docs: state that HiCache L2 is instance-private and only L3 is shared"
+    url: "https://github.com/sgl-project/sglang/pull/37050"
+  - label: "sglang#26691: [HiCache] Dedup MLA KV cache in host memory across TP ranks"
+    url: "https://github.com/sgl-project/sglang/pull/26691"
+  - label: "sglang#35815: feat(hicache): support Ascend Mamba states with FIA and async IO"
+    url: "https://github.com/sgl-project/sglang/pull/35815"
+  - label: "sglang#32500: feat(hicache): support Ascend Mamba states with FIA and async IO"
+    url: "https://github.com/sgl-project/sglang/pull/32500"
+  - label: "LMSYS Blog: Unified Radix Cache: One Tree for Hybrid Model Prefix Caching"
+    url: "https://www.lmsys.org/blog/2026-08-11-unified-radix-cache/"
 ---
 
 import CacheTreeViz from "../../../viz/hicache/CacheTreeViz";
@@ -22,6 +76,12 @@ import LayoutViz from "../../../viz/hicache/LayoutViz";
 import OverlapViz from "../../../viz/hicache/OverlapViz";
 import PrefetchViz from "../../../viz/hicache/PrefetchViz";
 import ResultsViz from "../../../viz/hicache/ResultsViz";
+import TimelineViz from "../../../viz/hicache/TimelineViz";
+import StateRestoreViz from "../../../viz/hicache/StateRestoreViz";
+import DraftRestoreViz from "../../../viz/hicache/DraftRestoreViz";
+import HostModeViz from "../../../viz/hicache/HostModeViz";
+import MultiTurnBenchViz from "../../../viz/unified-radix-cache/MultiTurnBenchViz";
+import SweBenchViz from "../../../viz/unified-radix-cache/SweBenchViz";
 
 ## Background
 
@@ -34,6 +94,16 @@ The difficulty is keeping the old KV available. Long conversations take more spa
 with every turn. More clients add more histories. When the GPU cache fills up,
 eviction can remove a prefix just before the next request needs it. A larger cache
 helps only if loading the saved KV costs less than computing it again.
+
+## Development timeline
+
+The original hierarchical-cache proposal #2693 opened on January 1, 2025 and
+merged on February 24. Storage integration followed in July. The 2026 work adds
+new state types, speculative decoding, parallel layouts, and host-memory modes.
+The timeline uses UTC merge dates into main; it distinguishes the merged MLA
+dedup building blocks from a complete dedup feature.
+
+<TimelineViz client:visible lang="en" />
 
 ## HiCache
 
@@ -131,7 +201,182 @@ reuse later. HiCache exposes three choices:
 The useful setting depends on transfer bandwidth and capacity in the lower tiers.
 Adding storage does not remove those limits.
 
-## Benchmark results
+## Hybrid models
+
+The sections above describe the original 2025 design. The following additions
+cover merged work and public evaluations checked on September 11, 2026.
+
+### More than full-attention KV
+
+New models do not all retain the same kind of history. Full attention keeps KV
+for the whole reusable prefix. Sliding-window attention only needs its trailing
+window. A recurrent layer needs a state saved at the exact prefix boundary.
+Saving Full KV alone cannot reconstruct that state without more computation.
+SGLang's Unified Radix Cache puts these components on the same token tree, while
+each component checks whether its own data is valid for reuse.
+
+This extended HiCache to new combinations. Mooncake gained DSA and Mamba-state
+storage in #21259, with Qwen3.5-9B and DeepSeek-V3.2-Exp validation. NIXL gained
+hybrid side-pool storage in #29191, including Qwen3.5 recurrent state and DSA
+indexer buffers. A storage backend must handle these additional buffers as well
+as ordinary KV. The MAMBA component names a recurrent-state cache abstraction;
+it does not mean every model using that component has the original Mamba architecture.
+
+### Branch checkpoints
+
+A shared prefix may already have Full KV in CPU memory when a new request creates
+another recurrent-state checkpoint along that prefix. Treating the whole node as
+already backed up would skip the new state. After GPU eviction, the Full KV could
+be recovered but the new checkpoint would be missing. #33639 adds an incremental
+backup of the newly available component, without copying Full KV again.
+
+<StateRestoreViz client:visible lang="en" />
+
+The PR verifies this by building shared prefixes, forcing them to Host, creating
+new branch states, evicting again, and testing recovery. In its final ten-request
+stage, full 6.4K-prefix hits rise from 1/10 to 10/10. This is a recovery result,
+not a throughput measurement. The change initially covers write-through; it does
+not establish the same incremental-backup behavior for write-back.
+
+### Hybrid-model results
+
+The August 2026 Unified Radix Cache evaluation compares GPU L1, L1 plus CPU L2,
+and L1 plus L2 plus a 500 GiB Mooncake L3. It uses DeepSeek-V4-Flash with FULL and
+SWA, and Inkling-Small with FULL, SWA, and MAMBA. The configurations and scales
+differ between models, so compare tiers within each model.
+
+<MultiTurnBenchViz client:visible lang="en" />
+
+On DeepSeek-V4-Flash, effective input throughput increases from 9.4K to 145.5K
+tokens/s with L3, and the hit rate stays near 98%. Inkling-Small reaches 67.1K
+instead of 15.5K and ends at a 96.8% hit rate. These measurements include cached
+input tokens in serving progress. They show the benefit of retaining growing
+conversation histories, not a corresponding multiplication of raw GPU compute.
+
+## Agents and speculative decoding
+
+### Draft-state recovery
+
+Speculative decoding uses a draft model to propose tokens for the target model
+to verify. The draft can have its own KV, indexer, or sliding-window buffers.
+Recovering only the target cache can leave draft state missing or mapped to the
+wrong slots. A target-side cache hit can then coexist with a lower draft acceptance
+rate. #30393 makes the matching target and draft state travel together.
+
+SGLang uses two layouts. Compatible NextN MTP/EAGLE models and DeepSeek-V4 DSpark
+append draft buffers to the corresponding target host pools. Standalone EAGLE,
+DFlash, and other supported DSpark topologies use separate sidecar pools whose
+indices follow target KV or SWA. Both paths attach the draft buffers to the same
+L2/L3 operation. Inkling HiCache MTP is explicitly outside this PR's support.
+
+<DraftRestoreViz client:visible lang="en" />
+
+The chart uses the PR's cold-run and L3-replay validation on the same prompts.
+After the change, replay acceptance remains close to the cold run instead of
+falling after cache recovery. Acceptance rate is the measured outcome here;
+these numbers are not an end-to-end throughput benchmark.
+
+### DCP compatibility
+
+Decode context parallelism, or DCP, partitions context KV across ranks. A rank's
+physical cache rows no longer cover the entire logical index range. This matters
+when a draft pool inherits target indices: allocating it from only the rank's
+physical row count can make valid logical indices fall outside the host pool.
+
+SGLang added DCP with HiCache L2 in #33112. #35221 then enabled the DSpark
+combination and sized draft host pools for the target's logical capacity. The PR
+validates Kimi-K3 with its DSpark draft on 8 B300 GPUs at TP8/DCP8, with 64/64
+requests completing under eviction pressure. This establishes that tested
+combination; it does not imply every speculative algorithm works with DCP.
+
+### Session-aware eviction
+
+An agent often returns to the same prefix after a tool call. Ordinary LRU knows
+when KV was last accessed, but not whether an active session still needs it.
+#29173 adds session references to Unified Radix Cache. GPU and host eviction
+prefer unreferenced entries; referenced entries remain evictable if more space
+is needed. Closing a session releases the reference without immediately deleting KV.
+
+<SweBenchViz client:visible lang="en" />
+
+The 2026 SWE-bench evaluation reports up to 16.6% lower TTFT for the session-aware
+Unified configuration. The comparison changes both the tree implementation and
+the eviction policy relative to ordinary HiRadixCache with LRU, so it is not an
+isolated measurement of session references. This session policy covers L1 and L2,
+not eviction inside the external L3 service.
+
+## Host memory and storage
+
+### Private L2 and shared L3
+
+Each serving instance owns its GPU and CPU cache pools. Two instances on the same
+machine do not automatically share one L2 cache. An external L3 can make stored
+KV available across compatible instances. Increasing one instance's host-memory
+budget only enlarges its own L2. The sharing boundary is made explicit in #37050;
+#31920 also adds model-aware isolation for Mooncake keys. Matching token text
+alone is not enough to make KV from different model configurations interchangeable.
+
+### Buffer-only mode
+
+The original design treats CPU memory as another persistent cache. #34798 adds
+a different choice: use host memory as a temporary transfer buffer between the
+GPU and L3. Backups pass through it on their way to storage, and prefetches pass
+through it on their way to the GPU. Once a transfer completes and releases its
+ownership, the staging space can serve another transfer. The host pool no longer
+has to retain a large second copy of the working set.
+
+<HostModeViz client:visible lang="en" />
+
+This mode requires a storage backend and still moves data through CPU memory.
+It does not mean every backend has a direct GPU-to-storage path. A smaller host
+pool also limits how much I/O can be in flight, and losing persistent L2 reuse
+can increase L3 traffic. The original buffer-only PR does not publish a general
+speedup; its main contribution is another way to use limited host memory.
+
+### Buffer-only with sidecars
+
+The September 4 change #37424 brings sidecar pools into buffer mode. Its validation
+combines DeepSeek-V4-Flash-0731, Mooncake L3, and DSpark on 8 H100 GPUs. It first
+runs all 198 GPQA Diamond examples to populate storage, flushes device/radix
+cache, then runs the dataset again from L3.
+
+Both runs score 181/198, or 91.41%. DSpark acceptance is 45.84% on the first run
+and 45.83% on replay. All 140 prompts with at least one cacheable page load their
+expected tokens from L3; 58 prompts are too short for a cacheable page. This
+validates the combined cache and draft-state path, rather than claiming a new
+latency record.
+
+## Platform adaptations
+
+**AMD and DeepSeek-V4.** #29417 adds HiCache for the `unified_kv_triton` layout.
+It retains compressed C4/C128 KV, while the SWA ring's trailing window is
+re-prefilled. In the PR's TP4 warm-run test with 50K input tokens, 200 output
+tokens, and concurrency 64, output throughput rises from 66 to 789 tokens/s;
+median TTFT falls from 91.128 to 3.982 seconds. The GPU-only warm run cannot
+retain this working set. These are warm-cache results under capacity pressure,
+not cold-start gains.
+
+**Additional storage.** #25377 adds AMD's UMBP-backed tiered storage integration.
+Its published DRAM test uses a five-layer DeepSeek-V3 model on 8 MI355X GPUs;
+average TTFT falls from 175.6 to 50.0 ms. The row labeled with SSD configuration
+has SSD disabled, so that row is a configuration smoke test, not evidence of
+SSD performance. NIXL's later hybrid support also makes storage integration
+cover recurrent and auxiliary pools, not just Full KV.
+
+**Ascend I/O.** The September 10 merge #38826 adds Memfabric-mapped host memory
+and an AscendC sparse-copy path for L2 transfers. It also avoids a host-to-device
+upload synchronization that would drain the stream and serialize the pipeline.
+This is a new host-memory and I/O adaptation; it does not establish a universal
+speedup across all Ascend models.
+
+Two related efforts need a different status label. #36800 has merged only the
+building blocks for MLA host-copy deduplication; the scheduler/controller
+integration in #26691 is still open at the review date. Ascend Mamba async I/O
+in #35815 merged into `qwen_optimize`, while its main-branch counterpart #32500
+is still open. Neither should be presented as a completed, generally available
+mainline feature.
+
+## Original 2025 benchmarks
 
 ### Long context
 
@@ -163,7 +408,7 @@ Qwen3-Coder-480B coding agent using 3FS. Ant Group reports an 84% TTFT reduction
 for cache hits versus full recomputation on DeepSeek-R1-671B QA requests with
 Mooncake. Neither result is a controlled comparison between the two backends.
 
-## Acknowledgments
+## Original blog acknowledgments
 
 The original blog was written by Zhiqiang Xie. It credits the Alibaba Cloud
 TairKVCache team for 3FS integration; contributors from Ant Group, Alibaba Cloud,

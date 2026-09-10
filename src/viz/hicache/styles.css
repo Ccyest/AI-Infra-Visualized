@@ -58,3 +58,32 @@
   .hc-bar-axis { margin-left: 112px; margin-right: 60px; }
   .hc-picker, .hc-bars, .hc-timelines { padding-left: 14px; padding-right: 14px; }
 }
+.hc-history { list-style: none; padding: 0 24px 22px; margin: 0; }
+.hc-history li { display: grid; grid-template-columns: 94px 14px 1fr; gap: 12px; align-items: baseline; margin: 0; padding: 9px 0; position: relative; font-size: 13px; }
+.hc-history li::before { content: ""; position: absolute; top: 0; bottom: 0; left: 112px; border-left: 1px solid var(--grid); }
+.hc-history time { font-variant-numeric: tabular-nums; color: var(--muted); font-size: 12px; }
+.hc-history-dot { width: 8px; height: 8px; margin-left: 3px; border-radius: 50%; background: var(--series-1); z-index: 1; }
+.hc-history a { font-variant-numeric: tabular-nums; margin-right: 6px; }
+.hc-state-branch { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 10px 20px 24px; font-size: 13px; }
+.hc-state-branch > div { display: flex; gap: 30px; }
+.hc-state-pools, .hc-instances { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; padding: 0 20px 20px; }
+.hc-payload-absent { opacity: .35; border-style: dashed; text-decoration: line-through; }
+.hc-update-stat { display: flex; flex-wrap: wrap; align-items: baseline; gap: 14px; min-height: 48px; padding: 10px 20px 20px; font-size: 13px; }
+.hc-update-stat b { font-size: 25px; }
+.hc-draft-path { display: flex; gap: 16px; align-items: center; padding: 0 20px 14px; font-size: 13px; }
+.hc-draft-path .hc-pool { flex: 1; }
+.hc-draft-path .hc-pool span { flex-basis: 100%; }
+.hc-instances { padding-top: 8px; padding-bottom: 0; }
+.hc-instance h4 { text-align: center; }
+.hc-flow-arrow { display: block; text-align: center; color: var(--muted); padding: 8px; }
+.hc-shared { margin: 0 20px 20px; padding: 14px; border: 1px solid var(--series-3); border-radius: 10px; display: flex; gap: 15px; align-items: center; justify-content: center; font-size: 13px; }
+@media (max-width: 600px) {
+  .hc-history { padding-left: 14px; padding-right: 14px; }
+  .hc-history li { grid-template-columns: 73px 10px 1fr; gap: 8px; font-size: 12px; }
+  .hc-history li::before { left: 85px; }
+  .hc-history time { font-size: 10px; }
+  .hc-history-dot { margin-left: 1px; }
+  .hc-instances, .hc-state-pools { gap: 10px; padding-left: 14px; padding-right: 14px; }
+  .hc-draft-path { flex-wrap: wrap; }
+  .hc-draft-path .hc-pool { flex-basis: 100%; }
+}
