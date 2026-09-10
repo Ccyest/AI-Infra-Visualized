@@ -1,6 +1,6 @@
 ---
 title: "SGLang HiCache：支持混合模型，输入吞吐最高达 15.5 倍"
-description: "SGLang 通过缓存复用前缀，但长对话会耗尽 GPU 显存，新混合模型需要保留的也不只是普通 KV。HiCache 把复用扩展到 CPU 内存和外部存储，如今还能保留递归状态、滑窗缓存和投机解码的 draft 状态。本文先解释原始设计，再追踪到 2026 年 9 月的新进展：混合模型、DCP 与 DSpark、会话感知驱逐、buffer-only host 内存和新的平台适配。2026 年 DeepSeek-V4-Flash 多轮基准中，Mooncake L3 把有效输入吞吐从 9.4K 提高到 145.5K tokens/s，约为 **15.5 倍**，缓存命中率保持在约 **98%**。"
+description: "SGLang 通过复用缓存前缀避免重复 prefill，但长对话很快就会耗尽 GPU 显存。HiCache 用 CPU 内存和外部存储保留历史，再让传输与计算重叠，减少恢复缓存的等待。随着模型加入递归层和投机解码的 draft，它还必须恢复从同一前缀继续执行所需的完整状态。本文沿着这些问题解释设计演化，以及 host 缓存与临时缓冲之间的取舍。DeepSeek-V4-Flash 多轮基准中，加入 Mooncake L3 后，有效输入吞吐达到原来的 **15.5 倍**，缓存命中率保持在约 **98%**。"
 publishedDate: "2026-09-10"
 updatedDate: "2026-09-11"
 order: 8
@@ -23,50 +23,18 @@ references:
     url: "https://github.com/sgl-project/sglang/pull/7313"
   - label: "sglang#7704：Hicache Storage Layer Prototype"
     url: "https://github.com/sgl-project/sglang/pull/7704"
-  - label: "sglang#7280：Add hf3fs support for hicache storage (based on #7704)"
-    url: "https://github.com/sgl-project/sglang/pull/7280"
-  - label: "sglang#7211：Support l3 cache (mooncake store) for hiradix cache"
-    url: "https://github.com/sgl-project/sglang/pull/7211"
-  - label: "sglang#8488：SGLang HiCache NIXL Connector"
-    url: "https://github.com/sgl-project/sglang/pull/8488"
-  - label: "sglang#21206：[RaidxTree Refactor]: Support Unified HybridRadixTree V2"
-    url: "https://github.com/sgl-project/sglang/pull/21206"
   - label: "sglang#21259：[HiCache & HybridModel] mooncake backend support DSA & mamba  model"
     url: "https://github.com/sgl-project/sglang/pull/21259"
-  - label: "sglang#25377：[HiCache][AMD] Add UMBP tiered DRAM + SSD L3 storage backend with hugepage host allocator  "
-    url: "https://github.com/sgl-project/sglang/pull/25377"
-  - label: "sglang#29417：[AMD] Enable unified-KV HiCache on DeepSeek-V4"
-    url: "https://github.com/sgl-project/sglang/pull/29417"
-  - label: "sglang#29191：[HiCache & HybridModel] nixl hicache backend support hybrid models"
-    url: "https://github.com/sgl-project/sglang/pull/29191"
-  - label: "sglang#29173：feat: Session-reference-aware Unified Radix Cache for agentic multi-turn workloads"
-    url: "https://github.com/sgl-project/sglang/pull/29173"
-  - label: "sglang#33112：[Feat] DCP + HiCache L2 Support (ported from kimi-k3)"
-    url: "https://github.com/sgl-project/sglang/pull/33112"
   - label: "sglang#30393：[HiCache] Support packed and sidecar draft caches for MTP/EAGLE/DSpark"
     url: "https://github.com/sgl-project/sglang/pull/30393"
   - label: "sglang#33639：[Hicache][2/2]Support Mamba branching in Unified Radix Cache with HiCache"
     url: "https://github.com/sgl-project/sglang/pull/33639"
   - label: "sglang#34798：[HiCache] Buffer-only mode for HiCache host memory layer"
     url: "https://github.com/sgl-project/sglang/pull/34798"
-  - label: "sglang#35221：[HiCache] Support DCP with DSpark"
-    url: "https://github.com/sgl-project/sglang/pull/35221"
-  - label: "sglang#37424：[HiCache] Buffer mode support sidecar pool"
-    url: "https://github.com/sgl-project/sglang/pull/37424"
-  - label: "sglang#36800：[HiCache] Add MLA host-dedup primitives"
-    url: "https://github.com/sgl-project/sglang/pull/36800"
-  - label: "sglang#38826：[NPU][Hicache] Optimize HiCache L2 IO with Memfabric acc_offload"
-    url: "https://github.com/sgl-project/sglang/pull/38826"
   - label: "sglang#31920：[HiCache] Add model-aware key isolation to Mooncake Store"
     url: "https://github.com/sgl-project/sglang/pull/31920"
   - label: "sglang#37050：docs: state that HiCache L2 is instance-private and only L3 is shared"
     url: "https://github.com/sgl-project/sglang/pull/37050"
-  - label: "sglang#26691：[HiCache] Dedup MLA KV cache in host memory across TP ranks"
-    url: "https://github.com/sgl-project/sglang/pull/26691"
-  - label: "sglang#35815：feat(hicache): support Ascend Mamba states with FIA and async IO"
-    url: "https://github.com/sgl-project/sglang/pull/35815"
-  - label: "sglang#32500：feat(hicache): support Ascend Mamba states with FIA and async IO"
-    url: "https://github.com/sgl-project/sglang/pull/32500"
   - label: "LMSYS Blog: Unified Radix Cache: One Tree for Hybrid Model Prefix Caching"
     url: "https://www.lmsys.org/blog/2026-08-11-unified-radix-cache/"
 ---
@@ -81,7 +49,6 @@ import StateRestoreViz from "../../../viz/hicache/StateRestoreViz";
 import DraftRestoreViz from "../../../viz/hicache/DraftRestoreViz";
 import HostModeViz from "../../../viz/hicache/HostModeViz";
 import MultiTurnBenchViz from "../../../viz/unified-radix-cache/MultiTurnBenchViz";
-import SweBenchViz from "../../../viz/unified-radix-cache/SweBenchViz";
 
 ## 背景
 
@@ -89,9 +56,9 @@ import SweBenchViz from "../../../viz/unified-radix-cache/SweBenchViz";
 
 难点在于保住旧 KV。长对话每一轮都占用更多空间，更多客户端又带来更多历史。GPU 缓存满了以后，某段前缀可能刚被驱逐，下一个请求就需要它。扩大缓存要有收益，还得满足一个条件：加载旧 KV 比重新计算更便宜。
 
-## 开发时间线
+## 技术演化
 
-最初的分层缓存提案 #2693 于 2025 年 1 月 1 日提出，2 月 24 日合入，存储层在 7 月陆续接入。2026 年的工作进一步加入新的状态类型、投机解码、并行布局和 host 内存模式。时间线使用合入 main 的 UTC 日期；其中 MLA 去重标注为基础组件，不代表完整去重功能已经落地。
+HiCache 先把 GPU 缓存扩到 CPU 内存，再接入外部存储。在扩大容量的同时，还要让搬运足够便宜，确实比重算划算。混合模型与投机解码又改变了需要保存的内容：同一段前缀可能对应好几种状态。Buffer-only 模式则进一步把长期保存和临时中转分开。下面的关键节点对应本文要解释的设计变化。
 
 <TimelineViz client:visible />
 
@@ -151,103 +118,63 @@ CPU 命中时，不必等全部层的 KV 都加载完才开始计算。第 0 层
 
 合适的配置取决于传输带宽和较低层的容量。增加存储并不会消除这些限制。
 
-## 混合模型
+## 混合模型的状态
 
-前面的章节解释 2025 年原始设计。下面补充截至 2026 年 9 月 11 日核验的已合入工作与公开测试结果。
+更大的缓存解决了容量问题，但还必须保存正确的数据。2026 年的 HiCache 工作把原始设计扩展到同时使用多种历史信息的模型。
 
-### 不只是 Full KV
+### 复用边界
 
-新模型保留历史的方式并不相同。Full attention 保留整段可复用前缀的 KV；滑窗注意力只需要尾部窗口；递归层则需要恰好位于前缀边界的状态。只保存 Full KV，无法在不增加计算的情况下重建这个状态。SGLang 的 Unified Radix Cache 把这些组件放在同一棵 token 树上，由每个组件检查自己的数据是否满足复用条件。
+Full attention 需要可复用前缀的 KV。滑窗注意力需要复用边界处的尾部窗口。递归层则需要恰好位于该边界的 checkpoint。递归状态随 token 到来不断更新，不能把较晚的 checkpoint 简单截短，得到较早的状态。
 
-HiCache 因此扩展到新的组合。#21259 为 Mooncake 加入 DSA 与 Mamba 状态存储，并验证了 Qwen3.5-9B 和 DeepSeek-V3.2-Exp。#29191 为 NIXL 加入混合模型的辅助池存储，包括 Qwen3.5 的递归状态和 DSA 的 indexer buffer。存储后端除了处理普通 KV，还必须处理这些额外 buffer。MAMBA 组件是递归状态缓存的抽象名称，不代表使用它的模型都采用原始 Mamba 架构。
+SGLang 的 Unified Radix Cache 把这些组件放在同一棵 token 树上，分别记录池位置、检查复用条件。HiCache 必须备份并恢复选定边界所需的组件。例如，Qwen3.5 还需要递归状态，DeepSeek-V3.2 需要稀疏注意力的 indexer buffer。只复制普通 KV，会漏掉模型历史的一部分。
 
 ### 分支 checkpoint
 
-共享前缀的 Full KV 可能已经在 CPU 内存中备份，随后一个新请求又在这段前缀上生成新的递归状态 checkpoint。如果把整个节点视为「已经备份」，就会漏掉新状态。GPU 驱逐以后，Full KV 能恢复，新 checkpoint 却找不到。#33639 为新增组件补上增量备份，不必重新复制 Full KV。
+假设 host 已经保存了截至 P3 的 Full KV，以及 P3 处的递归 checkpoint S0。新请求从 P2 分支，并在那里生成 checkpoint S1。旧 S0 包含 P2 之后的 token，不能用于这条分支。如果备份时只检查节点是否已有 host 副本，就会跳过 S1。下一个请求虽然能加载 Full KV，却仍缺少从 P2 继续执行所需的状态。
+
+SGLang 为新增 checkpoint 补上增量备份。Full KV 留在原处，只需再传输 S1。备份因此要跟踪新出现的组件，不能把整段前缀一概视为已经保存。
 
 <StateRestoreViz client:visible />
 
-PR 的验证先构建共享前缀，把它们挤到 Host，再创建新的分支状态、再次驱逐，最后检查恢复。在末轮十个请求中，完整命中 6.4K 前缀的请求从 1/10 增至 10/10。这是恢复能力的验证，不是吞吐测量。该改动最初覆盖 write-through，不能据此认定 write-back 已具有相同的增量备份行为。
+恢复测试在两轮 GPU 驱逐之间创建分支状态，最后检查每个请求能否恢复完整共享前缀，实测结果见图。该改动覆盖 write-through 备份，不能据此认定 write-back 已具有相同行为。
 
-### 混合模型结果
+## Draft 状态恢复
+
+投机解码又增加了一个使用前缀的模型。Draft 模型提出候选 token，再由 target 模型验证；draft 可以有自己的 KV 或其他历史 buffer。只恢复 target KV，可能让 draft 状态缺失，或映射到错误槽位。因此，即使 target 缓存命中，draft 接受率仍可能下降。
+
+SGLang 把配套的 draft buffer 加入 target 的缓存传输。布局适合放在一起时，就把 draft 数据打包到对应的 target host 池中；否则使用独立 sidecar 池，让它们的索引跟随 target 的 KV 或滑窗索引。两种方式都会在 L2、L3 备份和恢复时带上关联的 draft 状态。这是 HiCache 扩展 MTP、EAGLE、DSpark 支持背后的机制。
+
+<DraftRestoreViz client:visible />
+
+DSpark 测试对同一批 prompt 先做冷运行，再从 L3 恢复运行。改动后，恢复运行的接受率接近冷运行。完整恢复状态的意义因此不只在 prefill：它也保住了后续解码中 draft 的有效性。接受率并不是端到端吞吐指标。
+
+## Host 内存作为缓冲
+
+原始分层设计让 CPU 内存长期保留第二份缓存。再次请求同一前缀时，可以直接从 L2 加载，省去读取存储。但每个服务实例都有自己的 L2 池。多个实例可能各自保留 host 副本，同时又向共享 L3 备份。即使 L3 已经保存了可复用历史，扩大每个 L2 仍会消耗更多 host 内存。
+
+Buffer-only 模式改变了 CPU 内存的用途。备份经 host 缓冲写入 L3，预取经 host 缓冲加载到 GPU。传输完成、槽位释放后，下一次传输就能使用这些空间。Host 池保存的是中转数据，不再长期保留第二份工作集。共享 L3 仍要求模型配置兼容；token 文本相同，不代表两个模型的 KV 可以互换。
+
+<HostModeViz client:visible />
+
+代价是失去长期 L2 复用，并可能增加 L3 流量。较小的 host 池还会限制同时进行的传输数量。因此，当存储能承担复用流量时，buffer-only 可以节省 host 容量；它并没有消除 CPU 中转路径，也不保证延迟更低。
+
+## 效果
+
+### 长上下文 · 2025
+
+原文的 LooGLE 基准在八张 H20-3e 上运行 DeepSeek-R1。图中比较仅 GPU 缓存、增加 CPU L2、增加 3FS L3，以及单独预先填充 L3 的情况。切换指标可以比较平均 TTFT 和输入吞吐。
+
+<ResultsViz client:visible />
+
+普通 L3 的输入吞吐为 51,168 tokens/s，平均 TTFT 为 1.83 秒。预先填充 L3 后，结果为 76,322 tokens/s 和 1.43 秒，但缓存预热条件已经改变。因此，图中两根 L3 柱使用了不同的预热条件。缓存复用场景中的输入吞吐包含已缓存输入的处理进度，不等于 GPU 为每个 token 新计算 KV 的速度。
+
+### 混合模型多轮对话 · 2026
 
 2026 年 8 月的 Unified Radix Cache 测试比较 GPU L1、L1 加 CPU L2，以及再加 500 GiB Mooncake L3。DeepSeek-V4-Flash 使用 FULL 与 SWA，Inkling-Small 使用 FULL、SWA 与 MAMBA。两种模型的配置和规模不同，因此应在每种模型内部比较缓存层级。
 
 <MultiTurnBenchViz client:visible />
 
 DeepSeek-V4-Flash 的有效输入吞吐从 9.4K 增至 145.5K tokens/s，L3 命中率保持在约 98%。Inkling-Small 从 15.5K 增至 67.1K，最终命中率为 96.8%。这些测量把已缓存的输入 token 也计入服务处理进度。结果体现的是保留不断增长的对话历史带来的收益，不代表 GPU 原始计算速度提高了同样的倍数。
-
-## Agent 与投机解码
-
-### Draft 状态恢复
-
-投机解码让 draft 模型先提出候选 token，再由 target 模型验证。Draft 可以有自己的 KV、indexer 或滑窗 buffer。只恢复 target 缓存，可能让 draft 状态缺失，或映射到错误槽位。因此，target 侧显示缓存命中时，draft 接受率仍可能下降。#30393 让配套的 target 与 draft 状态一起搬运。
-
-SGLang 使用两种布局。兼容的 NextN MTP/EAGLE 模型，以及 DeepSeek-V4 DSpark，把 draft buffer 追加到对应 target host 池的尾部。独立 EAGLE、DFlash 和其他受支持的 DSpark 拓扑则使用独立 sidecar 池，其索引跟随 target KV 或 SWA。两条路径都把 draft buffer 加入同一次 L2/L3 操作。该 PR 明确不支持 Inkling HiCache MTP。
-
-<DraftRestoreViz client:visible />
-
-图中使用 PR 对同一批 prompt 做冷运行和 L3 恢复的验证结果。改动后，恢复运行的接受率接近冷运行，不再因缓存恢复而下降。这里测量的是接受率，这组数字不是端到端吞吐基准。
-
-### DCP 适配
-
-Decode context parallelism，即 DCP，会把上下文 KV 分到不同 rank。单个 rank 的物理缓存行数不再覆盖整个逻辑索引范围。这对继承 target 索引的 draft 池很重要：如果只按单个 rank 的物理行数分配，合法的逻辑索引可能超出 host 池边界。
-
-SGLang 在 #33112 中加入 DCP 与 HiCache L2 的组合。#35221 随后启用 DSpark，并按 target 的逻辑容量分配 draft host 池。PR 在八张 B300 上，以 TP8/DCP8 验证 Kimi-K3 及其 DSpark draft，驱逐压力下 64/64 个请求全部完成。这验证了该组合，不代表所有投机算法都能与 DCP 一起使用。
-
-### 会话感知驱逐
-
-Agent 调用工具后，经常回到同一段前缀。普通 LRU 知道 KV 最近何时被访问，却不知道活跃会话是否还需要它。#29173 为 Unified Radix Cache 加入会话引用。GPU 和 Host 驱逐优先选择没有引用的条目；如果仍需要更多空间，有引用的条目也可以被驱逐。关闭会话会释放引用，但不会立刻删除 KV。
-
-<SweBenchViz client:visible />
-
-2026 年的 SWE-bench 测试中，会话感知的 Unified 配置让 TTFT 最多降低 16.6%。相对普通 HiRadixCache 加 LRU 的基线，对照组同时改变了树实现和驱逐策略，因此不能把差异全部归因于会话引用。这个会话策略覆盖 L1 与 L2，不负责外部 L3 服务内部的驱逐。
-
-## Host 内存与存储
-
-### 私有 L2 与共享 L3
-
-每个服务实例拥有自己的 GPU 和 CPU 缓存池。同一台机器上的两个实例，也不会自动共享一个 L2。外部 L3 可以让兼容实例访问已存储的 KV。增大一个实例的 host 内存预算，只会扩大它自己的 L2。#37050 的文档明确了这个共享边界；#31920 还为 Mooncake 的键加入模型隔离。仅仅 token 文本相同，并不意味着不同模型配置产生的 KV 可以互换。
-
-### Buffer-only 模式
-
-原始设计把 CPU 内存视为另一个长期缓存层。#34798 增加了另一种选择：让 host 内存只充当 GPU 与 L3 之间的临时传输缓冲。备份经它写入存储，预取经它加载到 GPU。传输完成并释放占用后，同一块中转空间就能服务下一次传输。Host 池不再需要长期保留工作集的大量副本。
-
-<HostModeViz client:visible />
-
-这种模式需要存储后端，数据仍经过 CPU 内存，并不意味着所有后端都有 GPU 直连存储的路径。较小的 host 池也会限制同时进行的 I/O 数量；放弃长期 L2 复用，可能增加 L3 流量。Buffer-only 初始 PR 没有给出通用加速比，它主要提供了一种使用有限 host 内存的新方式。
-
-### Buffer-only 与 sidecar
-
-9 月 4 日合入的 #37424 把 sidecar 池接入 buffer 模式。验证使用八张 H100，组合 DeepSeek-V4-Flash-0731、Mooncake L3 和 DSpark。先运行完整的 198 道 GPQA Diamond 题目填充存储，清空 device/radix 缓存，再从 L3 运行同一数据集。
-
-两轮都答对 181/198，得分为 91.41%。DSpark 接受率从首轮的 45.84% 变为恢复运行的 45.83%。140 条至少包含一个可缓存页的 prompt，全部从 L3 加载了预期数量的 token；另外 58 条太短，没有可缓存页。这验证了缓存与 draft 状态的组合路径，不是在宣称新的延迟纪录。
-
-## 平台适配
-
-**AMD 与 DeepSeek-V4。** #29417 为 `unified_kv_triton` 布局加入 HiCache。它保留压缩后的 C4/C128 KV，SWA ring 的尾部窗口则重新 prefill。PR 的 TP4 测试使用 50K 输入 token、200 输出 token、并发 64；warm run 的输出吞吐从 66 增至 789 tokens/s，中位 TTFT 从 91.128 秒降至 3.982 秒。仅 GPU 缓存的 warm run 无法保住这个工作集。这是容量压力下的热缓存结果，不是冷启动收益。
-
-**新增存储。** #25377 加入 AMD 的 UMBP 分层存储接入。其公开 DRAM 测试在八张 MI355X 上运行五层 DeepSeek-V3 模型，平均 TTFT 从 175.6 降至 50.0 ms。标有 SSD 配置的那一行实际关闭了 SSD，因此只是配置冒烟测试，不能作为 SSD 性能依据。NIXL 后续的混合模型支持，也让存储接入从 Full KV 扩展到递归状态与辅助池。
-
-**Ascend I/O。** 9 月 10 日合入的 #38826 为 L2 传输加入 Memfabric 映射的 host 内存和 AscendC sparse-copy 路径。它还避免了一次 H2D 上传同步，以免排空 stream，让流水线串行等待。这是新的 host 内存与 I/O 适配，不能据此宣称所有 Ascend 模型都获得相同加速。
-
-另有两项相关工作需要区别看待。#36800 只合入了 MLA host 副本去重的基础组件；连接 scheduler/controller 的 #26691 在核验时仍然开放。Ascend Mamba 异步 I/O 的 #35815 合入了 `qwen_optimize` 分支，对应 main 的 #32500 仍然开放。这两项都不能写成已经完整落地主线、普遍可用的能力。
-
-## 2025 年原始基准
-
-### 长上下文
-
-原文的 LooGLE 基准在八张 H20-3e 上运行 DeepSeek-R1。图中比较仅 GPU 缓存、增加 CPU L2、增加 3FS L3，以及单独预先填充 L3 的情况。切换指标可以比较平均 TTFT 和输入吞吐。
-
-<ResultsViz client:visible />
-
-普通 L3 的输入吞吐为 51,168 tokens/s，平均 TTFT 为 1.83 秒。预先填充 L3 后，结果为 76,322 tokens/s 和 1.43 秒，但缓存预热条件已经改变。理解标题中的收益时，要区分这些条件。缓存复用场景中的输入吞吐包含已缓存输入的处理进度，不等于 GPU 为每个 token 新计算 KV 的速度。
-
-### 多轮对话
-
-Mooncake 实验在八张 H800 和八张 RDMA 网卡上运行 Qwen3-235B-A22B-Instruct-2507。80 个客户端进行 10 轮对话，每个请求新增 2,048 个输入 token、生成一个输出 token，用来近似 prefill/decode 分离中的 prefill 一侧。最后一轮，原图中仅 GPU 的 TTFT 约为 4.5 秒，L3 约为 0.8 秒。L3 命中率约为 90%，较小的缓存层则已丢失大量可复用历史。这些是从图中读取的近似值，不是公开的原始采样数据。
-
-社区报告来自不同工作负载。Novita AI 在使用 3FS 的 Qwen3-Coder-480B 编程 agent 中，报告平均 TTFT 降低 56%、推理吞吐翻倍。蚂蚁集团在使用 Mooncake 的 DeepSeek-R1-671B 问答请求中，报告缓存命中相比完整重算降低了 84% 的 TTFT。两者都不是这两个后端之间的受控对比。
 
 ## 原博客致谢
 

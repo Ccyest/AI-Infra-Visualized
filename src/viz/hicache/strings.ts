@@ -55,11 +55,8 @@ export const TEXT = {
 } satisfies Record<string, Localized>;
 
 export const UPDATE = {
-  timeline: { en: "HiCache PR timeline", zh: "HiCache PR 时间线" },
+  timeline: { en: "HiCache design milestones", zh: "HiCache 技术演化时间线" },
   timelineNote: { en: "UTC merge dates into main · checked 2026-09-11 · selected milestones", zh: "合入 main 的 UTC 日期 · 核验于 2026-09-11 · 关键里程碑" },
-  all: { en: "All milestones", zh: "全部进展" },
-  early: { en: "2025 · foundations", zh: "2025 · 基础能力" },
-  recent: { en: "2026 · new capabilities", zh: "2026 · 新能力" },
   stateTitle: { en: "Mamba branch recovery", zh: "Mamba 分支恢复" },
   stateNote: { en: "Schematic branch states · #33639 · write-through path", zh: "分支状态示意 · #33639 · write-through 路径" },
   baseline: { en: "Before", zh: "改动前" },
@@ -87,7 +84,7 @@ export const UPDATE = {
   replay: { en: "L3 replay", zh: "L3 恢复运行" },
   acceptance: { en: "DSpark acceptance rate (%)", zh: "DSpark 接受率（%）" },
   acceptLength: { en: "Average accepted length", zh: "平均接受长度" },
-  hostTitle: { en: "Private host memory and shared L3", zh: "私有 Host 内存与共享 L3" },
+  hostTitle: { en: "Host cache and transfer buffer", zh: "Host 缓存与传输缓冲" },
   hostNote: { en: "Illustrative compatible instances and prefix P; buffer slots are released after transfer completion.", zh: "实例与前缀 P 为示意，假设缓存兼容；缓冲槽在传输完成后释放。" },
   cacheMode: { en: "Host cache", zh: "Host 缓存" },
   bufferMode: { en: "Host buffer-only", zh: "Host 仅作缓冲" },
@@ -113,8 +110,8 @@ export const HISTORY = [
     "title": "Hierarchical Caching for SGLang",
     "url": "https://github.com/sgl-project/sglang/pull/2693",
     "label": {
-      "en": "GPU + CPU caching",
-      "zh": "GPU + CPU 分层缓存"
+      "en": "GPU and CPU cache tiers",
+      "zh": "GPU 与 CPU 分层缓存"
     }
   },
   {
@@ -123,8 +120,8 @@ export const HISTORY = [
     "title": "Kernels for efficient KV cache IO",
     "url": "https://github.com/sgl-project/sglang/pull/7313",
     "label": {
-      "en": "GPU-assisted KV transfers",
-      "zh": "GPU 辅助 KV 传输"
+      "en": "Efficient CPU–GPU transfers",
+      "zh": "高效 CPU–GPU 搬运"
     }
   },
   {
@@ -133,68 +130,8 @@ export const HISTORY = [
     "title": "Hicache Storage Layer Prototype",
     "url": "https://github.com/sgl-project/sglang/pull/7704",
     "label": {
-      "en": "Pluggable storage layer",
-      "zh": "可插拔存储层"
-    }
-  },
-  {
-    "pr": 7280,
-    "date": "2025-07-31",
-    "title": "Add hf3fs support for hicache storage (based on #7704)",
-    "url": "https://github.com/sgl-project/sglang/pull/7280",
-    "label": {
-      "en": "3FS storage",
-      "zh": "3FS 存储"
-    }
-  },
-  {
-    "pr": 7211,
-    "date": "2025-07-31",
-    "title": "Support l3 cache (mooncake store) for hiradix cache",
-    "url": "https://github.com/sgl-project/sglang/pull/7211",
-    "label": {
-      "en": "Mooncake storage",
-      "zh": "Mooncake 存储"
-    }
-  },
-  {
-    "pr": 8488,
-    "date": "2025-07-31",
-    "title": "SGLang HiCache NIXL Connector",
-    "url": "https://github.com/sgl-project/sglang/pull/8488",
-    "label": {
-      "en": "NIXL storage connector",
-      "zh": "NIXL 存储接入"
-    }
-  },
-  {
-    "pr": 8651,
-    "date": "2025-08-12",
-    "title": "Support page first layout  zero copy for mooncake store",
-    "url": "https://github.com/sgl-project/sglang/pull/8651",
-    "label": {
-      "en": "Mooncake page-first + zero-copy",
-      "zh": "Mooncake page-first 与 zero-copy"
-    }
-  },
-  {
-    "pr": 9109,
-    "date": "2025-08-22",
-    "title": "3fs zerocopy",
-    "url": "https://github.com/sgl-project/sglang/pull/9109",
-    "label": {
-      "en": "3FS zero-copy",
-      "zh": "3FS zero-copy"
-    }
-  },
-  {
-    "pr": 21206,
-    "date": "2026-04-13",
-    "title": "[RaidxTree Refactor]: Support Unified HybridRadixTree V2",
-    "url": "https://github.com/sgl-project/sglang/pull/21206",
-    "label": {
-      "en": "Unified hybrid-tree foundation",
-      "zh": "统一混合树基础"
+      "en": "External storage tier",
+      "zh": "外部存储层"
     }
   },
   {
@@ -203,58 +140,8 @@ export const HISTORY = [
     "title": "[HiCache & HybridModel] mooncake backend support DSA & mamba  model",
     "url": "https://github.com/sgl-project/sglang/pull/21259",
     "label": {
-      "en": "Mooncake for DSA and Mamba",
-      "zh": "Mooncake 适配 DSA 与 Mamba"
-    }
-  },
-  {
-    "pr": 25377,
-    "date": "2026-07-01",
-    "title": "[HiCache][AMD] Add UMBP tiered DRAM + SSD L3 storage backend with hugepage host allocator  ",
-    "url": "https://github.com/sgl-project/sglang/pull/25377",
-    "label": {
-      "en": "AMD UMBP storage backend",
-      "zh": "AMD UMBP 存储后端"
-    }
-  },
-  {
-    "pr": 29417,
-    "date": "2026-07-09",
-    "title": "[AMD] Enable unified-KV HiCache on DeepSeek-V4",
-    "url": "https://github.com/sgl-project/sglang/pull/29417",
-    "label": {
-      "en": "AMD DeepSeek-V4 unified KV layout",
-      "zh": "AMD DeepSeek-V4 统一 KV 布局"
-    }
-  },
-  {
-    "pr": 29191,
-    "date": "2026-07-13",
-    "title": "[HiCache & HybridModel] nixl hicache backend support hybrid models",
-    "url": "https://github.com/sgl-project/sglang/pull/29191",
-    "label": {
-      "en": "NIXL hybrid-model storage",
-      "zh": "NIXL 混合模型存储"
-    }
-  },
-  {
-    "pr": 29173,
-    "date": "2026-08-02",
-    "title": "feat: Session-reference-aware Unified Radix Cache for agentic multi-turn workloads",
-    "url": "https://github.com/sgl-project/sglang/pull/29173",
-    "label": {
-      "en": "Session-aware eviction",
-      "zh": "会话感知驱逐"
-    }
-  },
-  {
-    "pr": 33112,
-    "date": "2026-08-02",
-    "title": "[Feat] DCP + HiCache L2 Support (ported from kimi-k3)",
-    "url": "https://github.com/sgl-project/sglang/pull/33112",
-    "label": {
-      "en": "DCP + HiCache L2",
-      "zh": "DCP + HiCache L2"
+      "en": "Recurrent and auxiliary state storage",
+      "zh": "递归状态与辅助 buffer 存储"
     }
   },
   {
@@ -263,8 +150,8 @@ export const HISTORY = [
     "title": "[HiCache] Support packed and sidecar draft caches for MTP/EAGLE/DSpark",
     "url": "https://github.com/sgl-project/sglang/pull/30393",
     "label": {
-      "en": "MTP / EAGLE / DSpark draft caches",
-      "zh": "MTP / EAGLE / DSpark draft 缓存"
+      "en": "Target and draft state recovery",
+      "zh": "Target 与 draft 状态恢复"
     }
   },
   {
@@ -273,8 +160,8 @@ export const HISTORY = [
     "title": "[Hicache][2/2]Support Mamba branching in Unified Radix Cache with HiCache",
     "url": "https://github.com/sgl-project/sglang/pull/33639",
     "label": {
-      "en": "Incremental Mamba-state backups",
-      "zh": "Mamba 状态增量备份"
+      "en": "Incremental branch-checkpoint backup",
+      "zh": "分支 checkpoint 增量备份"
     }
   },
   {
@@ -283,48 +170,8 @@ export const HISTORY = [
     "title": "[HiCache] Buffer-only mode for HiCache host memory layer",
     "url": "https://github.com/sgl-project/sglang/pull/34798",
     "label": {
-      "en": "Host buffer-only mode",
-      "zh": "Host buffer-only 模式"
-    }
-  },
-  {
-    "pr": 35221,
-    "date": "2026-08-19",
-    "title": "[HiCache] Support DCP with DSpark",
-    "url": "https://github.com/sgl-project/sglang/pull/35221",
-    "label": {
-      "en": "DCP + DSpark + HiCache",
-      "zh": "DCP + DSpark + HiCache"
-    }
-  },
-  {
-    "pr": 37424,
-    "date": "2026-09-04",
-    "title": "[HiCache] Buffer mode support sidecar pool",
-    "url": "https://github.com/sgl-project/sglang/pull/37424",
-    "label": {
-      "en": "Buffer-only with sidecar pools",
-      "zh": "Buffer-only 支持 sidecar 池"
-    }
-  },
-  {
-    "pr": 36800,
-    "date": "2026-09-08",
-    "title": "[HiCache] Add MLA host-dedup primitives",
-    "url": "https://github.com/sgl-project/sglang/pull/36800",
-    "label": {
-      "en": "MLA host-dedup primitives only",
-      "zh": "MLA host 去重基础组件"
-    }
-  },
-  {
-    "pr": 38826,
-    "date": "2026-09-10",
-    "title": "[NPU][Hicache] Optimize HiCache L2 IO with Memfabric acc_offload",
-    "url": "https://github.com/sgl-project/sglang/pull/38826",
-    "label": {
-      "en": "Ascend Memfabric L2 I/O",
-      "zh": "Ascend Memfabric L2 I/O"
+      "en": "Host memory as a transfer buffer",
+      "zh": "Host 内存改作传输缓冲"
     }
   }
 ] as const;
