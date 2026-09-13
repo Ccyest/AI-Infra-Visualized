@@ -39,6 +39,7 @@ references:
     url: "https://www.lmsys.org/blog/2026-08-11-unified-radix-cache/"
 ---
 
+import StorageLocationViz from "../../../viz/hicache/StorageLocationViz";
 import CacheTreeViz from "../../../viz/hicache/CacheTreeViz";
 import LayoutViz from "../../../viz/hicache/LayoutViz";
 import OverlapViz from "../../../viz/hicache/OverlapViz";
@@ -65,6 +66,8 @@ HiCache 先接入 CPU 内存，再扩展到外部存储。后续工作把恢复�
 ### 设计与机制
 
 把所有可复用前缀都留在 GPU 上，会挤占活跃请求所需的显存。因此，HiCache 把前缀的保存位置与模型的使用位置分开：GPU HBM 是 L1，CPU DRAM 是 L2，外部存储是 L3。Attention 仍由 GPU 执行，较低层保留原本会被丢弃的数据，cache controller 负责备份和加载。
+
+<StorageLocationViz client:visible />
 
 HiRadixTree 用 token 序列索引本地缓存。每个节点存一段 token，以及对应 KV 在 GPU 和 CPU 池中的索引。沿一条路径把 token 段连起来，就是共享前缀。L1 命中可以直接使用；L2 命中需要先分配 GPU 槽位，再从 CPU 搬运数据。本地副本缺失时，controller 可以用前缀派生的键查询 L3，把命中的页预取到 CPU 内存，再加载到 GPU。如果存储也未命中，SGLang 就通过普通 prefill 计算缺失的后缀。
 

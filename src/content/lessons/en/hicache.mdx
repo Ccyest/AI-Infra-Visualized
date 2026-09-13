@@ -39,6 +39,7 @@ references:
     url: "https://www.lmsys.org/blog/2026-08-11-unified-radix-cache/"
 ---
 
+import StorageLocationViz from "../../../viz/hicache/StorageLocationViz";
 import CacheTreeViz from "../../../viz/hicache/CacheTreeViz";
 import LayoutViz from "../../../viz/hicache/LayoutViz";
 import OverlapViz from "../../../viz/hicache/OverlapViz";
@@ -80,6 +81,8 @@ for active requests. HiCache therefore separates where a prefix is retained
 from where the model uses it. GPU HBM is L1, CPU DRAM is L2, and external storage
 is L3. The GPU still performs attention; lower tiers preserve data that would
 otherwise be discarded. A cache controller backs up and reloads that data.
+
+<StorageLocationViz client:visible lang="en" />
 
 HiRadixTree indexes the local cache by token sequence. Each node holds a token
 segment and references to its KV in the GPU and CPU pools. The segments along a
