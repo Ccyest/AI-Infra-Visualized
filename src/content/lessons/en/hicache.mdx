@@ -1,8 +1,8 @@
 ---
 title: "HiCache in SGLang: hybrid-model caching with up to 15.5× input throughput"
-description: "SGLang reuses cached prefixes to avoid repeated prefill, but long conversations soon outgrow GPU memory. HiCache retains that history in CPU memory and external storage, then overlaps transfers with computation to make reuse worthwhile. As models gain recurrent layers and speculative drafts, it must also recover every state needed to continue from the same prefix. This lesson follows those design changes and the tradeoff between host caching and temporary buffering. In a DeepSeek-V4-Flash multi-turn benchmark, adding Mooncake L3 brings effective input throughput to **15.5×** the GPU-only baseline, with cache hits near **98%**."
+description: "SGLang reuses cached prefixes to avoid repeated prefill, but GPU memory cannot retain every growing conversation. HiCache extends that cache into CPU memory and external storage. Making the extra capacity useful requires efficient transfers, policies that balance waiting against recomputation, and complete state recovery for hybrid models and speculative decoding. This lesson starts with the hierarchy, then explains the engineering problems behind each design choice and the results it delivers. In a DeepSeek-V4-Flash multi-turn benchmark, adding Mooncake L3 brings effective input throughput to **15.5×** the GPU-only baseline, with cache hits near **98%**."
 publishedDate: "2026-09-10"
-updatedDate: "2026-09-11"
+updatedDate: "2026-09-14"
 order: 8
 concepts: []
 tryOnSglang: "https://github.com/sgl-project/sglang"
@@ -52,24 +52,22 @@ import MultiTurnBenchViz from "../../../viz/unified-radix-cache/MultiTurnBenchVi
 
 ## Background
 
-A model computes keys and values, or KV, for the tokens it reads. During generation,
-attention uses this KV to look back at the context. If a later request starts with
-the same token prefix, SGLang can reuse the corresponding KV and compute only the
-new suffix. This saves prefill work and shortens time to first token, or TTFT.
+A model computes keys and values, or KV, for the tokens it reads. During
+generation, attention uses this KV to look back at the context. When another
+request starts with the same token prefix, SGLang can reuse its KV and compute
+only the new suffix. This reduces prefill work and time to first token, or TTFT.
 
-The difficulty is keeping the old KV available. Long conversations take more space
-with every turn. More clients add more histories. When the GPU cache fills up,
-eviction can remove a prefix just before the next request needs it. A larger cache
-helps only if loading the saved KV costs less than computing it again.
+The capacity of GPU memory limits that reuse. Conversations grow with every
+turn, and more clients bring more histories. Once the cache fills up, a prefix
+may be evicted just before the next request needs it. SGLang's HiCache retains
+these prefixes in larger memory tiers. For that capacity to help, restoring a
+prefix must cost less than recomputing it, and the restored state must be
+sufficient to continue the model from that prefix.
 
-## Technical evolution
-
-HiCache first extended GPU caching into CPU memory, then added an external
-storage tier. Alongside capacity, it needed transfers cheap enough to beat
-recomputation. Hybrid models and speculative decoding later changed what must
-be saved: a prefix can require several kinds of state. Buffer-only mode then
-separated long-term retention from temporary transfer space. These milestones
-mark the design changes explained below.
+HiCache first added CPU memory, then external storage. Later work extended
+recovery to hybrid-model and draft state, and introduced a proposal to use host
+memory only as a transfer buffer. The timeline places these changes in context;
+the rest of the article follows the engineering problems they address.
 
 <TimelineViz client:visible lang="en" />
 
@@ -77,91 +75,133 @@ mark the design changes explained below.
 
 ### Design and mechanism
 
-SGLang HiCache keeps reusable KV across GPU HBM, CPU DRAM, and external storage.
-The GPU still performs attention. CPU memory and storage retain KV that would
-otherwise be discarded, and the cache controller handles transfers between tiers.
+Keeping every reusable prefix on the GPU would compete with the memory needed
+for active requests. HiCache therefore separates where a prefix is retained
+from where the model uses it. GPU HBM is L1, CPU DRAM is L2, and external storage
+is L3. The GPU still performs attention; lower tiers preserve data that would
+otherwise be discarded. A cache controller backs up and reloads that data.
 
 HiRadixTree indexes the local cache by token sequence. Each node holds a token
-segment and references to its KV in the GPU and CPU pools. Concatenating the
-segments along a path gives the shared prefix. A GPU hit is ready to use; a CPU hit
-needs a transfer to newly allocated GPU slots. If the prefix is absent locally,
-the controller can query external storage using prefix-derived keys and prefetch
-matching pages into CPU memory. A local tree miss does not by itself prove a
-storage hit.
+segment and references to its KV in the GPU and CPU pools. The segments along a
+path form a shared prefix. An L1 hit is ready to use. An L2 hit requires newly
+allocated GPU slots and a CPU–GPU transfer. When local copies are missing, the
+controller can query L3 with prefix-derived keys, prefetch matching pages into
+CPU memory, and load them onto the GPU. If storage also misses, SGLang computes
+the missing suffix through ordinary prefill.
 
 <CacheTreeViz client:visible lang="en" />
 
-The diagram plays one serving instance through five requests, using short token
-segments and arbitrary pool indices. Prefix A is computed once and backed up.
-B survives GPU eviction in CPU memory, then survives CPU eviction in external
-storage, and each time the controller restores it to the GPU instead of
-recomputing it. The last request shows a local miss that is also a storage
-miss, so its suffix is computed as ordinary prefill. Backup copies can coexist
-across tiers. Moving KV does not require deleting every copy from the tier it
-came from.
+The diagram follows one serving instance through five requests. Prefix A is
+computed once and backed up. B survives GPU eviction in CPU memory, then CPU
+eviction in external storage. Both later hits can recover B without recomputing
+it. The final request also misses in storage and needs prefill. This is the
+hierarchy's benefit: GPU eviction no longer necessarily ends reuse. Backup
+copies can coexist across tiers, and a local miss still requires a storage
+lookup before it can be counted as an L3 hit.
 
-### Storage backends
+### Engineering overview
 
-The 2025 design supports Mooncake, DeepSeek 3FS, NIXL, and a local file backend.
-The backend supplies key lookup, reads, and writes; the central controller handles
-scheduling and synchronization. NIXL is a transfer library that can connect to
-other storage systems, so these backends should not be read as four equivalent
-storage devices.
+The hierarchy creates a path for retaining and recovering prefixes. Making that
+path useful introduces several implementation problems:
 
-## Data movement
+- **Memory layout:** GPU computation and storage I/O prefer different data
+  orders. How can both transfer paths stay efficient?
+- **Layer-wise loading:** waiting for every layer's KV delays computation.
+  Which transfers can run while the GPU is already working?
+- **Cache policies:** prefetching and backup spend time, bandwidth, and capacity.
+  When is waiting or saving another copy worthwhile?
+- **Hybrid-model and draft state:** a token match can leave required history
+  missing. What must travel with the prefix for recovery to be complete?
+- **Host memory:** each instance has a private L2 pool. When L3 retains the
+  history, how much data must remain in host memory?
+- **Storage backends:** different systems expose different I/O implementations.
+  How can they share HiCache's scheduling and recovery mechanisms?
+
+The following sections address these problems within HiCache. Transfer
+measurements show whether individual paths became faster; recovery tests show
+whether the required state survived; the final benchmarks measure the combined
+serving benefit.
 
 ### Memory layout
 
-A model consumes KV one layer at a time. GPU memory therefore keeps the
-layer-first layout expected by its computation kernels. Storage I/O benefits from
-larger contiguous transfers. HiCache gives the host pool a page-first layout,
-placing one page's KV for different layers next to each other. The same data has
-a different physical order on the two sides.
+The first problem is how to arrange KV for two different access patterns. A
+model consumes KV one layer at a time, so the GPU uses a layer-first layout.
+Storage reads and writes pages of cached prefixes. If the host pool follows the
+same layer-first order, one page's data is spread across layers, fragmenting the
+I/O needed to move that page.
+
+SGLang decouples the two layouts. The GPU keeps the order expected by its
+computation kernels, while a page-first host layout groups one page's KV across
+layers. This permits larger transfers per storage transaction. GPU-assisted I/O
+kernels handle CPU–GPU movement, and backend zero-copy paths avoid intermediate
+copies between host memory and storage.
 
 <LayoutViz client:visible lang="en" />
 
-SGLang uses GPU-assisted I/O kernels for CPU–GPU movement. The blog reports up to
-3× the transfer throughput of the standard `cudaMemcpyAsync` path. Page-first
-layout together with zero-copy I/O reaches up to 2× higher throughput between
-host memory and storage in typical deployments. These are improvements to
-different transfer paths, not factors to multiply into an end-to-end speedup.
-The Mooncake and 3FS changes are linked in the references.
+The reported outcome is faster movement on both paths: GPU-assisted kernels
+reach up to **3× CPU–GPU transfer throughput** versus the standard
+`cudaMemcpyAsync` path, while page-first layout combined with zero-copy reaches
+up to **2× host–storage throughput** in typical deployments. The latter result
+measures the combination, so it does not isolate the layout's contribution.
+Neither number is an end-to-end serving speedup. These results come from the
+[2025 HiCache blog](https://www.lmsys.org/blog/2025-09-10-sglang-hicache/).
 
 ### Layer-wise loading
 
-A CPU hit does not need to wait for every layer's KV before computation starts.
-Once layer 0 is loaded, the GPU can execute it while later layers are still being
-transferred. Each layer must wait for its own KV, but it does not need the KV for
-all later layers. This overlap can hide part of the transfer time.
+Faster copies still take time. If an L2 hit waits for the entire model's KV to
+arrive, the GPU cannot begin work even when the first layer's data is already
+available. The goal here is to reduce the transfer time on the request's
+critical path.
+
+HiCache loads KV layer by layer. Once layer 0 is ready, the GPU executes that
+layer while the controller transfers later layers. Synchronization makes each
+layer wait for its own KV, without making it wait for every subsequent layer.
 
 <OverlapViz client:visible lang="en" />
 
-The first load still takes time. If transfers are slower than computation,
-later layers can still stall. The animation assumes fixed transfer and compute
-durations to show the dependency; its timeline is not a hardware benchmark.
+This overlap lets part of the transfer run during computation, so the request
+can finish earlier than with loading followed by computation. It does not
+increase link bandwidth or remove the first load. When transfers fall behind,
+later layers still stall. The animation uses fixed durations to demonstrate
+that dependency; the source does not report an isolated speedup for this
+mechanism.
 
-## Cache policies
+### Cache policies
 
-### Prefetch
+HiCache must also decide when transfers are worth doing. On the read path,
+waiting for a cache hit can delay a request. On the write path, saving data that
+is never reused consumes bandwidth and capacity. Prefetch and backup policies
+make these two costs configurable.
 
-Storage latency is usually higher and less predictable than CPU–GPU latency.
-HiCache starts prefetching into CPU memory while a request waits for scheduling.
-Best-effort prefetch can stop when the request is ready to run, using the
-available prefix and recomputing what is missing. Waiting longer can preserve
-more reuse, but also delays the request. A timeout policy bounds that wait.
+#### Prefetch
+
+Storage latency is higher and less predictable than CPU–GPU latency. Starting
+an L3 read only when the GPU is ready would expose that wait directly to the
+request. HiCache instead prefetches matching pages into CPU memory while the
+request waits for scheduling.
+
+The policy determines how much longer to wait when the request becomes ready.
+Best-effort can stop prefetching, reuse the available prefix, and recompute what
+is missing. Waiting for completion favors more reuse, while a timeout bounds
+the extra wait.
 
 <PrefetchViz client:visible lang="en" />
 
-The example treats the requested prefix as one indivisible block. Real requests
-can reuse a completed prefix of a larger transfer. With fast storage, both
-policies finish the read before scheduling. With a moderately late read,
-waiting can avoid a larger recomputation. With very slow storage, waiting loses.
-More cache hits alone do not guarantee a lower TTFT.
+The benefit is an earlier start to storage I/O and control over the remaining
+wait. A read that finishes before scheduling can avoid recomputation without
+adding a storage wait at dispatch. If it finishes later, waiting pays off only
+when the saved computation exceeds the added delay. The diagram models one
+indivisible prefix; real requests can reuse a completed portion of a larger
+transfer. It illustrates the tradeoff, rather than establishing a universally
+fastest policy.
 
-### Backup
+#### Backup
 
-Backing up every cached region spends bandwidth now to improve the chance of
-reuse later. HiCache exposes three choices:
+Lower-tier hits require earlier backups. Saving every cached region maximizes
+retention opportunities but can consume bandwidth for prefixes that are never
+requested again. Small lower tiers can also fill with those copies.
+
+HiCache provides three ways to decide when that cost should be paid:
 
 | Policy | Backup timing | Main tradeoff |
 | --- | --- | --- |
@@ -169,122 +209,183 @@ reuse later. HiCache exposes three choices:
 | Write-through-selective | Use hit counts to back up hot regions | Less I/O, less coverage for cold regions |
 | Write-back | Defer backup until eviction from the faster tier | Less early backup traffic, work on the eviction path |
 
-The useful setting depends on transfer bandwidth and capacity in the lower tiers.
-Adding storage does not remove those limits.
+These policies let deployments trade retention coverage for lower transfer and
+capacity pressure. Proactive backup is useful when bandwidth can support it;
+selective backup avoids spending that bandwidth on every cold region. Deferred
+backup postpones the copy but adds work when data must leave the faster tier.
+The source provides these mechanisms without a controlled benchmark ranking
+all three policies.
 
-## Hybrid-model state
+### Hybrid-model state
 
-Larger caches solve the capacity problem, but they also need to preserve the
-right data. The 2026 HiCache work extends the original design to models that
-use several kinds of history at once.
+A fast transfer is useful only if it restores everything the model needs.
+Hybrid models add a correctness problem to HiCache: ordinary KV may cover a
+prefix even when another required state is missing. SGLang extends the cache
+representation and backup process to preserve these states together.
 
-### Reuse boundaries
+#### Reuse boundaries
 
 Full attention needs KV for the reusable prefix. Sliding-window attention needs
 the trailing window at the reuse boundary. A recurrent layer needs a checkpoint
-at that boundary. Its state is updated as tokens arrive; a later checkpoint
+at that exact boundary. Its state changes as tokens arrive; a later checkpoint
 cannot simply be sliced to recover an earlier one.
 
-SGLang's Unified Radix Cache keeps these components on the same token tree,
-with separate pool references and reuse checks. HiCache must back up and restore
-the components needed at the chosen boundary. For example, Qwen3.5 also needs
-recurrent state, while DeepSeek-V3.2 needs its sparse-attention indexer buffers.
-Copying ordinary KV alone would leave part of the model's history missing.
+SGLang's Unified Radix Cache records these components on the same token tree,
+with separate pool references and reuse checks. A boundary is usable only when
+all required components accept it. HiCache backs up and restores their data
+across tiers, together with associated auxiliary buffers. For example, Qwen3.5
+needs recurrent state, and DeepSeek-V3.2 needs sparse-attention indexer buffers.
 
-### Branch checkpoints
+The result is a recovery decision based on the model's complete requirements.
+A Full KV match alone cannot authorize reuse when the needed window or
+checkpoint is absent. This is what lets the hierarchy extend to hybrid models;
+the multi-turn benchmark below measures the benefit of retaining their history.
 
-Suppose the host already holds Full KV through P3 and a recurrent checkpoint
-S0 at P3. A new request branches at P2 and produces checkpoint S1 there.
-The old S0 cannot serve that branch: it includes tokens after P2. If backup
-only checks whether the node already has a host copy, it skips S1. The next
-request can reload the Full KV but still cannot resume at P2 with that state.
+#### Branch checkpoints
 
-SGLang adds an incremental backup for the new checkpoint. Full KV stays where
-it is; only S1 needs another transfer. Backup now tracks newly available
-components, rather than treating the entire prefix as already saved.
+Complete recovery also requires saving states created after the original
+backup. Suppose the host holds Full KV through P3 and recurrent checkpoint S0 at
+P3. A new request branches at P2 and produces S1 there. S0 includes tokens after
+P2 and cannot serve the new branch. If backup only asks whether the node already
+has a host copy, it skips S1 and leaves future requests unable to resume at P2.
+
+SGLang adds incremental backup for the newly created checkpoint. The existing
+Full KV stays in place; only S1 needs another transfer. Backup therefore tracks
+newly available components even when other data for the prefix is already saved.
 
 <StateRestoreViz client:visible lang="en" />
 
 The recovery test creates branch states between two rounds of GPU eviction.
-Its final stage checks whether each request recovers the full shared prefix.
-The measured result is shown in the diagram. This change covers write-through
-backup; it does not establish the same behavior for write-back.
+In its final stage, full recovery of the 6.4K shared prefix rises from **1/10 to
+10/10 requests**, and the token hit rate rises from **15.74% to 64.00%**. Each
+request also has a 3.6K unique suffix, so 64% represents the full shared portion.
+This validates branch-state retention under the tested write-through policy;
+it does not establish the same result for write-back. See the
+[branch-backup test](https://github.com/sgl-project/sglang/pull/33639).
 
-## Draft-state recovery
+### Draft-state recovery
 
-Speculative decoding adds another consumer of the prefix. A draft model proposes
-tokens for the target model to verify, and the draft can have its own KV or
-other history buffers. Restoring target KV alone can leave draft state missing
-or mapped to the wrong slots. A target cache hit can therefore coexist with a
-drop in draft acceptance rate.
+Speculative decoding adds another consumer of the prefix. A draft model
+proposes tokens for the target model to verify, and can keep its own KV or
+history buffers. If HiCache restores only target KV, the draft may lose its
+history or read the wrong slots. A successful target hit can then coincide with
+a lower draft acceptance rate during decoding.
 
-SGLang attaches matching draft buffers to the target's cache transfers. When
-their layouts fit together, it packs the draft data into the corresponding
-target host pools. Otherwise, separate sidecar pools follow the target's KV or
-sliding-window indices. In both cases, backup and recovery carry the associated
-draft state through L2 and L3 as well. This is the mechanism behind HiCache's
-expanded MTP, EAGLE, and DSpark support.
+SGLang attaches the matching draft buffers to the target's cache transfers.
+Compatible layouts pack draft data into the corresponding target host pool.
+Other layouts use separate sidecar pools whose indices follow target KV or
+sliding-window indices. Both paths carry the associated draft state through
+L2 and L3 backup and recovery.
 
 <DraftRestoreViz client:visible lang="en" />
 
-The DSpark test runs the same prompts cold and again from L3. After the change,
-replay acceptance stays close to the cold run. The result shows why restoring
-the complete state matters beyond prefill: it also preserves the draft's
-effectiveness during subsequent decoding. Acceptance rate is not an
-end-to-end throughput measurement.
+The DSpark test uses the same 200 prompts for a cold run and an L3 replay on
+DeepSeek-V4-Flash-0731. Before the change, acceptance falls from **46.77% to
+33.57%** on replay. Afterward, cold and replay acceptance are **46.12% and
+46.86%**. Restoring draft state preserves its effectiveness after a cache hit,
+beyond the prefill work saved by restoring target KV. This measures acceptance,
+not end-to-end throughput. See the
+[draft-recovery validation](https://github.com/sgl-project/sglang/pull/30393).
 
-## Host memory as a buffer
+### Host memory as a buffer
 
-The original hierarchy uses CPU memory to retain a second cache. That is useful
-when a prefix can be reloaded from L2 instead of fetched from storage. But each
-serving instance owns its L2 pool. Several instances can retain separate host
-copies while also backing up to a shared L3. Enlarging every L2 consumes more
-host memory even when L3 already holds the reusable history.
+The original hierarchy retains a second cache in CPU memory, allowing an L2 hit
+to bypass storage. Each serving instance has its own L2 pool, however. Multiple
+instances can retain private host copies while backing up to a shared L3.
+With little host memory, retaining this working set creates capacity pressure
+even when L3 already holds the history.
 
-Buffer-only mode changes the role of CPU memory. Backups pass through a host
-buffer on their way to L3, and prefetches pass through it on their way to the
-GPU. Once a transfer completes and releases its slots, another transfer can
-use them. The host pool holds data in transit instead of retaining a second
-working set. L3 sharing still requires compatible model configurations;
-identical token text alone does not make two models' KV interchangeable.
+The buffer-only proposal changes the role of L2. Backups pass through host
+buffers on their way to L3, and prefetches pass through them on their way to the
+GPU. When an operation completes and releases its slots, later transfers can
+reuse that space. Long-term retention moves to L3, while host memory holds data
+in transit. Sharing L3 still requires compatible model configurations; the
+same token text does not make different models' KV interchangeable.
 
 <HostModeViz client:visible lang="en" />
 
-The tradeoff is less persistent L2 reuse and potentially more L3 traffic.
-A smaller host pool also limits how many transfers can be in flight.
-Buffer-only therefore saves host capacity when storage can carry the reuse
-load; it does not eliminate the CPU transfer path or guarantee lower latency.
+This design allows host capacity to be sized for in-flight transfers instead of
+a retained second working set. It gives up persistent L2 hits and can increase
+L3 traffic; a smaller buffer also limits concurrent transfers. The
+[buffer-only proposal](https://github.com/sgl-project/sglang/pull/34798) does not
+provide benchmark numbers, so memory savings and latency gains are not
+quantified here. Its usefulness depends on L3 handling the resulting reuse load.
+
+### Storage backends
+
+HiCache also needs to work with storage systems that implement lookup, reads,
+and writes differently. Rebuilding the scheduler and synchronization logic for
+each backend would make each integration a separate cache implementation.
+
+SGLang places these storage operations behind a common backend interface. The
+backend performs key lookup, reads, and writes; the central controller manages
+scheduling and synchronization. The 2025 design includes Mooncake, DeepSeek 3FS,
+NIXL, and a local file backend. NIXL is a transfer library that connects to other
+storage systems, so these are not four equivalent storage devices.
+
+The benefit is a shared integration path: a backend can supply storage access
+without reimplementing HiCache's cache-control logic. This broadens the available
+deployment choices. Actual throughput still depends on the chosen backend and
+transfer path; the benchmarks below identify the backends they use.
 
 ## Results
 
+The implementation addresses transfer cost, scheduling, complete recovery, and
+memory use. The remaining question is whether retaining more prefixes improves
+serving under real capacity pressure. The following evaluations compare cache
+tiers within each workload. They measure whole configurations, so their gains
+cannot be attributed to one layout, policy, or recovery change in isolation.
+
 ### Long context · 2025
 
-The original LooGLE benchmark uses DeepSeek-R1 on eight H20-3e GPUs. The chart
-compares GPU-only caching, an added CPU L2, an added 3FS L3, and a separately
-prepopulated L3. Switch the metric to compare average TTFT and input throughput.
+The original LooGLE evaluation tests whether lower tiers can avoid repeated
+prefill for long inputs. It runs DeepSeek-R1 on eight H20-3e GPUs and compares
+GPU-only caching, an added CPU L2, an added 3FS L3, and a separately prepopulated
+L3. The chart shows average TTFT and input throughput.
 
 <ResultsViz client:visible lang="en" />
 
-The ordinary L3 result is 51,168 input tokens/s with 1.83-second average TTFT.
-Prepopulating L3 produces 76,322 input tokens/s and 1.43 seconds under a different
-warmup condition. The two L3 bars therefore use different warmup conditions.
-Input throughput under cache reuse includes progress through cached input;
-it is not the rate at which the GPU newly computes every token's KV.
+With ordinary L3, input throughput is 51,168 tokens/s and average TTFT is
+1.83 seconds. Prepopulating L3 reaches 76,322 tokens/s and 1.43 seconds, but
+changes the warmup condition. Those two L3 results therefore describe different
+amounts of cache already available to requests. The comparison illustrates why
+retention and cache availability matter alongside transfer speed.
 
 ### Hybrid multi-turn workloads · 2026
 
-The August 2026 Unified Radix Cache evaluation compares GPU L1, L1 plus CPU L2,
-and L1 plus L2 plus a 500 GiB Mooncake L3. It uses DeepSeek-V4-Flash with FULL and
-SWA, and Inkling-Small with FULL, SWA, and MAMBA. The configurations and scales
-differ between models, so compare tiers within each model.
+Multi-turn conversations provide a growing working set: every round adds history
+that later requests may reuse. The August 2026 evaluation compares GPU L1,
+L1 plus CPU L2, and L1 plus L2 plus a 500 GiB Mooncake L3. DeepSeek-V4-Flash uses
+FULL and SWA; Inkling-Small uses FULL, SWA, and MAMBA. Each model has its own
+hardware and workload configuration, so compare tiers within each model.
 
 <MultiTurnBenchViz client:visible lang="en" />
 
-On DeepSeek-V4-Flash, effective input throughput increases from 9.4K to 145.5K
-tokens/s with L3, and the hit rate stays near 98%. Inkling-Small reaches 67.1K
-instead of 15.5K and ends at a 96.8% hit rate. These measurements include cached
-input tokens in serving progress. They show the benefit of retaining growing
-conversation histories, not a corresponding multiplication of raw GPU compute.
+L1 loses reusable history first, and L2 delays that capacity limit. Adding L3
+raises DeepSeek-V4-Flash's effective input throughput from 9.4K to 145.5K tokens/s
+relative to L1, with cache hits near 98%. Inkling-Small rises from 15.5K to 67.1K
+and finishes at a 96.8% hit rate. These results show that lower tiers can preserve
+reuse as hybrid-model conversation histories outgrow the smaller caches. See
+the [multi-turn evaluation](https://www.lmsys.org/blog/2026-08-11-unified-radix-cache/).
+
+Cache-reuse input throughput credits cached input tokens as serving progress.
+It measures how much input the service handles over elapsed time, not how fast
+the GPU newly computes every token's KV. Higher throughput here comes primarily
+from avoiding repeated work.
+
+## Summary
+
+HiCache extends the lifetime of reusable prefixes beyond GPU memory. Its
+engineering choices make that extra capacity usable: layout and loading reduce
+transfer overhead, policies control when I/O is worthwhile, and component and
+draft recovery preserve the state needed to continue inference. Host-buffer and
+backend choices adapt the same hierarchy to deployment resources.
+
+The combined benefit appears when saved prefill work exceeds recovery cost and
+the lower tiers retain history that would otherwise be lost. The benchmarks
+show that benefit for long inputs and growing conversations. For any deployment,
+cache hit rate, transfer cost, and complete state recovery must be assessed
+together to determine whether the hierarchy improves TTFT and throughput.
 
 ## Original blog acknowledgments
 
