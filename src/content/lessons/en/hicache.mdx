@@ -91,11 +91,14 @@ storage hit.
 
 <CacheTreeViz client:visible lang="en" />
 
-The diagram uses short token segments and arbitrary pool indices. For prefix
-A → B, A is already on the GPU and B comes from CPU memory. For A → C, C starts
-outside the local tree and appears only after a successful storage read. Backup
-copies can coexist across tiers. Moving KV does not require deleting every copy
-from the tier it came from.
+The diagram plays one serving instance through five requests, using short token
+segments and arbitrary pool indices. Prefix A is computed once and backed up.
+B survives GPU eviction in CPU memory, then survives CPU eviction in external
+storage, and each time the controller restores it to the GPU instead of
+recomputing it. The last request shows a local miss that is also a storage
+miss, so its suffix is computed as ordinary prefill. Backup copies can coexist
+across tiers. Moving KV does not require deleting every copy from the tier it
+came from.
 
 ### Storage backends
 
