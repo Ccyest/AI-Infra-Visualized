@@ -115,8 +115,7 @@ path useful introduces several implementation problems:
 - **Storage backends:** different systems expose different I/O implementations.
   How can they share HiCache's scheduling and recovery mechanisms?
 
-Start with the data paths, then follow how HiCache transfers, retains, and
-restores a prefix.
+
 
 ### Transfer paths
 
@@ -139,9 +138,7 @@ layer-wise overlap.
 
 ### Memory layout
 
-A page groups the KV for a fixed number of consecutive tokens. With four tokens
-per page, page 1 holds the KV for tokens 1–4. Each model layer has its own KV
-for those tokens.
+This optimization handles the different KV layouts used by GPU computation and storage I/O. The GPU processes one model layer at a time; storage reads and writes pages. A page holds the KV for a fixed number of consecutive tokens across model layers. For example, page 1 can hold tokens 1–4, with a separate piece of KV for each model layer.
 
 **GPU groups KV by model layer.** Computation uses one layer at a time, so
 keeping that layer's KV together makes it easy to read. If Host uses the same
@@ -149,17 +146,9 @@ layout, one page's KV is scattered across the regions for different layers.
 Saving that page to storage then requires many small transfers or collecting
 those pieces into a temporary buffer.
 
-**HiCache groups Host KV by page.** The same page's KV from all model layers
-sits together, ready for a large contiguous storage read or write. GPU memory
-keeps its layer-first layout. The I/O kernels convert between these two orders
-as they transfer the data.
+**HiCache groups Host KV by page and converts the layout during transfer.** On the GPU, KV stays grouped by model layer. On Host, one page's KV from all model layers occupies a contiguous region. During GPU → Host backup, the I/O kernel uses each piece's page and model-layer indices to write it into the corresponding Host position. During Host → GPU restore, it writes the pieces back into the GPU's layer-first layout.
 
-Page 1 is highlighted: before, other pages separate its pieces; after, it
-occupies one contiguous Host region for whole-page storage I/O. During backup,
-the transfer kernel reads a batch of selected KV and uses each piece's page
-and model-layer indices to calculate its destination in Host memory. Recovery
-first reads the page from L3 into Host, then loads it into GPU one model layer
-at a time.
+In the diagram, page 1 is highlighted. Before, its pieces occupy separate Host regions; after, they sit together. Host → storage backup can read that contiguous region directly, and storage → Host recovery can fill it directly. Converting the layout during GPU–Host transfers lets GPU computation and storage I/O each use the order they need.
 
 <LayoutViz client:visible lang="en" />
 
@@ -172,28 +161,15 @@ to **2× the Host–storage throughput** in typical deployments.
 
 ### Overlapping data transfers and computation
 
-Now follow **Host → GPU restore**. The prefix is already in Host memory,
-either from an L2 hit or from an L3 read. The I/O kernels copy its KV back to
-the GPU. The remaining question is when GPU computation can start.
+This optimization overlaps **Host → GPU transfers of cached KV** with **GPU computation on the new tokens**. Suppose a request starts with a cached document and adds a new question. The document's KV is in Host memory and must be restored to the GPU. If the GPU waits for every model layer's KV before processing the question, it spends the entire restore waiting. HiCache starts computation as soon as the first layer's KV is ready, while later layers' KV continues loading.
 
-Suppose the model has three layers. Waiting for all three layers' KV means
-loading layers 0, 1, and 2 before computing anything. But layer 0 only needs
-its own cached KV to process the new tokens. It can start as soon as that KV
-arrives.
+For a three-layer model, first load the document's layer-0 KV from Host to GPU. The GPU can then process the new question through layer 0, using that cached KV to attend to the document. At the same time, the transfer stream loads the document's layer-1 and layer-2 KV. The overlap is between computation at the current model layer and KV transfers for later model layers.
 
-HiCache therefore loads KV layer by layer. While the GPU computes layer 0,
-the transfer stream loads later layers. Before each layer uses its cached KV,
-it waits for that layer's load to finish. An L3 hit follows the same process
-once its KV has reached Host.
+This works because each model layer uses its own KV. Layer 0 can compute before layer 1's KV arrives. When computation reaches layer 1, it checks that layer 1's load has finished; if so, it proceeds immediately, otherwise it waits for that load. An L2 hit starts this Host → GPU process directly. For an L3 hit, storage first brings the KV into Host, after which the same overlap applies.
 
 <OverlapViz client:visible lang="en" />
 
-In this three-layer example, each load takes 1 time unit and each layer's
-computation takes 2. Loading everything first finishes at time 9. Starting
-computation after layer 0 arrives finishes at time 7. Both schedules spend
-3 units transferring the same KV; overlap fits the last 2 units of loading
-inside GPU computation. The I/O kernels shorten the loads themselves, and
-layer-wise scheduling reduces how much of that loading the GPU waits through.
+In the diagram, each model layer takes 1 time unit to load and 2 to compute. Loading all three layers before computing finishes at time 9. Overlapping the last two loads with layer 0's computation finishes at time 7. KV transfers still take 3 units in total, but the GPU only waits through the first unit. Layout and I/O optimizations shorten the transfers themselves; overlapping transfers and computation reduces the time those transfers add to the request.
 
 ### Cache policies
 
