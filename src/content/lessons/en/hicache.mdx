@@ -122,19 +122,27 @@ serving benefit.
 
 ### Memory layout
 
-The first problem is how to arrange KV for two different access patterns. A
-model consumes KV one layer at a time, so the GPU uses a layer-first layout.
-Storage reads and writes pages of cached prefixes. If the host pool follows the
-same layer-first order, one page's data is spread across layers, fragmenting the
-I/O needed to move that page.
+A page groups the KV for a fixed number of consecutive tokens. With four tokens
+per page, page 1 holds the KV for tokens 1–4. These tokens have separate KV at
+each model layer, so pages and model layers are two different dimensions.
 
-SGLang decouples the two layouts. The GPU keeps the order expected by its
-computation kernels, while a page-first host layout groups one page's KV across
-layers. This permits larger transfers per storage transaction. GPU-assisted I/O
-kernels handle CPU–GPU movement, and backend zero-copy paths avoid intermediate
-copies between host memory and storage.
+**Before: GPU and Host both group KV by model layer.** This suits GPU
+computation, which uses one layer at a time. Storage, however, saves a page
+across model layers. That page is scattered across Host memory, requiring
+several separate regions to be read or written.
+
+**After: GPU groups by model layer, Host groups by page, and transfers convert
+between the layouts.** The GPU’s compute layout stays unchanged. During backup,
+transfer kernels place a page’s KV together in Host memory, allowing larger
+contiguous transfers to storage. Recovery reverses the path: storage reads the
+page into Host, then transfer kernels write it into the GPU’s required layout.
+The KV content is the same; its memory order differs.
 
 <LayoutViz client:visible lang="en" />
+
+GPU-assisted I/O kernels speed up GPU–Host transfers. Backend zero-copy paths
+reduce extra intermediate copies between Host and storage. Data still has to
+move between tiers.
 
 The reported outcome is faster movement on both paths: GPU-assisted kernels
 reach up to **3× CPU–GPU transfer throughput** versus the standard

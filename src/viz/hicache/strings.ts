@@ -48,13 +48,7 @@ export const TEXT = {
   load: { en: "CPU → GPU", zh: "CPU → GPU" },
   ready: { en: "KV ready on GPU", zh: "GPU KV 就绪" },
   absent: { en: "No local node", zh: "无本地节点" },
-  layoutTitle: { en: "KV memory layout", zh: "KV 内存布局" },
-  layoutNote: { en: "3 layers × 3 pages; each cell holds one layer of a page's KV.", zh: "3 层 × 3 页；每格为一页在某一层的 KV。" },
-  page: { en: "Page", zh: "页" },
   layer: { en: "Layer", zh: "层" },
-  layerFirst: { en: "GPU · layer-first", zh: "GPU · layer-first" },
-  pageFirst: { en: "Host · page-first", zh: "Host · page-first" },
-  regions: { en: "Highlighted contiguous regions", zh: "高亮的连续区域" },
   overlapTitle: { en: "Layer-wise loading", zh: "逐层加载" },
   overlapNote: { en: "Illustration: transfer = 1 unit/layer; compute = 2 units/layer. Not measured latency.", zh: "示意：每层传输 1 单位、计算 2 单位；非实测延迟。" },
   serial: { en: "Load all layers first", zh: "先加载全部层" },
@@ -85,6 +79,27 @@ export const TEXT = {
   relative: { en: "Relative to GPU only", zh: "相对仅 GPU" },
   lower: { en: "lower TTFT", zh: "TTFT 降低" },
   higher: { en: "throughput", zh: "吞吐" },
+} satisfies Record<string, Localized>;
+
+export const LAYOUT = {
+  title: { en: "KV layout before and after", zh: "KV 布局：改前与改后" },
+  note: { en: "Example: 3 model layers, 4 tokens per page. Highlight: page 1 (tokens 1–4). Order within a page is simplified.", zh: "示例：3 个模型层，每页 4 个 token。高亮第 1 页（token 1–4）；省略页内细节。" },
+  before: { en: "Before: same layout", zh: "Before：两侧同样排列" },
+  after: { en: "After: separate layouts", zh: "After：两侧分别排列" },
+  gpu: { en: "GPU · L1", zh: "GPU · L1" },
+  host: { en: "Host · L2", zh: "Host · L2" },
+  layerFirst: { en: "By model layer · layer-first", zh: "按模型层排列 · layer-first" },
+  pageFirst: { en: "By page · page-first", zh: "按页排列 · page-first" },
+  page: { en: "Page", zh: "页" },
+  layer: { en: "Model layer", zh: "模型层" },
+  copy: { en: "Copy", zh: "复制" },
+  reorder: { en: "Reorder during transfer", zh: "搬运时重排" },
+  storage: { en: "Write page 1 to L3", zh: "将第 1 页写入 L3" },
+  scattered: { en: "Read 3 separate regions from Host", zh: "从 Host 读取 3 段分散数据" },
+  contiguous: { en: "Read 1 contiguous page from Host", zh: "从 Host 读取 1 块连续整页" },
+  beforeDetail: { en: "GPU and Host both group KV by model layer. Page 1 is scattered across three layers in Host, so storage must collect three regions.", zh: "GPU 和 Host 都按模型层排列。第 1 页在 Host 中散落于三个模型层，存储需要收集三段数据。" },
+  afterDetail: { en: "GPU keeps its layout. Transfer kernels place the same KV into page-first order in Host, so storage can read the page as one block.", zh: "GPU 的排列不变。传输 kernel 把同一份 KV 按页写入 Host，存储就能按整块读取。" },
+  restore: { en: "Restore: L3 → Host (by page) → layout conversion → GPU (by model layer)", zh: "恢复：L3 → Host（按页）→ 布局转换 → GPU（按模型层）" },
 } satisfies Record<string, Localized>;
 
 export const REUSE = {

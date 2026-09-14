@@ -90,11 +90,15 @@ L1 命中直接复用；L2 命中先搬回 L1；L3 命中先取到 L2，再搬�
 
 ### 内存布局
 
-第一个问题是，怎样排列 KV 才能兼顾两种访问方式。模型逐层使用 KV，因此 GPU 采用 layer-first 布局。存储则按缓存前缀的页进行读写。如果 host 池照搬 layer-first 顺序，同一页的数据就会分散在各层，搬运一页需要处理多段零散的 I/O。
+一页是固定数量的连续 token 对应的 KV。比如每页 4 个 token，第 1 页就是 token 1–4 的 KV。这些 token 在每个模型层都有各自的 KV，所以“页”和“模型层”是两个不同的维度。
 
-SGLang 把两侧的布局解耦。GPU 保留计算 kernel 所需的顺序，host 的 page-first 布局则把同一页在不同层的 KV 放在一起，让单次存储事务可以搬运更大的数据块。CPU–GPU 路径使用 GPU 辅助的 I/O kernel，host–存储路径再结合后端的 zero-copy 机制，避免中间拷贝。
+**改前：GPU 和 Host 都按模型层排列。** GPU 计算某一层时，方便读取这一层的 KV。但存储保存一页时，需要这批 token 在各模型层的 KV。同一页的数据散落在 Host 的不同位置，需要处理多段读写。
+
+**改后：GPU 按模型层排列，Host 按页排列，搬运时转换布局。** GPU 的计算布局保持不变。GPU 向 Host 备份时，传输 kernel 把同一页的数据写到一起，Host 向存储就可以按整块传输。恢复时走反方向：存储先把整页读到 Host，再由传输 kernel 写回 GPU 所需的排列。数据内容相同，保存顺序不同。
 
 <LayoutViz client:visible />
+
+GPU 辅助的 I/O kernel 加速 GPU–Host 搬运；存储后端的 zero-copy 机制则减少 Host–存储路径中的额外中间拷贝。这里仍然需要跨层传输数据。
 
 实测效果是两段搬运的吞吐都有提升：相比标准的 `cudaMemcpyAsync` 路径，GPU 辅助 kernel 的 **CPU–GPU 传输吞吐最高达到 3 倍**；page-first 布局结合 zero-copy，在典型部署中的 **host–存储吞吐最高达到 2 倍**。后一项测量的是布局与 zero-copy 的组合，不能单独归因于布局。这两个数字也都不是端到端服务加速比。数据来自 [2025 年 HiCache 博客](https://www.lmsys.org/blog/2025-09-10-sglang-hicache/)。
 

@@ -1,21 +1,49 @@
-import { useState } from "react";
+import { useId, useState } from "react";
 import type { Locale } from "../../lib/i18n";
-import { seriesColor } from "../../lib/palette";
-import { TEXT } from "./strings";
-import "./styles.css";
+import { LAYOUT } from "./strings";
+import "./layout.css";
+
+const INDICES = [0, 1, 2] as const;
+
+function MemoryGrid({ pageFirst, lang }: { pageFirst: boolean; lang: Locale }) {
+  return <div className="hc-layout-grid" data-page-first={pageFirst}>
+    {INDICES.map((row) => <div className="hc-layout-row" key={row}>
+      {INDICES.map((col) => {
+        const page = pageFirst ? row : col;
+        const layer = pageFirst ? col : row;
+        return <div className="hc-layout-cell" data-highlight={page === 0} key={col}>
+          <strong>{LAYOUT.page[lang]} {page + 1}</strong>
+          <small>{LAYOUT.layer[lang]} {layer + 1}</small>
+        </div>;
+      })}
+    </div>)}
+  </div>;
+}
 
 export default function LayoutViz({ lang = "zh" }: { lang?: Locale }) {
-  const [page, setPage] = useState(0);
-  return <figure className="viz-stage hc-viz">
-    <div className="viz-head"><span className="viz-title">{TEXT.layoutTitle[lang]}</span><span className="viz-subtitle">{TEXT.layoutNote[lang]}</span></div>
-    <div className="hc-picker"><span>{TEXT.page[lang]}</span>{[0, 1, 2].map((p) => <button type="button" className="viz-btn" key={p} aria-pressed={page === p} onClick={() => setPage(p)}>{["A", "B", "C"][p]}</button>)}</div>
-    <div className="hc-layouts">{[false, true].map((pageFirst) => <div key={String(pageFirst)}>
-      <h4>{TEXT[pageFirst ? "pageFirst" : "layerFirst"][lang]}</h4>
-      {[0, 1, 2].map((row) => <div className="hc-memory-row" key={row}>
-        <span>{pageFirst ? `${TEXT.page[lang]} ${["A", "B", "C"][row]}` : `${TEXT.layer[lang]} ${row}`}</span>
-        {[0, 1, 2].map((col) => { const p = pageFirst ? row : col; const layer = pageFirst ? col : row; return <span key={col} className="hc-memory-cell" data-active={page === p} style={{ borderColor: seriesColor(p + 1) }} title={`${TEXT.page[lang]} ${["A", "B", "C"][p]} · ${TEXT.layer[lang]} ${layer}`}>{["A", "B", "C"][p]}<small>L{layer}</small></span>; })}
-      </div>)}
-      <div className="hc-count">{TEXT.regions[lang]} <b>{pageFirst ? 1 : 3}</b></div>
-    </div>)}</div>
+  const [isAfter, setIsAfter] = useState(true);
+  const titleId = useId();
+  return <figure className="viz-stage hc-layout" aria-labelledby={titleId}>
+    <figcaption className="viz-head"><span className="viz-title" id={titleId}>{LAYOUT.title[lang]}</span></figcaption>
+    <div className="hc-layout-picker" role="group" aria-label={LAYOUT.title[lang]}>
+      {[false, true].map((after) => <button type="button" className="viz-btn" key={String(after)}
+        aria-pressed={isAfter === after} onClick={() => setIsAfter(after)}>{LAYOUT[after ? "after" : "before"][lang]}</button>)}
+    </div>
+    <p className="hc-layout-note">{LAYOUT.note[lang]}</p>
+    <div className="hc-layout-path">
+      <div className="hc-layout-memory">
+        <strong>{LAYOUT.gpu[lang]}</strong><span>{LAYOUT.layerFirst[lang]}</span>
+        <MemoryGrid pageFirst={false} lang={lang} />
+      </div>
+      <div className="hc-layout-transfer"><b aria-hidden="true">→</b><span>{LAYOUT[isAfter ? "reorder" : "copy"][lang]}</span></div>
+      <div className="hc-layout-memory">
+        <strong>{LAYOUT.host[lang]}</strong><span>{LAYOUT[isAfter ? "pageFirst" : "layerFirst"][lang]}</span>
+        <MemoryGrid pageFirst={isAfter} lang={lang} />
+        <div className="hc-layout-storage"><span>↓ {LAYOUT.storage[lang]}</span>
+          <b>{LAYOUT[isAfter ? "contiguous" : "scattered"][lang]}</b></div>
+      </div>
+    </div>
+    <p className="hc-layout-explanation" aria-live="polite">{LAYOUT[isAfter ? "afterDetail" : "beforeDetail"][lang]}</p>
+    <div className="hc-layout-restore">{LAYOUT.restore[lang]}</div>
   </figure>;
 }
