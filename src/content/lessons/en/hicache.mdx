@@ -162,153 +162,81 @@ This works because each model layer uses its own KV. Layer 0 can compute before 
 
 ### Cache policies
 
-HiCache must also decide when transfers are worth doing. On the read path,
-waiting for a cache hit can delay a request. On the write path, saving data that
-is never reused consumes bandwidth and capacity. Prefetch and backup policies
-make these two costs configurable.
+Cache policies decide when to save KV and when to wait for it. Backup copies KV from GPU memory to Host so a later request can reuse it. Prefetch reads saved KV from L3 into Host before that request runs. Saving more data increases future reuse, but costs bandwidth and memory now; waiting for more data can avoid recomputation, but delays the request.
 
 #### Prefetch
 
-Storage latency is higher and less predictable than CPU–GPU latency. Starting
-an L3 read only when the GPU is ready would expose that wait directly to the
-request. HiCache instead prefetches matching pages into CPU memory while the
-request waits for scheduling.
+Suppose the GPU is processing request A when request B arrives. B needs a document whose KV is saved in L3. HiCache can start reading B's KV into Host while B waits for scheduling, overlapping that read with A's computation. When B gets its turn, it can load the KV already in Host to the GPU instead of starting the storage read then.
 
-The policy determines how much longer to wait when the request becomes ready.
-Best-effort can stop prefetching, reuse the available prefix, and recompute what
-is missing. Waiting for completion favors more reuse, while a timeout bounds
-the extra wait.
+If B is ready to run but its L3 read is unfinished, the prefetch policy decides what happens next. Best-effort stops waiting, reuses the prefix already available, and recomputes the rest. Wait-complete keeps B waiting for the read to finish. Timeout gives the read more time, up to a limit, then proceeds with the available prefix.
 
 <PrefetchViz client:visible lang="en" />
 
-The benefit is an earlier start to storage I/O and control over the remaining
-wait. A read that finishes before scheduling can avoid recomputation without
-adding a storage wait at dispatch. If it finishes later, waiting pays off only
-when the saved computation exceeds the added delay. For a partially completed read, the request can reuse the available prefix
-and recompute the rest.
+Waiting is useful when loading the missing KV takes less time than recomputing it. For a long cached document, a short extra wait can save substantial prefill work. When the storage read is much slower, recomputing can finish sooner. Prefetch tries to complete the read before this choice is necessary; the policy handles whatever wait remains.
 
 #### Backup
 
-Lower-tier hits require earlier backups. Saving every cached region maximizes
-retention opportunities but can consume bandwidth for prefixes that are never
-requested again. Small lower tiers can also fill with those copies.
+A later request can hit Host memory only if the KV was backed up earlier. After the GPU computes a document's KV, HiCache can copy it to Host and, with L3 enabled, retain it in storage as well. Copying every cached prefix also spends bandwidth and memory on documents that nobody asks about again.
 
-HiCache provides three ways to decide when that cost should be paid:
+For GPU → Host backup, HiCache provides three choices:
 
 | Policy | Backup timing | Main tradeoff |
 | --- | --- | --- |
-| Write-through | Back up cached KV proactively | More retained data, more I/O |
-| Write-through-selective | Use hit counts to back up hot regions | Less I/O, less coverage for cold regions |
-| Write-back | Defer backup until eviction from the faster tier | Less early backup traffic, work on the eviction path |
+| Write-through | Proactively copy KV to Host when it enters the cache | Preserve more prefixes, with more backup traffic |
+| Write-through-selective | Use hit counts to select hot prefixes for Host backup | Spend less bandwidth on rarely reused prefixes |
+| Write-back | Defer Host backup until the KV is being evicted from GPU memory | Save the early copy, but add backup work at eviction |
 
-These policies let deployments trade retention coverage for lower transfer and
-capacity pressure. Proactive backup is useful when bandwidth can support it;
-selective backup avoids spending that bandwidth on every cold region. Deferred
-backup postpones the copy but adds work when data must leave the faster tier.
+For a frequently reused document, proactive backup leaves a Host copy ready after its GPU copy is evicted. Selective backup favors these hot documents over one-off inputs. Write-back keeps the KV on the GPU until eviction makes the backup necessary, trading less early backup traffic for work at eviction time.
 
 ### Hybrid-model state
 
-A fast transfer is useful only if it restores everything the model needs.
-Hybrid models add a correctness problem to HiCache: ordinary KV may cover a
-prefix even when another required state is missing. SGLang extends the cache
-representation and backup process to preserve these states together.
+Matching the document's tokens is only the first step for a hybrid model. The same model can contain full-attention layers, sliding-window layers, and recurrent layers, each retaining a different form of history. Restoring the full-attention KV alone leaves the other layers without the data they need to continue from the document's end.
 
 #### Reuse boundaries
 
-Full attention needs KV for the reusable prefix. Sliding-window attention needs
-the trailing window at the reuse boundary. A recurrent layer needs a checkpoint
-at that exact boundary. Its state changes as tokens arrive; a later checkpoint
-cannot simply be sliced to recover an earlier one.
+The reuse boundary is where the cached prefix ends and new computation begins. To resume there, full attention needs the prefix's KV, sliding-window attention needs the KV in the trailing window, and a recurrent layer needs a checkpoint of its state at that exact position. That checkpoint records the recurrent state after reading the prefix. A later checkpoint has already incorporated more tokens, so trimming KV pages cannot turn it back into the earlier state.
 
-SGLang's Unified Radix Cache records these components on the same token tree,
-with separate pool references and reuse checks. A boundary is usable only when
-all required components accept it. HiCache backs up and restores their data
-across tiers, together with associated auxiliary buffers. For example, Qwen3.5
-needs recurrent state, and DeepSeek-V3.2 needs sparse-attention indexer buffers.
+SGLang's Unified Radix Cache records these different data sets under the same token prefix. It checks that all the states needed at a candidate boundary are available; HiCache then restores their corresponding data to the GPU. This includes auxiliary buffers such as the sparse-attention indexer in DeepSeek-V3.2, alongside the attention KV.
 
-The result is a recovery decision based on the model's complete requirements.
-A Full KV match alone cannot authorize reuse when the needed window or
-checkpoint is absent. This is what lets the hierarchy extend to hybrid models;
-the multi-turn benchmark below measures the benefit of retaining their history.
+For example, the full-attention KV may cover the whole document while the recurrent checkpoint at its end is missing. The request cannot skip directly to the new question: it must resume from an earlier position with complete state and recompute the missing part. Saving the checkpoint together with the KV preserves the ability to resume at the document's end.
 
 #### Branch checkpoints
 
-Complete recovery also requires saving states created after the original
-backup. Suppose the host holds Full KV through P3 and recurrent checkpoint S0 at
-P3. A new request branches at P2 and produces S1 there. S0 includes tokens after
-P2 and cannot serve the new branch. If backup only asks whether the node already
-has a host copy, it skips S1 and leaves future requests unable to resume at P2.
+A new branch can need a checkpoint that did not exist when the KV was first backed up. In the diagram, Host holds the full-attention KV through P3 and checkpoint S0 at P3. A later request branches at the earlier position P2 and produces checkpoint S1 there. S0 already includes the tokens between P2 and P3, so the branch needs S1. A backup check that sees the existing Host KV and skips the node would miss this new checkpoint.
 
-SGLang adds incremental backup for the newly created checkpoint. The existing
-Full KV stays in place; only S1 needs another transfer. Backup therefore tracks
-newly available components even when other data for the prefix is already saved.
+SGLang adds incremental checkpoint backup on the write-through path: keep the full-attention KV already in Host, and copy the newly created S1 separately. After S1 is evicted from GPU memory, a later request can restore it from Host and resume at P2.
 
 <StateRestoreViz client:visible lang="en" />
 
-The write-through recovery test creates branch states between two rounds of GPU eviction.
-In its final stage, full recovery of the 6.4K shared prefix rises from **1/10 to
-10/10 requests**, and the token hit rate rises from **15.74% to 64.00%**. Each
-request also has a 3.6K unique suffix, so 64% represents the full shared portion.
-See the
-[branch-backup test](https://github.com/sgl-project/sglang/pull/33639).
+The write-through recovery test builds new branch checkpoints, evicts them from the GPU, and requests the shared prefix again. Full recovery of the 6.4K shared prefix rises from **1/10 to 10/10 requests**; the token hit rate rises from **15.74% to 64.00%**. Each request has 6.4K shared tokens and 3.6K new tokens, so 64% means the entire shared prefix was recovered. See the [branch-backup test](https://github.com/sgl-project/sglang/pull/33639).
 
 ### Draft-state recovery
 
-Speculative decoding adds another consumer of the prefix. A draft model
-proposes tokens for the target model to verify, and can keep its own KV or
-history buffers. If HiCache restores only target KV, the draft may lose its
-history or read the wrong slots. A successful target hit can then coincide with
-a lower draft acceptance rate during decoding.
+Speculative decoding uses a draft model to propose tokens and a target model to verify them. The draft can keep its own KV and other history buffers for the same document. If a cache hit restores only the target's data, the draft may have lost its history or be looking in the wrong memory slots. Its proposals can then become less likely to pass verification, even though the target successfully reused the prefix.
 
-SGLang attaches the matching draft buffers to the target's cache transfers.
-Compatible layouts pack draft data into the corresponding target host pool.
-Other layouts use separate sidecar pools whose indices follow target KV or
-sliding-window indices. Both paths carry the associated draft state through
-L2 and L3 backup and recovery.
+HiCache therefore backs up and restores the associated draft state in the same operation as the target state. With compatible layouts, it packs draft data into the matching target Host pool. Other layouts use a separate sidecar pool whose slots follow the target's KV or sliding-window slots. Both arrangements preserve which draft data belongs to each cached prefix through L2 and L3 transfers.
 
 <DraftRestoreViz client:visible lang="en" />
 
-The DSpark test uses the same 200 prompts for a cold run and an L3 replay on
-DeepSeek-V4-Flash-0731. Before the change, acceptance falls from **46.77% to
-33.57%** on replay. Afterward, cold and replay acceptance are **46.12% and
-46.86%**. Restoring draft state preserves its effectiveness after a cache hit,
-beyond the prefill work saved by restoring target KV. See the
-[draft-recovery validation](https://github.com/sgl-project/sglang/pull/30393).
+The DSpark test runs the same 200 prompts on DeepSeek-V4-Flash-0731, first cold and then after restoring from L3. Before the fix, draft acceptance falls from **46.77% to 33.57%** on restore. After the fix, the two runs achieve **46.12% and 46.86%**. Restoring the draft's history keeps its proposals useful after a cache hit. See the [draft-recovery validation](https://github.com/sgl-project/sglang/pull/30393).
 
 ### Host memory as a buffer
 
-The original hierarchy retains a second cache in CPU memory, allowing an L2 hit
-to bypass storage. Each serving instance has its own L2 pool, however. Multiple
-instances can retain private host copies while backing up to a shared L3.
-With little host memory, retaining this working set creates capacity pressure
-even when L3 already holds the history.
+Keeping a document's KV in Host gives the next request a fast L2 hit. But each serving instance has a private Host pool. In the diagram, instances A and B can each retain the same prefix P in Host, while shared L3 also holds a copy. Retaining more documents therefore keeps consuming each instance's Host memory even when L3 already stores them.
 
-The buffer-only proposal changes the role of L2. Backups pass through host
-buffers on their way to L3, and prefetches pass through them on their way to the
-GPU. When an operation completes and releases its slots, later transfers can
-reuse that space. Long-term retention moves to L3, while host memory holds data
-in transit. Instances with compatible model configurations can reuse the same L3 copy.
+Buffer-only mode uses Host memory only while data is in transit. For backup, A copies P from GPU to Host and writes it to L3; once the transfer finishes and no longer needs the buffer, those Host slots can be reused. For recovery, B reads P from L3 into its Host buffer and loads it to the GPU, then releases the buffer. L3 retains P for future requests, while A and B reuse their Host slots for other transfers.
 
 <HostModeViz client:visible lang="en" />
 
-This design allows host capacity to be sized for in-flight transfers instead of
-a retained second working set. It gives up persistent L2 hits and can increase
-L3 traffic; a smaller buffer also limits concurrent transfers. L3 takes over the reads that persistent L2 hits previously served.
+Host memory now needs room for the transfers in progress rather than a retained collection of documents. The tradeoff is that a future GPU miss must read L3 again instead of hitting a long-lived Host copy. A smaller Host buffer also holds fewer simultaneous transfers. Buffer-only saves retained Host copies by relying more on L3 reads.
 
 ### Storage backends
 
-HiCache also needs to work with storage systems that implement lookup, reads,
-and writes differently. Rebuilding the scheduler and synchronization logic for
-each backend would make each integration a separate cache implementation.
+Suppose a deployment switches L3 from local files to Mooncake. Reading and writing KV now uses a storage service instead of file operations. But HiCache still needs to check for cached prefixes, start prefetches, schedule Host → GPU loads, and wait for the data before using it. These jobs should not need a new implementation for every storage backend.
 
-SGLang places these storage operations behind a common backend interface. The
-backend performs key lookup, reads, and writes; the central controller manages
-scheduling and synchronization. Backends include Mooncake, DeepSeek 3FS, NIXL, and local files. NIXL connects
-to other storage systems through its transfer library.
+HiCache separates storage access from cache scheduling. A backend implements how to check whether a key exists, read its data into Host, and write Host data to storage. The shared cache controller decides when to issue these operations and coordinates their completion. Mooncake, DeepSeek 3FS, and local files use this interface; NIXL connects storage systems through a transfer library.
 
-The benefit is a shared integration path: a backend can supply storage access
-without reimplementing HiCache's cache-control logic. This broadens the available
-deployment choices.
+Adding a backend therefore means implementing its storage access, while keeping HiCache's existing prefetch, backup, and GPU-loading flow. Deployments can choose where to retain their KV without building another cache scheduler.
 
 ## Results
 
