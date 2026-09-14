@@ -36,8 +36,6 @@ export const LOCATION = {
 } satisfies Record<string, Localized>;
 
 export const TEXT = {
-  treeTitle: { en: "HiRadixTree and KV pools", zh: "HiRadixTree 与 KV 池" },
-  treeNote: { en: "One instance, five requests in order; token segments and pool indices are schematic, and all transfers succeed.", zh: "单实例依次处理五个请求；token 段与池索引均为示意，假设传输成功。" },
   request: { en: "Request prefix", zh: "请求前缀" },
   root: { en: "Root", zh: "根节点" },
   gpu: { en: "GPU HBM", zh: "GPU HBM" },
@@ -89,87 +87,38 @@ export const TEXT = {
   higher: { en: "throughput", zh: "吞吐" },
 } satisfies Record<string, Localized>;
 
-/** CacheTreeViz: one continuous timeline. Keys match TREE_STEPS / TREE_CHAPTERS in engine.ts. */
-export const TREE = {
-  request: { en: "Request", zh: "请求" },
-  idle: { en: "No request in flight", zh: "当前没有请求" },
-  legendGpu: { en: "GPU hit: use directly", zh: "GPU 命中：直接使用" },
-  legendCpu: { en: "CPU hit: load to GPU", zh: "CPU 命中：搬回 GPU" },
-  legendL3: { en: "Storage hit: prefetch, then load", zh: "存储命中：先预取再加载" },
-  legendCompute: { en: "Not cached: compute", zh: "无缓存：重新计算" },
-  backup: { en: "Backup", zh: "备份" },
-  load: { en: "Load", zh: "加载" },
-  prefetch: { en: "Prefetch", zh: "预取" },
-  evicted: { en: "evicted", zh: "已驱逐" },
-  lookupHit: { en: "hit", zh: "命中" },
-  lookupMiss: { en: "miss", zh: "未命中" },
-  keyPrefix: { en: "Lookup key", zh: "查询键" },
-  chFirst: { en: "First request", zh: "首次请求" },
-  chBackup: { en: "Write-through backup", zh: "写穿备份" },
-  chGpuHit: { en: "GPU hit", zh: "GPU 命中" },
-  chCpuHit: { en: "GPU eviction → CPU hit", zh: "GPU 驱逐 → CPU 命中" },
-  chL3Hit: { en: "Local eviction → storage hit", zh: "本地驱逐 → 存储命中" },
-  chMiss: { en: "Storage miss", zh: "存储未命中" },
+export const REUSE = {
+  title: { en: "How HiCache reuses a prefix", zh: "HiCache 怎样复用前缀" },
+  request: { en: "New request", zh: "新请求" },
+  document: { en: "Same document", zh: "同一份文档" },
+  question: { en: "New question", zh: "新问题" },
+  reuse: { en: "Reuse cached KV", zh: "复用缓存" },
+  compute: { en: "Compute", zh: "需要计算" },
+  l1Hit: { en: "L1 hit", zh: "L1 命中" },
+  l2Hit: { en: "L2 hit", zh: "L2 命中" },
+  l3Hit: { en: "L3 hit", zh: "L3 命中" },
+  miss: { en: "No cache hit", zh: "全部未命中" },
+  initial: { en: "Cache when the request arrives", zh: "请求到来时的缓存" },
+  L1: { en: "GPU memory", zh: "GPU 显存" },
+  L2: { en: "CPU memory", zh: "CPU 内存" },
+  L3: { en: "External storage", zh: "外部存储" },
+  present: { en: "Document KV cached", zh: "有文档缓存" },
+  absent: { en: "No document cache", zh: "无文档缓存" },
+  action: { en: "Next", zh: "接下来" },
+  direct: { en: "L1 → reuse on GPU", zh: "L1 → GPU 直接复用" },
+  fromL2: { en: "L2 → L1 → reuse on GPU", zh: "L2 → L1 → GPU 复用" },
+  fromL3: { en: "L3 → L2 → L1 → reuse on GPU", zh: "L3 → L2 → L1 → GPU 复用" },
+  cold: { en: "GPU computes the document + question", zh: "GPU 计算文档 + 新问题" },
+  backup: { en: "Backup: L1 → L2 → L3", zh: "备份：L1 → L2 → L3" },
+  backupNote: { en: "With backups enabled, lower tiers can retain a copy after GPU eviction.", zh: "启用备份后，GPU 清掉的缓存仍可能保留在下层。" },
 } satisfies Record<string, Localized>;
 
-export const TREE_STEP_TEXT: Record<string, { title: Localized; body: Localized }> = {
-  init: {
-    title: { en: "Start", zh: "起点" },
-    body: { en: "The server has just started. The local HiRadixTree has only a root node, and every tier is empty.", zh: "服务刚启动。本地 HiRadixTree 只有根节点，三层存储都是空的。" },
-  },
-  r1Compute: {
-    title: { en: "R1 · prefix A · nothing cached", zh: "R1 · 前缀 A · 无缓存" },
-    body: { en: "No node matches A, so prefill computes its KV into GPU slots D0, D1 and adds node A under the root.", zh: "树上没有匹配 A 的节点。Prefill 计算 A 的 KV，写入 GPU 槽位 D0、D1，并在根下新建节点 A。" },
-  },
-  r1Backup: {
-    title: { en: "Write-through backup of A", zh: "写穿备份 A" },
-    body: { en: "The controller copies A from GPU to CPU slots H0, H1, then from CPU to external storage under key h(A). Node A now records both local copies.", zh: "controller 把 A 从 GPU 复制到 CPU 槽位 H0、H1，再从 CPU 写入外部存储，键为 h(A)。节点 A 现在同时记录两份本地副本。" },
-  },
-  r2Hit: {
-    title: { en: "R2 · prefix A → B · GPU hit on A", zh: "R2 · 前缀 A → B · A 在 GPU 命中" },
-    body: { en: "The tree walk matches A, whose KV is already on the GPU, so only suffix B is computed into D2, D3. Node B becomes a child of A.", zh: "沿树匹配到 A，其 KV 已在 GPU 上，可直接复用；只有后缀 B 需要计算，写入 D2、D3，并挂为 A 的子节点。" },
-  },
-  r2Backup: {
-    title: { en: "Write-through backup of B", zh: "写穿备份 B" },
-    body: { en: "B follows the same path: GPU → CPU slots H2, H3, then CPU → storage under h(A,B). Keys are derived from the whole prefix, not from B alone.", zh: "B 走同样的路径：GPU → CPU 槽位 H2、H3，再 CPU → 存储，键为 h(A,B)。键由整段前缀派生，不只取 B。" },
-  },
-  gpuEvict: {
-    title: { en: "GPU memory pressure", zh: "GPU 显存吃紧" },
-    body: { en: "Eviction frees leaf B's GPU slots D2, D3. Node B stays in the tree with only its CPU copy; nothing has to be recomputed yet.", zh: "驱逐释放叶节点 B 的 GPU 槽位 D2、D3。节点 B 仍在树上，只剩 CPU 副本；此时还没有任何数据需要重算。" },
-  },
-  r3CpuHit: {
-    title: { en: "R3 · prefix A → B · CPU hit on B", zh: "R3 · 前缀 A → B · B 在 CPU 命中" },
-    body: { en: "A hits on the GPU. B's node exists but points only to H2, H3, so this is a CPU hit that needs a transfer before use.", zh: "A 在 GPU 命中。B 的节点存在，但只指向 H2、H3，属于 CPU 命中，使用前需要一次传输。" },
-  },
-  r3Load: {
-    title: { en: "Load B from CPU to GPU", zh: "把 B 从 CPU 搬回 GPU" },
-    body: { en: "The controller allocates GPU slots D4, D5 and copies B layer by layer from H2, H3. Prefill then continues from the end of B instead of recomputing it.", zh: "controller 分配 GPU 槽位 D4、D5，把 B 从 H2、H3 逐层复制过去。Prefill 从 B 的末尾继续，不必重算 B。" },
-  },
-  localEvict: {
-    title: { en: "Both local tiers evict B", zh: "两级本地缓存都驱逐 B" },
-    body: { en: "More traffic evicts B from the GPU and then from CPU memory. Node B disappears from the local tree, but storage still holds h(A,B).", zh: "更多请求进来后，B 先被 GPU 驱逐，再被 CPU 驱逐。本地树上不再有节点 B，但外部存储里仍保留 h(A,B)。" },
-  },
-  r4Lookup: {
-    title: { en: "R4 · prefix A → B · storage lookup", zh: "R4 · 前缀 A → B · 查询外部存储" },
-    body: { en: "The local walk stops at A. The controller queries storage with the prefix-derived key h(A,B) and gets a hit. A local miss does not by itself prove a storage hit.", zh: "本地只匹配到 A。controller 用前缀派生的键 h(A,B) 查询外部存储，得到命中。本地未命中本身并不能证明存储一定命中。" },
-  },
-  r4Prefetch: {
-    title: { en: "Prefetch B from storage to CPU", zh: "把 B 从存储预取到 CPU" },
-    body: { en: "Matching pages are read into CPU slots H6, H7 while the request waits for scheduling, and node B is rebuilt in the tree.", zh: "请求等待调度期间，命中的页被读到 CPU 槽位 H6、H7，节点 B 在树上重建。" },
-  },
-  r4Load: {
-    title: { en: "Load B from CPU to GPU", zh: "把 B 从 CPU 搬到 GPU" },
-    body: { en: "A second transfer places B in D6, D7. The whole A → B prefix is on the GPU, so prefill only handles the new suffix.", zh: "第二次传输把 B 放到 D6、D7。整段 A → B 的 KV 都在 GPU 上，prefill 只处理新的后缀。" },
-  },
-  r5Miss: {
-    title: { en: "R5 · prefix A → C · storage miss", zh: "R5 · 前缀 A → C · 存储未命中" },
-    body: { en: "A hits on the GPU. C is not in the tree, and the storage lookup for h(A,C) misses, so C is computed as ordinary prefill into D8, D9.", zh: "A 在 GPU 命中。C 不在树上，用 h(A,C) 查询存储也未命中，因此 C 按普通 prefill 计算，写入 D8、D9。" },
-  },
-  summary: {
-    title: { en: "Backup of C, and the full picture", zh: "备份 C，回顾全程" },
-    body: { en: "C is backed up like A and B. GPU hit: use directly. CPU hit: load to GPU. Storage hit: prefetch to CPU, then load. Nothing cached: compute, then back up.", zh: "C 也像 A、B 一样被备份。GPU 命中直接使用；CPU 命中搬回 GPU；存储命中先预取到 CPU 再加载；三层都没有才重算，算完再备份。" },
-  },
-};
+export const REUSE_EXPLANATION = {
+  l1Hit: { en: "The document’s KV is already on the GPU. Reuse it directly and compute only the new question.", zh: "文档的 KV 已在 GPU 上，直接复用，只计算新问题。" },
+  l2Hit: { en: "The GPU copy is gone, but CPU memory still has it. Load it into L1, then compute only the new question.", zh: "GPU 上的副本已被清掉，但 CPU 内存里还有。搬回 L1 后，只计算新问题。" },
+  l3Hit: { en: "Neither L1 nor L2 has the document’s KV, but L3 does. Fetch it into L2, load it into L1, and compute only the new question.", zh: "L1、L2 都没有文档缓存，但 L3 还有。先取到 L2，再搬到 L1，只计算新问题。" },
+  miss: { en: "The document’s KV is missing from all three tiers. The GPU must compute both the document and the new question.", zh: "三层都找不到文档缓存。GPU 需要计算整份文档和新问题。" },
+} satisfies Record<string, Localized>;
 
 export const UPDATE = {
   timeline: { en: "HiCache design milestones", zh: "HiCache 技术演化时间线" },

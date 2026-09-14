@@ -40,7 +40,7 @@ references:
 ---
 
 import StorageLocationViz from "../../../viz/hicache/StorageLocationViz";
-import CacheTreeViz from "../../../viz/hicache/CacheTreeViz";
+import CacheReuseViz from "../../../viz/hicache/CacheReuseViz";
 import LayoutViz from "../../../viz/hicache/LayoutViz";
 import OverlapViz from "../../../viz/hicache/OverlapViz";
 import PrefetchViz from "../../../viz/hicache/PrefetchViz";
@@ -84,23 +84,18 @@ otherwise be discarded. A cache controller backs up and reloads that data.
 
 <StorageLocationViz client:visible lang="en" />
 
-HiRadixTree indexes the local cache by token sequence. Each node holds a token
-segment and references to its KV in the GPU and CPU pools. The segments along a
-path form a shared prefix. An L1 hit is ready to use. An L2 hit requires newly
-allocated GPU slots and a CPU–GPU transfer. When local copies are missing, the
-controller can query L3 with prefix-derived keys, prefetch matching pages into
-CPU memory, and load them onto the GPU. If storage also misses, SGLang computes
-the missing suffix through ordinary prefill.
+Suppose two requests start with the same document but ask different questions.
+SGLang can reuse the document’s KV and compute only the new question.
+HiRadixTree matches the shared prefix and tracks its local cache locations;
+HiCache brings lower-tier copies back to the GPU when needed.
 
-<CacheTreeViz client:visible lang="en" />
+<CacheReuseViz client:visible lang="en" />
 
-The diagram follows one serving instance through five requests. Prefix A is
-computed once and backed up. B survives GPU eviction in CPU memory, then CPU
-eviction in external storage. Both later hits can recover B without recomputing
-it. The final request also misses in storage and needs prefill. This is the
-hierarchy's benefit: GPU eviction no longer necessarily ends reuse. Backup
-copies can coexist across tiers, and a local miss still requires a storage
-lookup before it can be counted as an L3 hit.
+An L1 hit is ready to reuse. An L2 hit must be loaded into L1. An L3 hit must
+first be fetched into L2, then loaded into L1. Only the parts missing from all
+three tiers need recomputation. This is HiCache’s benefit: a prefix evicted
+from GPU memory can still avoid recomputation if a lower tier retains it.
+Reuse requires identical prefix tokens; similar meaning alone is not enough.
 
 ### Engineering overview
 

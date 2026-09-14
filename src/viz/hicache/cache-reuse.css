@@ -1,0 +1,25 @@
+.viz-stage.hc-reuse { width: min(640px, 100%); padding: 14px; margin: 1.2rem auto; }
+.hc-reuse-picker { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0; }
+.hc-reuse-picker button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.hc-reuse-request { display: flex; align-items: center; gap: 10px; padding: 12px 0; font-size: 12px; }
+.hc-reuse-request > span { color: var(--muted); }
+.hc-reuse-part { display: flex; flex: 1; flex-direction: column; gap: 6px; padding: 10px; border: 1px solid var(--series-2); border-radius: 6px; background: color-mix(in srgb, var(--series-2) 8%, var(--surface)); }
+.hc-reuse-part[data-reused="true"] { border-color: var(--series-3); background: color-mix(in srgb, var(--series-3) 8%, var(--surface)); }
+.hc-reuse-part small { font-size: 11px; }
+.hc-reuse p.hc-reuse-label { margin: 8px 0; font-size: 12px; color: var(--muted); }
+.hc-reuse-tiers { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.hc-reuse-tier { display: flex; flex-direction: column; gap: 4px; padding: 12px 8px; border: 1px dashed var(--axis); border-radius: 8px; text-align: center; color: var(--muted); font-size: 12px; }
+.hc-reuse-tier > strong { font-size: 20px; color: var(--ink); }
+.hc-reuse-tier small { margin-top: 6px; font-size: 11px; }
+.hc-reuse-tier[data-present="true"] { border-style: solid; border-color: var(--series-3); background: color-mix(in srgb, var(--series-3) 6%, var(--surface)); color: var(--ink); }
+.hc-reuse-action { margin: 14px 0; padding-left: 10px; border-left: 3px solid var(--accent); font-size: 13px; }
+.hc-reuse-action > span { display: block; color: var(--muted); font-size: 11px; margin-bottom: 4px; }
+.hc-reuse-action p { margin: 6px 0 0; font-size: 12px; line-height: 1.6; }
+.hc-reuse-backup { display: flex; flex-wrap: wrap; gap: 6px 12px; border-top: 1px solid var(--grid); padding-top: 10px; font-size: 11px; color: var(--muted); }
+.hc-reuse button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+@media (max-width: 480px) {
+  .hc-reuse-request { flex-wrap: wrap; gap: 6px; }
+  .hc-reuse-request > span:first-child { flex-basis: 100%; }
+  .hc-reuse-tiers { gap: 6px; }
+  .hc-reuse-tier { padding: 8px 4px; }
+}

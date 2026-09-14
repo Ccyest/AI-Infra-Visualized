@@ -40,7 +40,7 @@ references:
 ---
 
 import StorageLocationViz from "../../../viz/hicache/StorageLocationViz";
-import CacheTreeViz from "../../../viz/hicache/CacheTreeViz";
+import CacheReuseViz from "../../../viz/hicache/CacheReuseViz";
 import LayoutViz from "../../../viz/hicache/LayoutViz";
 import OverlapViz from "../../../viz/hicache/OverlapViz";
 import PrefetchViz from "../../../viz/hicache/PrefetchViz";
@@ -69,11 +69,11 @@ HiCache 先接入 CPU 内存，再扩展到外部存储。后续工作把恢复�
 
 <StorageLocationViz client:visible />
 
-HiRadixTree 用 token 序列索引本地缓存。每个节点存一段 token，以及对应 KV 在 GPU 和 CPU 池中的索引。沿一条路径把 token 段连起来，就是共享前缀。L1 命中可以直接使用；L2 命中需要先分配 GPU 槽位，再从 CPU 搬运数据。本地副本缺失时，controller 可以用前缀派生的键查询 L3，把命中的页预取到 CPU 内存，再加载到 GPU。如果存储也未命中，SGLang 就通过普通 prefill 计算缺失的后缀。
+假设两次请求都以同一份文档开头，只是后面的问题不同。SGLang 可以复用文档对应的 KV，只计算新问题。HiRadixTree 负责匹配相同的前缀，并记录本地缓存的位置；HiCache 负责在需要时把下层缓存搬回 GPU。
 
-<CacheTreeViz client:visible />
+<CacheReuseViz client:visible />
 
-图中让一个服务实例依次处理五个请求。前缀 A 只计算一次，随后被备份。B 被 GPU 驱逐后仍留在 CPU 内存，被 CPU 驱逐后又能从外部存储取回，两次后续命中都不必重新计算 B。最后一个请求在存储中也未命中，因此需要 prefill。这就是分层设计带来的收益：GPU 驱逐不再必然终止复用。备份可以同时存在于多个层级，而本地未命中仍需查询存储，才能确定是否为 L3 命中。
+L1 命中直接复用；L2 命中先搬回 L1；L3 命中先取到 L2，再搬回 L1。只有三层都找不到的部分才需要重新计算。HiCache 的收益就在这里：即使 GPU 清掉了某段缓存，只要下层还保留着，就有机会省掉重算。这要求两次请求的前缀 token 一致，仅仅意思相近不能复用。
 
 ### 工程问题纵览
 
