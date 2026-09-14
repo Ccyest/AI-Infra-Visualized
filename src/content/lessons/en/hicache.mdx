@@ -117,59 +117,48 @@ path useful introduces several implementation problems:
 
 
 
-### Transfer paths
 
-Host means the server's CPU memory. KV travels in two directions:
 
-- **Backup: GPU → Host → storage.** Save computed KV so a later request can reuse it.
-- **Restore: storage → Host → GPU.** Bring saved KV back for computation. An L2 hit starts at Host and skips the storage read.
 
-Three mechanisms reduce the time spent on these paths:
 
-| Mechanism | Where it applies | What gets faster |
-| --- | --- | --- |
-| GPU-assisted I/O kernels | GPU ↔ Host, for backup and restore | The KV transfer itself |
-| Page-first Host layout + zero-copy | Host ↔ storage, for reads and writes | Storage I/O uses larger contiguous blocks and avoids an intermediate copy |
-| Overlapping data transfers and computation | Host → GPU, during restore | GPU computation starts after the first layer arrives, while later layers keep loading |
 
-The first two reduce transfer time. The third lets computation run during part
-of that time. A Host → GPU restore can use both the faster I/O kernels and
-layer-wise overlap.
+
+
+
+
+
+
+
+
+
+
+
 
 ### Memory layout
 
-This optimization handles the different KV layouts used by GPU computation and storage I/O. The GPU processes one model layer at a time; storage reads and writes pages. A page holds the KV for a fixed number of consecutive tokens across model layers. For example, page 1 can hold tokens 1–4, with a separate piece of KV for each model layer.
+This optimization handles the different KV layouts used by GPU computation and storage I/O. The GPU processes one model layer at a time, so its KV is grouped by layer for convenient access. External L3 storage reads and writes pages: for example, page 1 contains tokens 1–4 and page 2 contains tokens 5–8.
 
-**GPU groups KV by model layer.** Computation uses one layer at a time, so
-keeping that layer's KV together makes it easy to read. If Host uses the same
-layout, one page's KV is scattered across the regions for different layers.
-Saving that page to storage then requires many small transfers or collecting
-those pieces into a temporary buffer.
+If Host keeps the same layout, transfers incur the overhead of many small copies, as shown in the diagram. With a page-first Host layout, a whole page can be transferred to external L3 storage at once, reducing the number of transfers and their overhead.
 
-**HiCache groups Host KV by page and converts the layout during transfer.** On the GPU, KV stays grouped by model layer. On Host, one page's KV from all model layers occupies a contiguous region. During GPU → Host backup, the I/O kernel uses each piece's page and model-layer indices to write it into the corresponding Host position. During Host → GPU restore, it writes the pieces back into the GPU's layer-first layout.
+**HiCache therefore uses a page-first Host layout as an intermediate buffer.** It converts the layout during transfers, as shown in the diagram. Page 1 is highlighted: before, its pieces occupy separate Host regions; after, they sit together. Host → storage backup can read that contiguous region directly, and storage → Host recovery can fill it directly, reducing overhead.
 
-In the diagram, page 1 is highlighted. Before, its pieces occupy separate Host regions; after, they sit together. Host → storage backup can read that contiguous region directly, and storage → Host recovery can fill it directly. Converting the layout during GPU–Host transfers lets GPU computation and storage I/O each use the order they need.
+
 
 <LayoutViz client:visible lang="en" />
 
-On **GPU ↔ Host**, GPU-assisted I/O kernels achieve up to **3× the transfer
-throughput** of the standard `cudaMemcpyAsync` path. On **Host ↔ storage**,
-page-first layout enables larger contiguous transfers. Zero-copy lets the
-storage client access those blocks directly in the Host pool, saving a copy
-through an intermediate buffer. Together, page-first and zero-copy deliver up
-to **2× the Host–storage throughput** in typical deployments.
+On **GPU ↔ Host**, SGLang’s GPU-assisted I/O kernels achieve up to **3× the transfer throughput** of the standard `cudaMemcpyAsync` path. On **Host ↔ storage**, page-first layout enables large contiguous reads and writes; zero-copy lets the storage client access those blocks directly in the Host pool. Together, page-first and zero-copy deliver up to **2× the Host–storage throughput**.
 
 ### Overlapping data transfers and computation
 
-This optimization overlaps **Host → GPU transfers of cached KV** with **GPU computation on the new tokens**. Suppose a request starts with a cached document and adds a new question. The document's KV is in Host memory and must be restored to the GPU. If the GPU waits for every model layer's KV before processing the question, it spends the entire restore waiting. HiCache starts computation as soon as the first layer's KV is ready, while later layers' KV continues loading.
+The previous section explained how to make transfers faster. This optimization overlaps **Host → GPU transfers of cached KV** with **GPU computation on the new tokens**. We want the GPU to compute as data arrives instead of waiting through the transfer. HiCache therefore starts computation as soon as the first model layer’s KV is ready, while later layers’ KV continues loading.
 
-For a three-layer model, first load the document's layer-0 KV from Host to GPU. The GPU can then process the new question through layer 0, using that cached KV to attend to the document. At the same time, the transfer stream loads the document's layer-1 and layer-2 KV. The overlap is between computation at the current model layer and KV transfers for later model layers.
+For a three-layer model, first load the document’s layer-0 KV from Host to GPU. The GPU then processes the new question through layer 0, using that cached KV to attend to the document. At the same time, the transfer stream loads the document’s layer-1 and layer-2 KV.
 
 This works because each model layer uses its own KV. Layer 0 can compute before layer 1's KV arrives. When computation reaches layer 1, it checks that layer 1's load has finished; if so, it proceeds immediately, otherwise it waits for that load. An L2 hit starts this Host → GPU process directly. For an L3 hit, storage first brings the KV into Host, after which the same overlap applies.
 
 <OverlapViz client:visible lang="en" />
 
-In the diagram, each model layer takes 1 time unit to load and 2 to compute. Loading all three layers before computing finishes at time 9. Overlapping the last two loads with layer 0's computation finishes at time 7. KV transfers still take 3 units in total, but the GPU only waits through the first unit. Layout and I/O optimizations shorten the transfers themselves; overlapping transfers and computation reduces the time those transfers add to the request.
+
 
 ### Cache policies
 
