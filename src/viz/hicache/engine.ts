@@ -13,14 +13,27 @@ export interface Span {
   end: number;
 }
 
-// Three illustrative layers; one transfer stream and one compute stream.
-export function layerSchedule(overlap: boolean): { transfer: Span[]; compute: Span[] } {
-  const transfer = [0, 1, 2].map((layer) => ({ layer, start: layer, end: layer + 1 }));
-  const compute = [0, 1, 2].map((layer) => {
-    const start = (overlap ? 1 : 3) + layer * 2;
-    return { layer, start, end: start + 2 };
+export const RESTORE_PAGES = [1, 2, 3] as const;
+export const RESTORE_LAYERS = [0, 1, 2] as const;
+export interface PageSpan { page: number; start: number; end: number }
+export interface LayerTransferSpan extends Span { pages: readonly number[] }
+export interface RestoreSchedule { storage: PageSpan[]; transfer: LayerTransferSpan[]; compute: Span[] }
+
+// Same three-page working set as LayoutViz; these durations are illustrative.
+export function layerSchedule(overlap: boolean): RestoreSchedule {
+  const storage = RESTORE_PAGES.map((page, index) => ({ page, start: index, end: index + 1 }));
+  const hostReady = storage[storage.length - 1].end;
+  const transfer = RESTORE_LAYERS.map((layer) => ({
+    layer, pages: RESTORE_PAGES, start: hostReady + layer, end: hostReady + layer + 1,
+  }));
+  const allLayersReady = transfer[transfer.length - 1].end;
+  let computeReady = 0;
+  const compute = transfer.map(({ layer, end }) => {
+    const start = Math.max(overlap ? end : allLayersReady, computeReady);
+    computeReady = start + 2;
+    return { layer, start, end: computeReady };
   });
-  return { transfer, compute };
+  return { storage, transfer, compute };
 }
 
 // Storage latency is controlled by a bounded UI slider. No partial-prefix reuse.

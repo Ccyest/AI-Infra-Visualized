@@ -1,0 +1,22 @@
+.viz-stage.hc-overlap { width: min(800px, 100%); padding: 14px; }
+.hc-overlap-scroll { overflow-x: auto; }
+.hc-overlap .hc-timelines { min-width: 680px; padding: 8px 4px 16px; gap: 22px; }
+.hc-overlap .hc-lane-row { grid-template-columns: 100px 1fr; gap: 12px; }
+.hc-overlap .hc-lane { height: 44px; }
+.hc-overlap .hc-span { height: 42px; overflow: hidden; font-size: 11px; }
+.hc-overlap .hc-span-label { position: relative; display: flex; flex-direction: column; align-items: center; line-height: 1.3; white-space: nowrap; }
+.hc-overlap .hc-span-label small { font-size: 9px; font-weight: 400; }
+.hc-overlap .hc-storage { background: color-mix(in srgb, var(--series-4) 15%, var(--surface)); border-color: var(--series-4); }
+.hc-overlap .hc-span-progress { position: absolute; inset: 0 auto 0 0; background: color-mix(in srgb, var(--series-1) 20%, transparent); }
+.hc-overlap .hc-storage .hc-span-progress { background: color-mix(in srgb, var(--series-4) 20%, transparent); }
+.hc-overlap .hc-compute .hc-span-progress { background: color-mix(in srgb, var(--series-3) 20%, transparent); }
+.hc-overlap .hc-compute { justify-content: flex-start; }
+.hc-overlap .hc-compute .hc-span-label { width: 50%; }
+.hc-overlap .hc-span[data-active="true"] { outline: 1px solid currentColor; outline-offset: -2px; }
+.hc-overlap .hc-time-divider { position: absolute; top: 3px; bottom: 3px; left: 50%; border-left: 1px dashed var(--series-3); }
+.hc-overlap .hc-axis { margin-left: 112px; position: relative; display: block; height: 16px; }
+.hc-overlap .hc-axis span { position: absolute; transform: translateX(-50%); }
+.hc-overlap .hc-axis span:first-child { transform: none; }
+.hc-overlap .hc-axis span:last-child { transform: translateX(-100%); white-space: nowrap; }
+.hc-host-ready { position: absolute; top: 13px; padding-left: 8px; color: var(--muted); white-space: nowrap; }
+.hc-overlap-scroll:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }

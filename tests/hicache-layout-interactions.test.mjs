@@ -43,10 +43,16 @@ test("HiCache survives an early first animation frame and all playback controls"
       contents: `import React, {act} from 'react';
         import {createRoot} from 'react-dom/client';
         import LayoutViz from './src/viz/hicache/LayoutViz';
+        import OverlapViz from './src/viz/hicache/OverlapViz';
         export {act};
         export function mount(container) {
           const root = createRoot(container);
           root.render(<LayoutViz/>);
+          return root;
+        }
+        export function mountOverlap(container, lang) {
+          const root = createRoot(container);
+          root.render(<OverlapViz lang={lang}/>);
           return root;
         }`,
       loader: "tsx", resolveDir: process.cwd(),
@@ -54,7 +60,7 @@ test("HiCache survives an early first animation frame and all playback controls"
     bundle: true, platform: "node", format: "cjs", outfile: bundle,
     loader: { ".css": "empty" }, define: { "process.env.NODE_ENV": '"development"' },
   });
-  const { act, mount } = createRequire(import.meta.url)(bundle);
+  const { act, mount, mountOverlap } = createRequire(import.meta.url)(bundle);
   const container = document.getElementById("app");
   const button = (label) => [...container.querySelectorAll("button")].find((node) =>
     node.textContent === label || node.getAttribute("aria-label") === label);
@@ -116,5 +122,24 @@ test("HiCache survives an early first animation frame and all playback controls"
     assert.equal(container.querySelectorAll('.hc-layout-page-layer[data-selected="true"]').length, 3);
   } finally {
     await act(async () => root.unmount());
+  }
+  for (const lang of ["zh", "en"]) {
+    await act(async () => { root = mountOverlap(container, lang); });
+    try {
+      assert.equal(container.querySelectorAll('[data-lane="storage"]').length, 2);
+      assert.equal(container.querySelectorAll(".hc-time-divider").length, 6);
+      assert.equal(container.querySelector('input[type="range"]').max, "12");
+      const next = container.querySelectorAll(".viz-controls button")[2];
+      for (let i = 0; i < 4; i++) await act(async () => next.click());
+      const overlapping = container.querySelector('[data-overlap="true"]');
+      assert.equal(overlapping.querySelectorAll('.hc-transfer[data-active="true"]').length, 1);
+      assert.equal(overlapping.querySelectorAll('.hc-compute[data-active="true"]').length, 1);
+      const serial = container.querySelector('[data-overlap="false"]');
+      assert.equal(serial.querySelectorAll('.hc-compute[data-active="true"]').length, 0);
+      await act(async () => container.querySelectorAll(".viz-controls button")[3].click());
+      assert.equal(container.querySelector('input[type="range"]').value, "0");
+    } finally {
+      await act(async () => root.unmount());
+    }
   }
 });

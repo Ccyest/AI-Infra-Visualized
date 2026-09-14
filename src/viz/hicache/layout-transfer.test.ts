@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { layerSchedule } from "./engine.ts";
 import { BLOCKS, CELL_WIDTH, MODEL_LAYERS, PAGES, arrivedPages, blockFilled, blockPosition, computeProgress, gpuReady, storageProgress, totalSteps, transferFlights, transferSteps } from "./layout-transfer.ts";
 
 test("memory order stays layer-first on GPU and page-first on Host and L3", () => {
@@ -95,4 +96,29 @@ test("I/O counter counts storage pages only, excluding layer loads and computati
     assert.equal(storageProgress(direction, totalSteps(direction)), 3);
     assert.deepEqual(transferFlights(direction, totalSteps(direction)), []);
   }
+});
+
+
+test("full-path overlap timeline reads all pages before layer loads and gates computation", () => {
+  for (const overlap of [false, true]) {
+    const schedule = layerSchedule(overlap);
+    assert.deepEqual(schedule.storage.map((span) => span.page), PAGES.map((page) => page + 1));
+    const hostReady = Math.max(...schedule.storage.map((span) => span.end));
+    const allLayersReady = Math.max(...schedule.transfer.map((span) => span.end));
+    for (const layer of MODEL_LAYERS) {
+      const load = schedule.transfer[layer];
+      const compute = schedule.compute[layer];
+      assert.deepEqual(load.pages, PAGES.map((page) => page + 1));
+      assert.ok(load.start >= hostReady);
+      assert.equal(load.end - load.start, 1);
+      assert.equal(compute.end - compute.start, 2);
+      assert.ok(compute.start >= load.end);
+      if (layer > 0) assert.ok(compute.start >= schedule.compute[layer - 1].end);
+      if (!overlap) assert.ok(compute.start >= allLayersReady);
+    }
+    assert.equal(schedule.compute[2].end, overlap ? 10 : 12);
+  }
+  const schedule = layerSchedule(true);
+  assert.equal(schedule.compute[0].start, schedule.transfer[1].start);
+  assert.equal(schedule.compute[0].end, schedule.transfer[2].end);
 });
