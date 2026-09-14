@@ -128,8 +128,11 @@ each model layer, so pages and model layers are two different dimensions.
 
 **Before: GPU and Host both group KV by model layer.** This suits GPU
 computation, which uses one layer at a time. Storage, however, saves a page
-across model layers. That page is scattered across Host memory, requiring
-several separate regions to be read or written.
+across model layers. In a layer-first pool, a page's layer-0 KV sits in the
+layer-0 region, its layer-1 KV in the layer-1 region, and so on. Saving one
+page therefore means one small read or write per model layer, dozens of them
+for a large model, each carrying its own request overhead, instead of a
+single large transfer.
 
 **After: GPU groups by model layer, Host groups by page, and transfers convert
 between the layouts.** The GPU’s compute layout stays unchanged. During backup,
