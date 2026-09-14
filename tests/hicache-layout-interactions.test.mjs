@@ -74,8 +74,7 @@ test("HiCache survives an early first animation frame and all playback controls"
   let root;
   await act(async () => { root = mount(container); });
   try {
-    for (const after of [false, true]) for (const restore of [false, true]) {
-      await click(after ? "After：Host 按页排列" : "Before：Host 按模型层排列");
+    for (const restore of [false, true]) {
       await click(restore ? "恢复：L3 → Host → GPU" : "备份：GPU → Host → L3");
       await click("播放");
       assert.equal(frames.size, 1);
@@ -89,15 +88,32 @@ test("HiCache survives an early first animation frame and all playback controls"
       for (let i = 0; i < 40; i++) await frame(now += 50);
       await click("播放");
       await frame(now - 1);
-      for (let i = 0; i < 220; i++) await frame(now += 50);
+      for (let i = 0; i < 260; i++) await frame(now += 50);
       assert.ok(button("重播"));
-      assert.equal(container.querySelector(".hc-layout-io-count").textContent, `IO step ${after ? "1/1" : "3/3"}`);
+      assert.equal(container.querySelector(".hc-layout-io-count").textContent, "IO step 3/3");
       await click("重播");
       await frame(now - 1);
       await click("回到起点");
       assert.equal(frames.size, 0);
       assert.equal(container.querySelector("progress").value, 0);
     }
+    // Verify that the readiness gate and overlap are rendered, not just calculated.
+    await click("恢复：L3 → Host → GPU");
+    for (let page = 0; page < 3; page++) {
+      await click("下一步搬运");
+      await frame(now - 1);
+      for (let i = 0; i < 40; i++) await frame(now += 50);
+    }
+    await click("播放");
+    await frame(now - 1);
+    for (let i = 0; i < 24; i++) await frame(now += 50);
+    assert.equal(container.querySelector(".hc-layout-ready").textContent, "1/3 页");
+    assert.equal(container.querySelectorAll('.hc-layout-compute[data-active="true"]').length, 0);
+    for (let i = 0; i < 16; i++) await frame(now += 50);
+    assert.equal(container.querySelector(".hc-layout-ready").textContent, "GPU ready");
+    assert.equal(container.querySelector('.hc-layout-compute[data-active="true"]').textContent, "模型层 0");
+    assert.equal(container.querySelector('.hc-layout-track-cell:not(.hc-layout-compute)[data-active="true"]').textContent, "模型层 1");
+    assert.equal(container.querySelectorAll('.hc-layout-page-layer[data-selected="true"]').length, 3);
   } finally {
     await act(async () => root.unmount());
   }

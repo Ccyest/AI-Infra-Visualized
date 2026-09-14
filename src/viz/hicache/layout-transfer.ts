@@ -8,65 +8,84 @@ export const BAND_X = 18;
 export const BAND_Y = { gpu: 68, host: 238, storage: 410 } as const;
 export const BLOCKS = MODEL_LAYERS.flatMap((layer) => PAGES.map((page) => ({ page, layer })));
 
-export interface TransferStep {
+interface CopyStep {
+  kind: "copy";
   source: MemorySide;
   destination: MemorySide;
   blocks: typeof BLOCKS;
   wholePage: boolean;
 }
+export type TransferStep = CopyStep | { kind: "compute"; layer: number };
 
-/** Each storage step represents one contiguous region, not a backend API call. */
-export function transferSteps(direction: TransferDirection, after: boolean): TransferStep[] {
-  const page = BLOCKS.filter(({ page }) => page === 0);
-  const storageSteps: TransferStep[] = (after ? [page] : page.map((block) => [block])).map((blocks) => ({
-    source: direction === "backup" ? "host" : "storage",
+/** Storage reads whole pages; GPU restoration gathers one layer from every page. */
+export function transferSteps(direction: TransferDirection): TransferStep[] {
+  const storage: CopyStep[] = PAGES.map((page) => ({
+    kind: "copy", source: direction === "backup" ? "host" : "storage",
     destination: direction === "backup" ? "storage" : "host",
-    blocks,
-    wholePage: after,
+    blocks: BLOCKS.filter((block) => block.page === page), wholePage: true,
   }));
   if (direction === "backup") {
-    return [{ source: "gpu", destination: "host", blocks: BLOCKS, wholePage: false }, ...storageSteps];
+    return [{ kind: "copy", source: "gpu", destination: "host", blocks: BLOCKS, wholePage: false }, ...storage];
   }
-  return [...storageSteps, ...page.map((block): TransferStep => ({
-    source: "host", destination: "gpu", blocks: [block], wholePage: false,
-  }))];
+  const layers: CopyStep[] = MODEL_LAYERS.map((layer) => ({
+    kind: "copy", source: "host", destination: "gpu",
+    blocks: BLOCKS.filter((block) => block.layer === layer), wholePage: false,
+  }));
+  return [...storage, ...layers, { kind: "compute", layer: 2 }];
 }
 
-export function totalSteps(direction: TransferDirection, after: boolean): number {
-  return transferSteps(direction, after).length;
+export function totalSteps(direction: TransferDirection): number {
+  return transferSteps(direction).length;
 }
 
-export function storageProgress(direction: TransferDirection, progress: number, after: boolean): number {
-  return Math.max(0, Math.min(storageRegions(after), progress - (direction === "backup" ? 1 : 0)));
+export function storageProgress(direction: TransferDirection, progress: number): number {
+  return Math.max(0, Math.min(PAGES.length, progress - (direction === "backup" ? 1 : 0)));
 }
 
-export function blockPosition(side: MemorySide, page: number, layer: number, after: boolean) {
-  const slot = side === "gpu" || (side === "host" && !after) ? layer * 3 + page : page * 3 + layer;
-  return { x: side === "storage" ? 246 + layer * CELL_WIDTH : BAND_X + slot * CELL_WIDTH, y: BAND_Y[side] };
+export function blockPosition(side: MemorySide, page: number, layer: number) {
+  const slot = side === "gpu" ? layer * PAGES.length + page : page * MODEL_LAYERS.length + layer;
+  return { x: BAND_X + slot * CELL_WIDTH, y: BAND_Y[side] };
 }
 
-/** Number of separate Host memory regions containing page 1, not API calls. */
-export function storageRegions(after: boolean): number { return after ? 1 : 3; }
+// Stagger arrivals within a layer so the all-pages readiness barrier is visible.
+function copyProgress(step: CopyStep, page: number, fraction: number): number {
+  if (step.destination !== "gpu") return Math.max(0, Math.min(1, fraction));
+  return Math.max(0, Math.min(1, (fraction - page * 0.15) / 0.7));
+}
 
-export function blockFilled(side: MemorySide, page: number, layer: number, direction: TransferDirection, progress: number, after: boolean): boolean {
+export function blockFilled(side: MemorySide, page: number, layer: number, direction: TransferDirection, progress: number): boolean {
   if (direction === "backup" && side === "gpu") return true;
-  if (direction === "restore" && side === "storage") return page === 0;
-  if (direction === "restore" && page !== 0) return true;
-  return transferSteps(direction, after).slice(0, Math.floor(progress)).some((step) =>
-    step.destination === side && step.blocks.some((block) => block.page === page && block.layer === layer));
+  if (direction === "restore" && side === "storage") return true;
+  return transferSteps(direction).some((step, index) => step.kind === "copy"
+    && step.destination === side && step.blocks.some((block) => block.page === page && block.layer === layer)
+    && (progress >= index + 1 || copyProgress(step, page, progress - index) >= 1));
+}
+
+export function arrivedPages(layer: number, progress: number): number {
+  return PAGES.filter((page) => blockFilled("gpu", page, layer, "restore", progress)).length;
+}
+
+export function gpuReady(layer: number, progress: number): boolean {
+  return arrivedPages(layer, progress) === PAGES.length;
+}
+
+/** Illustrative equal-duration stages: compute layer n overlaps transfer of n+1. */
+export function computeProgress(layer: number, progress: number): number {
+  if (!gpuReady(layer, progress)) return 0;
+  return Math.max(0, Math.min(1, progress - (PAGES.length + layer + 1)));
 }
 
 export interface Flight { page: number; layer: number; x: number; y: number; wholePage: boolean }
 
-/** Backup batches GPU KV; storage transfers regions separately or as a whole page. */
-export function transferFlights(direction: TransferDirection, progress: number, after: boolean): Flight[] {
-  const step = transferSteps(direction, after)[Math.floor(progress)];
-  const fraction = progress - Math.floor(progress);
-  if (!step || fraction === 0) return [];
-  const eased = fraction * fraction * (3 - 2 * fraction);
-  return step.blocks.map(({ page, layer }) => {
-    const from = blockPosition(step.source, page, layer, after);
-    const to = blockPosition(step.destination, page, layer, after);
-    return { page, layer, wholePage: step.wholePage, x: from.x + (to.x - from.x) * eased, y: from.y + (to.y - from.y) * eased };
+export function transferFlights(direction: TransferDirection, progress: number): Flight[] {
+  const step = transferSteps(direction)[Math.floor(progress)];
+  if (!step || step.kind !== "copy") return [];
+  return step.blocks.flatMap(({ page, layer }) => {
+    const fraction = copyProgress(step, page, progress - Math.floor(progress));
+    if (fraction <= 0 || fraction >= 1) return [];
+    const eased = fraction * fraction * (3 - 2 * fraction);
+    const from = blockPosition(step.source, page, layer);
+    const to = blockPosition(step.destination, page, layer);
+    return [{ page, layer, wholePage: step.wholePage, x: from.x + (to.x - from.x) * eased, y: from.y + (to.y - from.y) * eased }];
   });
 }

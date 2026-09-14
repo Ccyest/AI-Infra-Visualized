@@ -107,10 +107,16 @@ export const LAYOUT = {
   nextStep: { en: "Next transfer", zh: "下一步搬运" },
   ioProgress: { en: "Host–L3 I/O progress", zh: "Host 与 L3 的 I/O 进度" },
   ioBasis: { en: "One step per contiguous memory region; backends may batch requests.", zh: "每个连续内存段计一步；后端可以批量提交请求。" },
+  pages: { en: "pages", zh: "页" },
+  allPages: { en: "all pages", zh: "所有待恢复页" },
+  pipeline: { en: "Layer transfer and computation overlap", zh: "逐层搬运与计算重叠" },
+  transfer: { en: "Transfer", zh: "搬运" },
+  compute: { en: "Compute", zh: "计算" },
+  computingLayer: { en: "GPU: compute model layer", zh: "GPU：计算模型层" },
   done: { en: "Transfer complete", zh: "搬运完成" },
   backingUp: { en: "GPU \u2192 Host: batch copy across pages and model layers", zh: "GPU → Host：批量搬运多个页、多个模型层" },
-  writingPage: { en: "Host \u2192 L3: save page 1", zh: "Host → L3：保存第 1 页" },
-  readingPage: { en: "L3 \u2192 Host: read page 1", zh: "L3 → Host：读回第 1 页" },
+  writingPage: { en: "Host \u2192 L3: save page", zh: "Host → L3：保存页" },
+  readingPage: { en: "L3 \u2192 Host: read whole page", zh: "L3 → Host：整页读取，页" },
   restoringLayer: { en: "Host \u2192 GPU: restore model layer", zh: "Host → GPU：恢复模型层" },
 } satisfies Record<string, Localized>;
 
