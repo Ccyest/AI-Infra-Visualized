@@ -76,22 +76,24 @@ export default function StorageLocationViz({ lang = "zh" }: { lang?: Locale }) {
   const [view, setView] = useState<View>("cluster");
   const [node, setNode] = useState(0);
   const [gpu, setGpu] = useState(0);
-  const navRef = useRef<HTMLElement>(null);
+  const pathRef = useRef<HTMLSpanElement>(null);
   const titleId = useId();
   const navigate: Navigate = (next, nextNode = node, nextGpu = gpu) => {
     setView(next); setNode(nextNode); setGpu(nextGpu);
-    navRef.current?.focus();
+    pathRef.current?.focus();
   };
   return <figure className="viz-stage hc-location" aria-labelledby={titleId}>
     <figcaption className="viz-head"><span className="viz-title" id={titleId}>{LOCATION.title[lang]}</span>
       <span className="viz-subtitle">{LOCATION.note[lang]}</span></figcaption>
-    <nav className="hc-location-nav" aria-label={LOCATION.title[lang]} ref={navRef} tabIndex={-1}>
-      <button type="button" className="viz-btn" onClick={() => navigate("cluster")} aria-current={view === "cluster" ? "location" : undefined}>{LOCATION.cluster[lang]}</button>
-      {view === "gpu" && <span aria-current="location">/ {LOCATION.node[lang]} {node + 1} · GPU {gpu}</span>}
-      {view === "host" && <span aria-current="location">/ {LOCATION.node[lang]} {node + 1} · {LOCATION.host[lang]}</span>}
-      {view === "storage" && <span aria-current="location">/ {LOCATION.storage[lang]}</span>}
+    <div className="hc-location-nav">
+      <span className="hc-location-path" ref={pathRef} tabIndex={-1} aria-live="polite">
+        {LOCATION.path[lang]}{LOCATION.cluster[lang]}
+        {view === "gpu" && <> / {LOCATION.node[lang]} {node + 1} · GPU {gpu}</>}
+        {view === "host" && <> / {LOCATION.node[lang]} {node + 1} · {LOCATION.host[lang]}</>}
+        {view === "storage" && <> / {LOCATION.storage[lang]}</>}
+      </span>
       {view !== "cluster" && <button type="button" className="viz-btn hc-location-back" onClick={() => navigate("cluster")}>← {LOCATION.back[lang]}</button>}
-    </nav>
+    </div>
     <div className="hc-location-scene">
       {view === "cluster" && <ClusterView lang={lang} navigate={navigate} />}
       {view === "gpu" && <GpuView lang={lang} gpu={gpu} />}

@@ -1,7 +1,8 @@
 .viz-stage.hc-location { width: min(640px, 100%); padding: 0; margin: 1.2rem auto; color: var(--ink); }
 .hc-location .viz-head { padding: 12px 14px 8px; }
 .hc-location-nav { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; padding: 0 14px 8px; font-size: 12px; }
-.hc-location-nav [aria-current="location"] { font-weight: 650; }
+.hc-location-path { color: var(--muted); }
+.hc-location-path:focus { outline: none; }
 .hc-location-back { margin-left: auto; }
 .hc-location-scene { padding: 0 14px; }
 .hc-location-boundary { border: 1px dashed var(--axis); border-radius: 10px; padding: 10px; background: var(--page-2); }
@@ -11,7 +12,7 @@
 .hc-location-card { min-width: 0; display: flex; flex-direction: column; align-items: stretch; gap: 6px; border: 1px solid var(--axis); border-radius: 6px; padding: 8px; background: var(--surface); color: var(--ink); font: inherit; font-size: 12px; text-align: center; }
 button.hc-location-card { cursor: pointer; transition: border-color .15s, box-shadow .15s; }
 button.hc-location-card:hover { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
-.hc-location button:focus-visible, .hc-location-nav:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.hc-location button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 .hc-location-card strong { font-size: 13px; }
 .hc-location-mini-gpus { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
 .hc-location-mini-gpus b { background: color-mix(in srgb, var(--series-3) 14%, var(--surface)); padding: 4px; border-radius: 3px; }

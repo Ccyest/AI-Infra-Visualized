@@ -3,6 +3,7 @@ import type { Localized } from "../../lib/i18n";
 export const LOCATION = {
   title: { en: "Where the cache lives", zh: "缓存存在哪里" },
   note: { en: "Example deployment: two serving nodes and a shared storage service; hardware counts are schematic.", zh: "部署示例：两个推理节点与一个共享存储服务；硬件数量仅为示意。" },
+  path: { en: "Storage path: ", zh: "存储路径：" },
   cluster: { en: "Cluster", zh: "集群" },
   node: { en: "Serving node", zh: "推理节点" },
   open: { en: "Explore", zh: "点开查看" },
