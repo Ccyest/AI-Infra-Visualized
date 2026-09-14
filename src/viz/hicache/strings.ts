@@ -83,7 +83,6 @@ export const TEXT = {
 
 export const LAYOUT = {
   title: { en: "KV layout and transfer", zh: "KV 布局与搬运" },
-  note: { en: "3 model layers × 3 pages; 4 tokens per page, with within-page order omitted. Layers move in sequence for illustration; backups need not be serial. Dashed blocks are empty destinations.", zh: "3 个模型层 × 3 页，每页 4 个 token，省略页内排列。按层分批演示，备份不必串行；虚线块是待填入的位置。" },
   before: { en: "Before: same layout", zh: "Before：两侧同样排列" },
   after: { en: "After: separate layouts", zh: "After：两侧分别排列" },
   gpu: { en: "GPU · L1", zh: "GPU · L1" },

@@ -1,7 +1,6 @@
 .viz-stage.hc-layout { width: min(760px, 100%); padding: 14px; margin: 1.2rem auto; }
 .hc-layout-picker, .hc-layout-controls { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
 .hc-layout-picker button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
-.hc-layout p.hc-layout-note { margin: 8px 0 12px; color: var(--muted); font-size: 11px; line-height: 1.5; }
 .hc-layout-diagram { display: block; width: 100%; overflow: visible; }
 .hc-layout-heading { fill: var(--ink); font-size: 16px; font-weight: 650; }
 .hc-layout-subheading { fill: var(--muted); font-size: 12px; }

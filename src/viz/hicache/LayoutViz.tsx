@@ -86,7 +86,6 @@ export default function LayoutViz({ lang = "zh" }: { lang?: Locale }) {
       {(["backup", "restore"] as const).map((value) => <button type="button" className="viz-btn" key={value} aria-pressed={direction === value}
         onClick={() => { player.reset(); setDirection(value); }}>{LAYOUT[value][lang]}</button>)}
     </div>
-    <p className="hc-layout-note">{LAYOUT.note[lang]}</p>
     <TransferDiagram after={after} direction={direction} progress={player.progress} narrow={narrow} lang={lang} />
     <div className="hc-layout-status" aria-live="polite">
       <strong>{done ? LAYOUT.done[lang] : `${LAYOUT.layer[lang]} ${layer} · ${LAYOUT.threePages[lang]}`}</strong>
@@ -94,8 +93,19 @@ export default function LayoutViz({ lang = "zh" }: { lang?: Locale }) {
     </div>
     <div className="hc-layout-controls">
       <button type="button" className="viz-btn primary" onClick={player.toggle}>{LAYOUT[player.playing ? "pause" : done ? "replay" : "play"][lang]}</button>
-      <button type="button" className="viz-btn" onClick={player.nextLayer} disabled={done || player.playing}>{LAYOUT.nextLayer[lang]}</button>
-      <button type="button" className="viz-btn" onClick={player.reset} disabled={player.progress === 0 && !player.playing}>{LAYOUT.reset[lang]}</button>
+      <button type="button" className="viz-btn icon" onClick={player.nextLayer} disabled={done || player.playing}
+        aria-label={LAYOUT.nextLayer[lang]} title={LAYOUT.nextLayer[lang]}>
+        <svg className="viz-icon" viewBox="0 0 16 16" width={13} height={13} aria-hidden="true">
+          <path d="M4.8 2.6 13.2 8 4.8 13.4Z" fill="currentColor" />
+        </svg>
+      </button>
+      <button type="button" className="viz-btn icon" onClick={player.reset} disabled={player.progress === 0 && !player.playing}
+        aria-label={LAYOUT.reset[lang]} title={LAYOUT.reset[lang]}>
+        <svg className="viz-icon" viewBox="0 0 16 16" width={13} height={13} aria-hidden="true">
+          <path d="M8 3A5 5 0 1 0 13 8" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+          <path d="M8.6 0.8 4.8 3l3.8 2.2Z" fill="currentColor" />
+        </svg>
+      </button>
     </div>
   </figure>;
 }
