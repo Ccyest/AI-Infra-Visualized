@@ -137,7 +137,11 @@ single large transfer.
 **After: GPU groups by model layer, Host groups by page, and transfers convert
 between the layouts.** The GPU’s compute layout stays unchanged. During backup,
 transfer kernels place a page’s KV together in Host memory, allowing larger
-contiguous transfers to storage. Recovery reverses the path: storage reads the
+contiguous transfers to storage. Although the animation transfers one model
+layer at a time, the kernel uses each block’s page and model-layer indices to
+compute its Host destination address, placing it within the corresponding page
+so that successive layer transfers assemble the page’s KV together. Recovery
+reverses the path: storage reads the
 page into Host, then transfer kernels write it into the GPU’s required layout.
 The KV content is the same; its memory order differs.
 
