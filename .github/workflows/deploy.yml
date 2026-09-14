@@ -28,6 +28,7 @@ jobs:
         uses: actions/configure-pages@v5
       - run: npm ci
       - run: npm run check
+      - run: npm run test:hicache
       - run: npm run build
         env:
           SITE: ${{ steps.pages.outputs.origin }}

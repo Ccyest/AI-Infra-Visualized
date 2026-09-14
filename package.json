@@ -10,7 +10,8 @@
     "dev": "astro dev",
     "build": "astro build",
     "preview": "astro preview",
-    "check": "astro check"
+    "check": "astro check",
+    "test:hicache": "node --experimental-strip-types --test src/viz/hicache/layout-transfer.test.ts tests/hicache-layout-interactions.test.mjs"
   },
   "dependencies": {
     "@astrojs/mdx": "^4.2.0",
@@ -27,6 +28,8 @@
     "@types/node": "^26.1.2",
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
+    "esbuild": "^0.27.7",
+    "jsdom": "^29.1.1",
     "typescript": "^5.8.0"
   }
 }

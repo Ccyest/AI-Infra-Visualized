@@ -25,9 +25,10 @@ export function useLayoutTransfer(total: number) {
       return;
     }
     let frame = 0;
-    let last = performance.now();
+    // The first rAF timestamp can precede performance.now() at registration.
+    let last: number | null = null;
     const tick = (now: number) => {
-      const elapsed = Math.min((now - last) / 1000, 0.05);
+      const elapsed = last === null ? 0 : Math.max(0, Math.min((now - last) / 1000, 0.05));
       last = now;
       current.current = Math.min(target, current.current + elapsed / SECONDS_PER_STEP);
       setProgress(current.current);
