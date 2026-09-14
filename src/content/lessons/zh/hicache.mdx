@@ -98,13 +98,11 @@ L1 命中直接复用；L2 命中先搬回 L1；L3 命中先取到 L2，再搬�
 
 <LayoutViz client:visible />
 
-GPU 辅助的 I/O kernel 加速 GPU–Host 搬运；存储后端的 zero-copy 机制则减少 Host–存储路径中的额外中间拷贝。这里仍然需要跨层传输数据。
-
-实测效果是两段搬运的吞吐都有提升：相比标准的 `cudaMemcpyAsync` 路径，GPU 辅助 kernel 的 **CPU–GPU 传输吞吐最高达到 3 倍**；page-first 布局结合 zero-copy，在典型部署中的 **host–存储吞吐最高达到 2 倍**。后一项测量的是布局与 zero-copy 的组合，不能单独归因于布局。这两个数字也都不是端到端服务加速比。数据来自 [2025 年 HiCache 博客](https://www.lmsys.org/blog/2025-09-10-sglang-hicache/)。
+这里涉及两段传输，博客分别测量了它们。GPU–Host 这一段，SGLang 用 GPU 辅助的 I/O kernel 取代标准的 `cudaMemcpyAsync` 调用，布局转换也在这些 kernel 里完成。博客报告，这段 **CPU–GPU 传输吞吐最高达到 3 倍**。Host–存储这一段，page-first 布局让每一页变成一块连续内存，一次备份或预取就是一次大块读写，而不是许多次小块读写。再配合 zero-copy，也就是存储客户端直接读写 host 池里的这块内存，不先复制到中间缓冲区，博客报告典型部署中这段 **Host–存储吞吐最高达到 2 倍**。两个数字都来自 [2025 年 HiCache 博客](https://www.lmsys.org/blog/2025-09-10-sglang-hicache/)。
 
 ### 逐层加载
 
-搬运变快以后，传输仍然需要时间。如果 L2 命中要等整个模型的 KV 全部到齐，哪怕第一层的数据已经就绪，GPU 也无法开始工作。这里要解决的是请求关键路径上的传输等待。
+上一节让每次传输更快，但 L2 命中仍然要把整段前缀的 KV 从 CPU 搬到 GPU，请求才能使用。如果 prefill 要等所有层都到齐再开始，哪怕第 0 层的数据早就到了，GPU 也只能空等。这一节要做的是把这段等待藏到计算后面。
 
 HiCache 按层加载 KV。第 0 层就绪以后，GPU 执行这一层，controller 同时搬运后续层的数据。同步机制保证每层等到自己的 KV 就绪，但不要求它等待所有后续层。
 

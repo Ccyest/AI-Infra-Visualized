@@ -140,24 +140,25 @@ The KV content is the same; its memory order differs.
 
 <LayoutViz client:visible lang="en" />
 
-GPU-assisted I/O kernels speed up GPU–Host transfers. Backend zero-copy paths
-reduce extra intermediate copies between Host and storage. Data still has to
-move between tiers.
-
-The reported outcome is faster movement on both paths: GPU-assisted kernels
-reach up to **3× CPU–GPU transfer throughput** versus the standard
-`cudaMemcpyAsync` path, while page-first layout combined with zero-copy reaches
-up to **2× host–storage throughput** in typical deployments. The latter result
-measures the combination, so it does not isolate the layout's contribution.
-Neither number is an end-to-end serving speedup. These results come from the
+Two transfer paths are involved, and the blog measured each one separately.
+On the GPU–Host path, SGLang replaces the standard `cudaMemcpyAsync` call with
+GPU-assisted I/O kernels, which also perform the layout conversion. The blog
+reports up to **3× higher CPU–GPU transfer throughput** with these kernels.
+On the Host–storage path, page-first layout makes each page one contiguous
+block, so a backup or a prefetch becomes one large read or write instead of
+many small ones. Combined with zero-copy, where the storage client reads and
+writes the host pool's memory directly instead of staging it through an
+intermediate buffer, the blog reports up to **2× higher Host–storage
+throughput** in typical deployments. Both figures come from the
 [2025 HiCache blog](https://www.lmsys.org/blog/2025-09-10-sglang-hicache/).
 
 ### Layer-wise loading
 
-Faster copies still take time. If an L2 hit waits for the entire model's KV to
-arrive, the GPU cannot begin work even when the first layer's data is already
-available. The goal here is to reduce the transfer time on the request's
-critical path.
+The previous section made each transfer faster, but an L2 hit still has to
+bring the whole prefix's KV from CPU to GPU before the request can use it. If
+prefill waits until every layer has arrived, the GPU sits idle even though
+layer 0's data landed long ago. This section is about hiding that wait behind
+computation.
 
 HiCache loads KV layer by layer. Once layer 0 is ready, the GPU executes that
 layer while the controller transfers later layers. Synchronization makes each
