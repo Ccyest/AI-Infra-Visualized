@@ -10,15 +10,12 @@
 .hc-layout-block rect { fill: var(--surface); stroke: var(--axis); stroke-dasharray: 3 3; }
 .hc-layout-block text { fill: var(--muted); text-anchor: middle; font-size: 12px; font-weight: 600; }
 .hc-layout-block .hc-layout-small { font-size: 10px; font-weight: 400; }
-.hc-layout-block[data-filled="true"] rect { fill: var(--page-2); stroke-dasharray: none; }
-.hc-layout-block[data-filled="true"] rect { fill: color-mix(in srgb, var(--series-1) 18%, var(--surface)); stroke: var(--series-1); stroke-width: 2; }
+.hc-layout-block[data-filled="true"] rect { stroke-dasharray: none; fill: color-mix(in srgb, var(--series-1) 18%, var(--surface)); stroke: var(--series-1); stroke-width: 2; }
 .hc-layout-block[data-filled="true"] text { fill: var(--ink); }
-.hc-layout-page rect { fill: var(--page-2); stroke: var(--axis); }
 .hc-layout-page rect { fill: color-mix(in srgb, var(--series-1) 10%, var(--surface)); stroke: var(--series-1); stroke-width: 2; }
 .hc-layout-page text { text-anchor: middle; fill: var(--ink); font-size: 12px; font-weight: 600; }
 .hc-layout-page .hc-layout-page-layer { font-size: 10px; font-weight: 400; }
 .hc-layout-page-layer[data-filled="false"] { opacity: .25; }
-.hc-layout-region-count { color: var(--series-1); font-size: 13px; font-weight: 600; margin: 12px 0 4px; }
 .hc-layout-storage-title { fill: var(--ink); font-size: 14px; font-weight: 650; text-anchor: middle; }
 .hc-layout-flying-page { fill: var(--surface); stroke: var(--series-1); stroke-width: 3; }
 .hc-layout-flights[data-grouped="true"] rect { stroke: none; }
@@ -35,22 +32,14 @@
 
 .hc-layout-controls { align-items: center; }
 .hc-layout-io-progress { display: flex; align-items: center; gap: 8px; flex: 1 1 260px; min-width: 0; }
-.hc-layout-io-progress progress { width: 0; min-width: 70px; flex: 1; height: 8px; accent-color: var(--accent); border: 0; border-radius: 4px; overflow: hidden; background: var(--grid); }
-.hc-layout-io-progress progress::-webkit-progress-bar { background: var(--grid); border-radius: 4px; }
-.hc-layout-io-progress progress::-webkit-progress-value { background: var(--accent); border-radius: 4px; }
-.hc-layout-io-progress progress::-moz-progress-bar { background: var(--accent); border-radius: 4px; }
+.hc-layout-io-progress input { flex: 1; width: 0; min-width: 90px; accent-color: var(--accent); cursor: pointer; }
 .hc-layout-io-count { font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.hc-layout-io-scope { font-size: 11px; color: var(--muted); white-space: nowrap; }
 
 .hc-layout-ready { text-anchor: middle; fill: var(--muted); font-size: 11px; }
 .hc-layout-ready[data-ready="true"] { fill: var(--series-3); font-weight: 700; }
 .hc-layout-page-layer[data-selected="true"] { fill: var(--series-1); font-weight: 750; text-decoration: underline; }
-.hc-layout-pipeline { display: grid; grid-template-columns: 65px repeat(4, minmax(0, 1fr)); gap: 5px; margin: 4px 0 10px; align-items: center; }
-.hc-layout-track-label { font-size: 12px; color: var(--muted); }
-.hc-layout-track-cell { position: relative; overflow: hidden; text-align: center; padding: 7px 2px; font-size: 11px; color: var(--muted); border: 1px dashed var(--axis); border-radius: 4px; }
-.hc-layout-track-cell > span:last-child { position: relative; }
-.hc-layout-track-fill { position: absolute; inset: 0 auto 0 0; background: color-mix(in srgb, var(--series-1) 20%, var(--surface)); }
-.hc-layout-compute .hc-layout-track-fill { background: color-mix(in srgb, var(--series-3) 20%, var(--surface)); }
-.hc-layout-track-cell[data-active="true"] { color: var(--ink); border: 2px solid var(--series-1); padding: 6px 1px; font-weight: 650; }
-.hc-layout-compute[data-active="true"] { border-color: var(--series-3); }
-.hc-layout-track-cell[data-complete="true"] { border-style: solid; color: var(--ink-2); }
+
+.hc-layout-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.hc-layout-switch { display: flex; gap: 4px; margin-left: auto; }
+.hc-layout-switch .viz-btn { font-size: 12px; padding: 5px 12px; }
+.hc-layout-switch button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }

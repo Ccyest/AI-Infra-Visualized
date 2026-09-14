@@ -77,14 +77,27 @@ test("HiCache survives an early first animation frame and all playback controls"
     });
     assert.ok(container.querySelector(".hc-layout-diagram"), "Diagram must remain mounted");
   };
+  const slider = () => container.querySelector('.hc-layout-io-progress input[type="range"]');
+  const seek = async (value) => {
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set.call(slider(), String(value));
+      slider().dispatchEvent(new window.Event("input", { bubbles: true }));
+    });
+    assert.equal(slider().value, String(value));
+  };
   let root;
   await act(async () => { root = mount(container); });
   try {
-    for (const restore of [false, true]) {
+    assert.ok(container.querySelector("figcaption .hc-layout-switch"));
+    assert.equal(container.querySelector(".hc-layout-pipeline"), null);
+    for (const after of [false, true]) for (const restore of [false, true]) {
+      await click(after ? "After" : "Before");
       await click(restore ? "恢复：L3 → Host → GPU" : "备份：GPU → Host → L3");
+      const total = restore ? (after ? 12 : 18) : (after ? 4 : 10);
+      assert.equal(slider().max, String(total));
+      assert.equal(container.querySelector(".hc-layout-io-count").textContent, `IO step 0/${total}`);
       await click("播放");
       assert.equal(frames.size, 1);
-      // rAF's frame timestamp can be earlier than performance.now() at registration.
       await frame(now - 1);
       await frame(now += 50);
       await click("暂停");
@@ -92,34 +105,36 @@ test("HiCache survives an early first animation frame and all playback controls"
       await click("下一步搬运");
       await frame(now - 1);
       for (let i = 0; i < 40; i++) await frame(now += 50);
+      assert.equal(slider().value, "1");
       await click("播放");
+      await seek(total - 0.5);
+      assert.equal(frames.size, 0, "Dragging pauses playback");
+      assert.ok(button("播放"));
+      await click("下一步搬运");
       await frame(now - 1);
-      for (let i = 0; i < 260; i++) await frame(now += 50);
+      for (let i = 0; i < 40; i++) await frame(now += 50);
       assert.ok(button("重播"));
-      assert.equal(container.querySelector(".hc-layout-io-count").textContent, "IO step 3/3");
+      assert.equal(container.querySelector(".hc-layout-io-count").textContent, `IO step ${total}/${total}`);
       await click("重播");
       await frame(now - 1);
       await click("回到起点");
       assert.equal(frames.size, 0);
-      assert.equal(container.querySelector("progress").value, 0);
+      assert.equal(slider().value, "0");
+      if (!restore) continue;
+      const reads = after ? 3 : 9;
+      await seek(reads);
+      assert.equal(container.querySelector(".hc-layout-ready").textContent, "0/3 页");
+      for (let page = 1; page <= 3; page++) {
+        await click("下一步搬运");
+        await frame(now - 1);
+        for (let i = 0; i < 40; i++) await frame(now += 50);
+        assert.equal(container.querySelector(".hc-layout-ready").textContent, page === 3 ? "GPU ready" : `${page}/3 页`);
+        assert.equal(slider().value, String(reads + page));
+      }
+      await seek(0);
+      assert.equal(container.querySelector(".hc-layout-ready").textContent, "0/3 页");
+      assert.equal(container.querySelector(".hc-layout-pipeline"), null);
     }
-    // Verify that the readiness gate and overlap are rendered, not just calculated.
-    await click("恢复：L3 → Host → GPU");
-    for (let page = 0; page < 3; page++) {
-      await click("下一步搬运");
-      await frame(now - 1);
-      for (let i = 0; i < 40; i++) await frame(now += 50);
-    }
-    await click("播放");
-    await frame(now - 1);
-    for (let i = 0; i < 24; i++) await frame(now += 50);
-    assert.equal(container.querySelector(".hc-layout-ready").textContent, "1/3 页");
-    assert.equal(container.querySelectorAll('.hc-layout-compute[data-active="true"]').length, 0);
-    for (let i = 0; i < 16; i++) await frame(now += 50);
-    assert.equal(container.querySelector(".hc-layout-ready").textContent, "GPU ready");
-    assert.equal(container.querySelector('.hc-layout-compute[data-active="true"]').textContent, "模型层 0");
-    assert.equal(container.querySelector('.hc-layout-track-cell:not(.hc-layout-compute)[data-active="true"]').textContent, "模型层 1");
-    assert.equal(container.querySelectorAll('.hc-layout-page-layer[data-selected="true"]').length, 3);
   } finally {
     await act(async () => root.unmount());
   }

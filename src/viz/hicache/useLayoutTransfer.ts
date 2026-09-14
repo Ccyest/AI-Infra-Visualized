@@ -39,12 +39,17 @@ export function useLayoutTransfer(total: number) {
     return () => cancelAnimationFrame(frame);
   }, [target, reducedMotion]);
 
-  const reset = () => { setTarget(null); current.current = 0; setProgress(0); };
+  const seek = (next: number) => {
+    setTarget(null);
+    current.current = Math.max(0, Math.min(total, next));
+    setProgress(current.current);
+  };
+  const reset = () => seek(0);
   const toggle = () => {
     if (target !== null) { setTarget(null); return; }
     if (current.current >= total) { current.current = 0; setProgress(0); }
     setTarget(total);
   };
   const nextStep = () => setTarget(Math.min(total, Math.floor(current.current) + 1));
-  return { progress, playing: target !== null, reset, toggle, nextStep };
+  return { progress, playing: target !== null, reset, toggle, nextStep, seek };
 }
