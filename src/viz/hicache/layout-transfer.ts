@@ -8,8 +8,36 @@ export const BAND_X = 18;
 export const BAND_Y = { gpu: 68, host: 238, storage: 410 } as const;
 export const BLOCKS = MODEL_LAYERS.flatMap((layer) => PAGES.map((page) => ({ page, layer })));
 
-export function totalSteps(direction: TransferDirection): number {
-  return direction === "backup" ? 2 : 4;
+export interface TransferStep {
+  source: MemorySide;
+  destination: MemorySide;
+  blocks: typeof BLOCKS;
+  wholePage: boolean;
+}
+
+/** Each storage step represents one contiguous region, not a backend API call. */
+export function transferSteps(direction: TransferDirection, after: boolean): TransferStep[] {
+  const page = BLOCKS.filter(({ page }) => page === 0);
+  const storageSteps: TransferStep[] = (after ? [page] : page.map((block) => [block])).map((blocks) => ({
+    source: direction === "backup" ? "host" : "storage",
+    destination: direction === "backup" ? "storage" : "host",
+    blocks,
+    wholePage: after,
+  }));
+  if (direction === "backup") {
+    return [{ source: "gpu", destination: "host", blocks: BLOCKS, wholePage: false }, ...storageSteps];
+  }
+  return [...storageSteps, ...page.map((block): TransferStep => ({
+    source: "host", destination: "gpu", blocks: [block], wholePage: false,
+  }))];
+}
+
+export function totalSteps(direction: TransferDirection, after: boolean): number {
+  return transferSteps(direction, after).length;
+}
+
+export function storageProgress(direction: TransferDirection, progress: number, after: boolean): number {
+  return Math.max(0, Math.min(storageRegions(after), progress - (direction === "backup" ? 1 : 0)));
 }
 
 export function blockPosition(side: MemorySide, page: number, layer: number, after: boolean) {
@@ -20,41 +48,25 @@ export function blockPosition(side: MemorySide, page: number, layer: number, aft
 /** Number of separate Host memory regions containing page 1, not API calls. */
 export function storageRegions(after: boolean): number { return after ? 1 : 3; }
 
-export function blockFilled(side: MemorySide, page: number, layer: number, direction: TransferDirection, progress: number): boolean {
-  if (direction === "backup") {
-    if (side === "gpu") return true;
-    if (side === "host") return progress >= 1;
-    return page === 0 && progress >= 2;
-  }
-  if (side === "storage") return page === 0;
-  if (page !== 0) return true;
-  return side === "host" ? progress >= 1 : progress >= layer + 2;
+export function blockFilled(side: MemorySide, page: number, layer: number, direction: TransferDirection, progress: number, after: boolean): boolean {
+  if (direction === "backup" && side === "gpu") return true;
+  if (direction === "restore" && side === "storage") return page === 0;
+  if (direction === "restore" && page !== 0) return true;
+  return transferSteps(direction, after).slice(0, Math.floor(progress)).some((step) =>
+    step.destination === side && step.blocks.some((block) => block.page === page && block.layer === layer));
 }
 
 export interface Flight { page: number; layer: number; x: number; y: number; wholePage: boolean }
 
-/** Backup submits all selected pages/layers as a batch; restore loads page 1 layer by layer. */
+/** Backup batches GPU KV; storage transfers regions separately or as a whole page. */
 export function transferFlights(direction: TransferDirection, progress: number, after: boolean): Flight[] {
-  const step = Math.floor(progress);
-  const fraction = progress - step;
-  if (fraction === 0 || progress >= totalSteps(direction)) return [];
-  let source: MemorySide;
-  let destination: MemorySide;
-  let blocks: typeof BLOCKS;
-  if (direction === "backup") {
-    source = step === 0 ? "gpu" : "host";
-    destination = step === 0 ? "host" : "storage";
-    blocks = step === 0 ? BLOCKS : BLOCKS.filter(({ page }) => page === 0);
-  } else {
-    source = step === 0 ? "storage" : "host";
-    destination = step === 0 ? "host" : "gpu";
-    blocks = BLOCKS.filter(({ page, layer }) => page === 0 && (step === 0 || layer === step - 1));
-  }
+  const step = transferSteps(direction, after)[Math.floor(progress)];
+  const fraction = progress - Math.floor(progress);
+  if (!step || fraction === 0) return [];
   const eased = fraction * fraction * (3 - 2 * fraction);
-  const wholePage = after && (source === "storage" || destination === "storage");
-  return blocks.map(({ page, layer }) => {
-    const from = blockPosition(source, page, layer, after);
-    const to = blockPosition(destination, page, layer, after);
-    return { page, layer, wholePage, x: from.x + (to.x - from.x) * eased, y: from.y + (to.y - from.y) * eased };
+  return step.blocks.map(({ page, layer }) => {
+    const from = blockPosition(step.source, page, layer, after);
+    const to = blockPosition(step.destination, page, layer, after);
+    return { page, layer, wholePage: step.wholePage, x: from.x + (to.x - from.x) * eased, y: from.y + (to.y - from.y) * eased };
   });
 }

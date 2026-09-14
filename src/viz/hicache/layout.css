@@ -32,3 +32,12 @@
 .hc-layout-page[data-filled="false"] rect { fill: var(--surface); stroke-dasharray: 3 3; }
 .hc-layout-page[data-filled="false"] > text { opacity: .4; }
 .hc-layout-flights .hc-layout-block[data-page-one="false"] { opacity: .3; }
+
+.hc-layout-controls { align-items: center; }
+.hc-layout-io-progress { display: flex; align-items: center; gap: 8px; flex: 1 1 260px; min-width: 0; }
+.hc-layout-io-progress progress { width: 0; min-width: 70px; flex: 1; height: 8px; accent-color: var(--accent); border: 0; border-radius: 4px; overflow: hidden; background: var(--grid); }
+.hc-layout-io-progress progress::-webkit-progress-bar { background: var(--grid); border-radius: 4px; }
+.hc-layout-io-progress progress::-webkit-progress-value { background: var(--accent); border-radius: 4px; }
+.hc-layout-io-progress progress::-moz-progress-bar { background: var(--accent); border-radius: 4px; }
+.hc-layout-io-count { font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.hc-layout-io-scope { font-size: 11px; color: var(--muted); white-space: nowrap; }

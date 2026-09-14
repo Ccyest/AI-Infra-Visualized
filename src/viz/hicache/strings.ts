@@ -105,6 +105,8 @@ export const LAYOUT = {
   replay: { en: "Replay", zh: "重播" },
   reset: { en: "Reset", zh: "回到起点" },
   nextStep: { en: "Next transfer", zh: "下一步搬运" },
+  ioProgress: { en: "Host–L3 I/O progress", zh: "Host 与 L3 的 I/O 进度" },
+  ioBasis: { en: "One step per contiguous memory region; backends may batch requests.", zh: "每个连续内存段计一步；后端可以批量提交请求。" },
   done: { en: "Transfer complete", zh: "搬运完成" },
   backingUp: { en: "GPU \u2192 Host: batch copy across pages and model layers", zh: "GPU → Host：批量搬运多个页、多个模型层" },
   writingPage: { en: "Host \u2192 L3: save page 1", zh: "Host → L3：保存第 1 页" },
