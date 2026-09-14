@@ -49,7 +49,7 @@ export const TEXT = {
   ready: { en: "KV ready on GPU", zh: "GPU KV 就绪" },
   absent: { en: "No local node", zh: "无本地节点" },
   layer: { en: "Layer", zh: "层" },
-  overlapTitle: { en: "Host → GPU loading", zh: "Host → GPU 逐层加载" },
+  overlapTitle: { en: "Overlapping data transfers and computation", zh: "重叠搬运与计算操作" },
   overlapNote: { en: "Three-layer example · Host → GPU load: 1 unit/layer · GPU compute: 2 units/layer", zh: "三层模型示例 · Host → GPU：每层 1 单位 · GPU 计算：每层 2 单位" },
   serial: { en: "Load all layers first", zh: "先加载全部层" },
   overlap: { en: "Overlap with compute", zh: "与计算重叠" },

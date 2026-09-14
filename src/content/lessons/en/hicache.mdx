@@ -104,7 +104,7 @@ path useful introduces several implementation problems:
 
 - **Memory layout:** GPU computation and storage I/O prefer different data
   orders. How can both transfer paths stay efficient?
-- **Layer-wise loading:** waiting for every layer's KV delays computation.
+- **Overlapping data transfers and computation:** waiting for every layer's KV delays computation.
   Which transfers can run while the GPU is already working?
 - **Cache policies:** prefetching and backup spend time, bandwidth, and capacity.
   When is waiting or saving another copy worthwhile?
@@ -131,7 +131,7 @@ Three mechanisms reduce the time spent on these paths:
 | --- | --- | --- |
 | GPU-assisted I/O kernels | GPU ↔ Host, for backup and restore | The KV transfer itself |
 | Page-first Host layout + zero-copy | Host ↔ storage, for reads and writes | Storage I/O uses larger contiguous blocks and avoids an intermediate copy |
-| Layer-wise loading with compute overlap | Host → GPU, during restore | GPU computation starts after the first layer arrives, while later layers keep loading |
+| Overlapping data transfers and computation | Host → GPU, during restore | GPU computation starts after the first layer arrives, while later layers keep loading |
 
 The first two reduce transfer time. The third lets computation run during part
 of that time. A Host → GPU restore can use both the faster I/O kernels and
@@ -168,7 +168,7 @@ storage client access those blocks directly in the Host pool, saving a copy
 through an intermediate buffer. Together, page-first and zero-copy deliver up
 to **2× the Host–storage throughput** in typical deployments.
 
-### Layer-wise loading
+### Overlapping data transfers and computation
 
 Now follow **Host → GPU restore**. The prefix is already in Host memory,
 either from an L2 hit or from an L3 read. The I/O kernels copy its KV back to
