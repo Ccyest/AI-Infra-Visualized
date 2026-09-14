@@ -154,10 +154,12 @@ sits together, ready for a large contiguous storage read or write. GPU memory
 keeps its layer-first layout. The I/O kernels convert between these two orders
 as they transfer the data.
 
-Follow a **GPU → Host backup** in the diagram: blocks from different model
-layers arrive in the same Host page. Switch to **Host → GPU restore** to
-reverse the process: each model layer's blocks return to their GPU positions.
-Both directions use the layout conversion.
+Page 1 is highlighted: before, other pages separate its pieces; after, it
+occupies one contiguous Host region for whole-page storage I/O. During backup,
+the transfer kernel reads a batch of selected KV and uses each piece's page
+and model-layer indices to calculate its destination in Host memory. Recovery
+first reads the page from L3 into Host, then loads it into GPU one model layer
+at a time.
 
 <LayoutViz client:visible lang="en" />
 

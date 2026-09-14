@@ -1,9 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { LAYER_COUNT } from "./layout-transfer";
 
-const SECONDS_PER_LAYER = 1.6;
+const SECONDS_PER_STEP = 1.6;
 
-export function useLayoutTransfer() {
+export function useLayoutTransfer(total: number) {
   const [progress, setProgress] = useState(0);
   const [target, setTarget] = useState<number | null>(null);
   const current = useRef(0);
@@ -30,7 +29,7 @@ export function useLayoutTransfer() {
     const tick = (now: number) => {
       const elapsed = Math.min((now - last) / 1000, 0.05);
       last = now;
-      current.current = Math.min(target, current.current + elapsed / SECONDS_PER_LAYER);
+      current.current = Math.min(target, current.current + elapsed / SECONDS_PER_STEP);
       setProgress(current.current);
       if (current.current >= target) setTarget(null);
       else frame = requestAnimationFrame(tick);
@@ -42,9 +41,9 @@ export function useLayoutTransfer() {
   const reset = () => { setTarget(null); current.current = 0; setProgress(0); };
   const toggle = () => {
     if (target !== null) { setTarget(null); return; }
-    if (current.current >= LAYER_COUNT) { current.current = 0; setProgress(0); }
-    setTarget(LAYER_COUNT);
+    if (current.current >= total) { current.current = 0; setProgress(0); }
+    setTarget(total);
   };
-  const nextLayer = () => setTarget(Math.min(LAYER_COUNT, Math.floor(current.current) + 1));
-  return { progress, playing: target !== null, reset, toggle, nextLayer };
+  const nextStep = () => setTarget(Math.min(total, Math.floor(current.current) + 1));
+  return { progress, playing: target !== null, reset, toggle, nextStep };
 }

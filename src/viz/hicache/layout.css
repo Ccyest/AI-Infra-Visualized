@@ -1,20 +1,34 @@
 .viz-stage.hc-layout { width: min(760px, 100%); padding: 14px; margin: 1.2rem auto; }
 .hc-layout-picker, .hc-layout-controls { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
 .hc-layout-picker button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
-.hc-layout-diagram { display: block; width: 100%; overflow: visible; }
-.hc-layout-heading { fill: var(--ink); font-size: 16px; font-weight: 650; }
-.hc-layout-subheading { fill: var(--muted); font-size: 12px; }
-.hc-layout-group { fill: var(--page-2); stroke: var(--axis); stroke-width: 1; }
-.hc-layout-group[data-active="true"] { fill: var(--tag-bg); stroke: var(--accent); stroke-width: 2; }
-.hc-layout-group-label { fill: var(--ink-2); font-size: 11px; font-weight: 650; }
-.hc-layout-block rect { fill: var(--surface); stroke: var(--axis); stroke-dasharray: 4 3; }
+.hc-layout-scroll { overflow-x: auto; }
+.hc-layout-diagram { display: block; width: 100%; min-width: 650px; }
+.hc-layout-heading { fill: var(--ink); font-size: 15px; font-weight: 650; }
+.hc-layout-address { fill: var(--muted); font-size: 11px; text-anchor: end; }
+.hc-layout-bracket { fill: none; stroke: var(--axis); stroke-width: 1.5; }
+.hc-layout-group-label { fill: var(--ink-2); font-size: 11px; text-anchor: middle; }
+.hc-layout-block rect { fill: var(--surface); stroke: var(--axis); stroke-dasharray: 3 3; }
 .hc-layout-block text { fill: var(--muted); text-anchor: middle; font-size: 12px; font-weight: 600; }
 .hc-layout-block .hc-layout-small { font-size: 10px; font-weight: 400; }
-.hc-layout-block[data-filled="true"] rect { fill: color-mix(in srgb, currentColor 14%, var(--surface)); stroke: currentColor; stroke-dasharray: none; }
-.hc-layout-block[data-filled="true"] text { fill: var(--ink); }
-.hc-layout-block[data-active="true"] rect { stroke-width: 2.5; }
-.hc-layout-arrow { fill: var(--accent); font-size: 30px; text-anchor: middle; }
-.hc-layout-transfer-label { fill: var(--ink-2); font-size: 12px; text-anchor: middle; }
-.hc-layout-status { display: flex; flex-direction: column; gap: 5px; margin: 12px 0; padding-left: 10px; border-left: 3px solid var(--accent); font-size: 12px; line-height: 1.6; }
+.hc-layout-block[data-filled="true"] rect { fill: var(--page-2); stroke-dasharray: none; }
+.hc-layout-block[data-page-one="true"][data-filled="true"] rect { fill: color-mix(in srgb, var(--series-1) 18%, var(--surface)); stroke: var(--series-1); stroke-width: 2; }
+.hc-layout-block[data-page-one="true"][data-filled="true"] text { fill: var(--ink); }
+.hc-layout-page rect { fill: var(--page-2); stroke: var(--axis); }
+.hc-layout-page[data-page-one="true"] rect { fill: color-mix(in srgb, var(--series-1) 10%, var(--surface)); stroke: var(--series-1); stroke-width: 2; }
+.hc-layout-page text { text-anchor: middle; fill: var(--ink); font-size: 12px; font-weight: 600; }
+.hc-layout-page .hc-layout-page-layer { font-size: 10px; font-weight: 400; }
+.hc-layout-page-layer[data-filled="false"] { opacity: .25; }
+.hc-layout-region-count { color: var(--series-1); font-size: 13px; font-weight: 600; margin: 12px 0 4px; }
+.hc-layout-storage-title { fill: var(--ink); font-size: 14px; font-weight: 650; text-anchor: middle; }
+.hc-layout-flying-page { fill: var(--surface); stroke: var(--series-1); stroke-width: 3; }
+.hc-layout-flights[data-grouped="true"] rect { stroke: none; }
+.hc-layout-flights[data-grouped="false"] .hc-layout-block[data-filled="true"] rect { stroke-width: 2; }
+.hc-layout-status { margin: 10px 0; padding-left: 10px; border-left: 3px solid var(--accent); font-size: 12px; line-height: 1.6; }
 .hc-layout-controls { border-top: 1px solid var(--grid); padding-top: 10px; }
-.hc-layout button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.hc-layout button:focus-visible, .hc-layout-scroll:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+
+.hc-layout-arrow { fill: none; stroke: var(--axis); stroke-width: 2; }
+.hc-layout-block[data-page-one="true"][data-filled="false"] rect { stroke: var(--series-1); }
+.hc-layout-page[data-filled="false"] rect { fill: var(--surface); stroke-dasharray: 3 3; }
+.hc-layout-page[data-filled="false"] > text { opacity: .4; }
+.hc-layout-flights .hc-layout-block[data-page-one="false"] { opacity: .3; }

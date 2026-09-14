@@ -1,46 +1,64 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { blockFlight, blockPosition, layerProgress, MODEL_LAYERS, PAGES } from "./layout-transfer.ts";
+import { BLOCKS, CELL_WIDTH, MODEL_LAYERS, blockFilled, blockPosition, storageRegions, transferFlights } from "./layout-transfer.ts";
 
-test("GPU groups pages by layer; after-layout Host groups layers by page", () => {
-  for (const narrow of [false, true]) {
-    for (const layer of MODEL_LAYERS) {
-      const row = PAGES.map((page) => blockPosition("gpu", page, layer, true, narrow));
-      assert.equal(new Set(row.map((point) => point.y)).size, 1);
-      assert.equal(new Set(row.map((point) => point.x)).size, 3);
-    }
-    for (const page of PAGES) {
-      const row = MODEL_LAYERS.map((layer) => blockPosition("host", page, layer, true, narrow));
-      assert.equal(new Set(row.map((point) => point.y)).size, 1);
-      assert.equal(new Set(row.map((point) => point.x)).size, 3);
+test("one page is separated by other pages before, contiguous on Host after", () => {
+  for (const side of ["gpu", "host"] as const) {
+    const before = MODEL_LAYERS.map((layer) => blockPosition(side, 0, layer, false).x);
+    assert.equal(before[1] - before[0], CELL_WIDTH * 3);
+    assert.equal(before[2] - before[1], CELL_WIDTH * 3);
+  }
+  const after = MODEL_LAYERS.map((layer) => blockPosition("host", 0, layer, true).x);
+  assert.equal(after[1] - after[0], CELL_WIDTH);
+  assert.equal(after[2] - after[1], CELL_WIDTH);
+  for (const { page, layer } of BLOCKS) {
+    assert.deepEqual(blockPosition("gpu", page, layer, true), blockPosition("gpu", page, layer, false));
+  }
+  assert.equal(storageRegions(false), 3);
+  assert.equal(storageRegions(true), 1);
+});
+
+test("backup moves a batch across all pages and layers, retaining GPU copies", () => {
+  for (const after of [false, true]) {
+    const flights = transferFlights("backup", 0.5, after);
+    assert.equal(flights.length, 9);
+    assert.equal(new Set(flights.map(({ page }) => page)).size, 3);
+    assert.equal(new Set(flights.map(({ layer }) => layer)).size, 3);
+    for (const { page, layer } of BLOCKS) {
+      assert.equal(blockFilled("gpu", page, layer, "backup", 0.5), true);
+      assert.equal(blockFilled("host", page, layer, "backup", 0.5), false);
+      assert.equal(blockFilled("host", page, layer, "backup", 1), true);
     }
   }
 });
 
-test("both directions map all nine blocks to their exact destination without collisions", () => {
-  for (const after of [false, true]) for (const narrow of [false, true]) {
-    for (const direction of ["backup", "restore"] as const) {
-      const source = direction === "backup" ? "gpu" : "host";
-      const target = direction === "backup" ? "host" : "gpu";
-      const destinations = new Set<string>();
-      for (const layer of MODEL_LAYERS) for (const page of PAGES) {
-        const start = blockFlight(direction, page, layer, 0, after, narrow);
-        const end = blockFlight(direction, page, layer, 3, after, narrow);
-        assert.deepEqual({ x: start.x, y: start.y }, blockPosition(source, page, layer, after, narrow));
-        assert.deepEqual({ x: end.x, y: end.y }, blockPosition(target, page, layer, after, narrow));
-        assert.equal(end.arrived, true);
-        destinations.add(`${end.x},${end.y}`);
-      }
-      assert.equal(destinations.size, 9);
+test("storage transfers keep an after-layout page together in both directions", () => {
+  for (const direction of ["backup", "restore"] as const) {
+    const step = direction === "backup" ? 1 : 0;
+    for (const fraction of [0.1, 0.5, 0.9]) {
+      const flights = transferFlights(direction, step + fraction, true);
+      assert.equal(flights.length, 3);
+      assert.ok(flights.every(({ page, wholePage }) => page === 0 && wholePage));
+      assert.ok(Math.abs(flights[1].x - flights[0].x - CELL_WIDTH) < 1e-8);
+      assert.ok(Math.abs(flights[2].x - flights[1].x - CELL_WIDTH) < 1e-8);
+      assert.equal(new Set(flights.map(({ y }) => y)).size, 1);
+      assert.ok(transferFlights(direction, step + fraction, false).every(({ wholePage }) => !wholePage));
     }
   }
 });
 
-test("one model layer moves at a time, with earlier arrivals retained", () => {
-  assert.deepEqual(MODEL_LAYERS.map((layer) => layerProgress(1.5, layer)), [1, 0.5, 0]);
-  for (const page of PAGES) {
-    assert.equal(blockFlight("backup", page, 0, 1.5, true, false).arrived, true);
-    assert.equal(blockFlight("backup", page, 1, 1.5, true, false).moving, true);
-    assert.equal(blockFlight("backup", page, 2, 1.5, true, false).moving, false);
+test("restore reads the page into Host first, then loads its model layers in order", () => {
+  assert.equal(transferFlights("restore", 0.5, true).length, 3);
+  for (const layer of MODEL_LAYERS) {
+    const flights = transferFlights("restore", layer + 1.5, true);
+    assert.equal(flights.length, 1);
+    assert.equal(flights[0].layer, layer);
+    assert.equal(flights[0].page, 0);
+    assert.equal(blockFilled("host", 0, layer, "restore", 1), true);
+    assert.equal(blockFilled("gpu", 0, layer, "restore", layer + 1.5), false);
+    assert.equal(blockFilled("gpu", 0, layer, "restore", layer + 2), true);
+    assert.equal(blockFilled("storage", 0, layer, "restore", 4), true);
   }
+  assert.deepEqual(transferFlights("restore", 4, true), []);
+  assert.deepEqual(transferFlights("backup", 2, true), []);
 });
