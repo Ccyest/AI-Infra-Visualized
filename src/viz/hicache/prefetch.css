@@ -1,0 +1,43 @@
+.hc-prefetch-scenario { display: flex; flex-wrap: wrap; gap: 8px 24px; padding: 14px 20px 10px; font-size: 12px; }
+.hc-prefetch-scenario b { margin-left: 4px; }
+.hc-prefetch-legend { display: flex; flex-wrap: wrap; gap: 8px 18px; padding: 4px 20px 14px; color: var(--muted); font-size: 11px; }
+.hc-prefetch-legend > span { display: inline-flex; align-items: center; gap: 6px; }
+.hc-prefetch-legend i { display: inline-block; width: 12px; height: 12px; border: 1px solid; border-radius: 3px; }
+.hc-prefetch [data-state="initial"], .hc-prefetch [data-stage="question"] { background: color-mix(in srgb, var(--series-3) 22%, var(--surface)); border-color: var(--series-3); }
+.hc-prefetch [data-state="fetched"], .hc-prefetch [data-stage="load"] { background: color-mix(in srgb, var(--series-1) 22%, var(--surface)); border-color: var(--series-1); }
+.hc-prefetch [data-state="missing"], .hc-prefetch [data-stage="recompute"] { background: color-mix(in srgb, var(--series-2) 24%, var(--surface)); border-color: var(--series-2); }
+.hc-prefetch [data-state="missing"] { border-style: dashed; }
+.hc-prefetch [data-stage="wait"] { background: repeating-linear-gradient(135deg, var(--page-2) 0 4px, var(--grid) 4px 5px); border-color: var(--axis); }
+.hc-prefetch-scroll { overflow-x: auto; }
+.hc-prefetch .hc-timelines { min-width: 570px; gap: 18px; padding-bottom: 10px; }
+.hc-prefetch-policy { border-top: 1px solid var(--grid); padding-top: 14px; }
+.hc-prefetch-policy h4 { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 0 9px; }
+.hc-prefetch-policy h4 > span:first-child { display: flex; align-items: center; gap: 10px; }
+.hc-prefetch-policy h4 > span:last-child { font-size: 11px; font-weight: 400; }
+.hc-prefetch-policy h4 b { margin-left: 6px; font-size: 15px; font-variant-numeric: tabular-nums; }
+.hc-prefetch-rank { font-size: 10px !important; font-weight: 500; border: 1px solid var(--grid); border-radius: 4px; padding: 2px 6px; }
+.hc-prefetch-rank[data-rank="fastest"] { border-color: var(--series-3); }
+.hc-prefetch-rank[data-rank="slowest"] { border-color: var(--series-2); }
+.hc-prefetch-prefix { display: flex; align-items: center; justify-content: space-between; gap: 20px; font-size: 11px; }
+.hc-prefetch-tokens { display: flex; gap: 3px; }
+.hc-prefetch-tokens > span { display: grid; place-items: center; width: 24px; height: 23px; border: 1px solid; border-radius: 3px; font-size: 10px; }
+.hc-prefetch-start { margin: 8px 0 4px; font-size: 11px; color: var(--muted); }
+.hc-prefetch .hc-lane { height: 32px; }
+.hc-prefetch .hc-span { height: 31px; font-size: 11px; border-radius: 3px; overflow: hidden; white-space: nowrap; }
+.hc-prefetch .hc-axis { position: relative; display: block; margin: 3px 0 0; height: 16px; }
+.hc-prefetch .hc-axis span { position: absolute; transform: translateX(-50%); }
+.hc-prefetch .hc-axis span:first-child { transform: none; }
+.hc-prefetch .hc-axis span:last-child { transform: translateX(-100%); }
+.hc-prefetch-control { margin: 0 20px; padding: 14px 16px; border: 1px solid var(--grid); border-radius: 8px; background: var(--page-2); font-size: 12px; }
+.hc-prefetch-control > div { display: flex; justify-content: space-between; gap: 12px; }
+.hc-prefetch-control output { font-weight: 600; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.hc-prefetch-control input { display: block; width: 100%; margin: 12px 0 5px; accent-color: var(--series-2); cursor: pointer; }
+.hc-prefetch-endpoints { font-size: 11px; color: var(--muted); }
+.hc-prefetch-assumption { padding: 10px 20px 16px; font-size: 11px; color: var(--muted); line-height: 1.6; }
+.hc-prefetch-announcement { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.hc-prefetch-scroll:focus-visible, .hc-prefetch-control input:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
+@media (max-width: 600px) {
+  .hc-prefetch-scenario, .hc-prefetch-legend, .hc-prefetch-assumption { padding-left: 14px; padding-right: 14px; }
+  .hc-prefetch-control { margin: 0 14px; padding: 12px; }
+  .hc-prefetch-control label { max-width: 75%; }
+}

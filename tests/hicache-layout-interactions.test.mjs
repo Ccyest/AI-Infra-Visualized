@@ -44,6 +44,7 @@ test("HiCache survives an early first animation frame and all playback controls"
         import {createRoot} from 'react-dom/client';
         import LayoutViz from './src/viz/hicache/LayoutViz';
         import OverlapViz from './src/viz/hicache/OverlapViz';
+        import PrefetchViz from './src/viz/hicache/PrefetchViz';
         export {act};
         export function mount(container) {
           const root = createRoot(container);
@@ -54,13 +55,18 @@ test("HiCache survives an early first animation frame and all playback controls"
           const root = createRoot(container);
           root.render(<OverlapViz lang={lang}/>);
           return root;
+        }
+        export function mountPrefetch(container, lang) {
+          const root = createRoot(container);
+          root.render(<PrefetchViz lang={lang}/>);
+          return root;
         }`,
       loader: "tsx", resolveDir: process.cwd(),
     },
     bundle: true, platform: "node", format: "cjs", outfile: bundle,
     loader: { ".css": "empty" }, define: { "process.env.NODE_ENV": '"development"' },
   });
-  const { act, mount, mountOverlap } = createRequire(import.meta.url)(bundle);
+  const { act, mount, mountOverlap, mountPrefetch } = createRequire(import.meta.url)(bundle);
   const container = document.getElementById("app");
   const button = (label) => [...container.querySelectorAll("button")].find((node) =>
     node.textContent === label || node.getAttribute("aria-label") === label);
@@ -153,6 +159,34 @@ test("HiCache survives an early first animation frame and all playback controls"
       assert.equal(serial.querySelectorAll('.hc-compute[data-active="true"]').length, 0);
       await act(async () => container.querySelectorAll(".viz-controls button")[3].click());
       assert.equal(container.querySelector('input[type="range"]').value, "0");
+    } finally {
+      await act(async () => root.unmount());
+    }
+    await act(async () => { root = mountPrefetch(container, lang); });
+    try {
+      const range = container.querySelector('input[type="range"]');
+      const policies = [...container.querySelectorAll('[data-policy]')];
+      assert.equal(policies.length, 3, "Show best-effort, wait-complete and timeout together");
+      for (const [value, finishTimes, slowest] of [
+        [1, [3, 6, 4.5], "wait-complete"],
+        [4, [6, 6, 6], null],
+        [12, [14, 6, 10], "best-effort"],
+        [1, [3, 6, 4.5], "wait-complete"],
+      ]) {
+        await act(async () => {
+          Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set.call(range, String(value));
+          range.dispatchEvent(new window.Event("input", { bubbles: true }));
+        });
+        assert.deepEqual(policies.map((row) => Number(row.dataset.finish)), finishTimes);
+        assert.deepEqual(policies.map((row) => row.querySelectorAll('[data-state="missing"]').length), [8, 0, 4]);
+        assert.deepEqual(policies.map((row) => row.querySelectorAll('[data-state="fetched"]').length), [0, 8, 4]);
+        assert.deepEqual(policies.map((row) => row.querySelectorAll('[data-state="initial"]').length), [4, 4, 4]);
+        const longest = container.querySelector('[data-rank="slowest"]')?.closest('[data-policy]');
+        assert.equal(longest?.dataset.policy ?? null, slowest);
+        if (!slowest) assert.equal(container.querySelectorAll('[data-rank="tied"]').length, 3);
+        const computeWidth = parseFloat(policies[0].querySelector('[data-stage="recompute"]').style.width);
+        assert.ok(Math.abs(computeWidth - value / 14 * 100) < 1e-8, "Recompute blocks keep a fixed time scale");
+      }
     } finally {
       await act(async () => root.unmount());
     }

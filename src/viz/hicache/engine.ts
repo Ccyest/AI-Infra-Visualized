@@ -36,11 +36,40 @@ export function layerSchedule(overlap: boolean): RestoreSchedule {
   return { storage, transfer, compute };
 }
 
-// Storage latency is controlled by a bounded UI slider. No partial-prefix reuse.
-export function prefetchOutcome(storageEnd: number, wait: boolean) {
-  const hit = wait || storageEnd <= 4;
-  const start = wait ? Math.max(4, storageEnd) : 4;
-  return { hit, start, finish: start + (hit ? 2 : 6), storageStop: hit ? storageEnd : 4 };
+export const PREFETCH_SCENARIO = {
+  totalTokens: 12,
+  readyTokens: 4,
+  tokensPerUnit: 2,
+  timeout: 2,
+  loadDuration: 1,
+  questionDuration: 1,
+  minRecompute: 1,
+  maxRecompute: 12,
+} as const;
+export const PREFETCH_POLICIES = ["best-effort", "wait-complete", "timeout"] as const;
+export type PrefetchPolicy = typeof PREFETCH_POLICIES[number];
+
+// Illustrative model: time zero is B's turn, and only recomputation cost varies.
+// Missing-prefix compute scales linearly with tokens; each policy pays the same
+// Host → GPU load and new-question compute costs, independent of prefix length.
+export function prefetchOutcome(recomputeDuration: number, policy: PrefetchPolicy) {
+  const scenario = PREFETCH_SCENARIO;
+  const missingTokens = scenario.totalTokens - scenario.readyTokens;
+  const remainingRead = missingTokens / scenario.tokensPerUnit;
+  const waitDuration = {
+    "best-effort": 0,
+    "wait-complete": remainingRead,
+    timeout: Math.min(scenario.timeout, remainingRead),
+  }[policy];
+  const reusedTokens = scenario.readyTokens + waitDuration * scenario.tokensPerUnit;
+  const recomputedTokens = scenario.totalTokens - reusedTokens;
+  const computeDuration = recomputeDuration * recomputedTokens / missingTokens;
+  const computeStart = waitDuration + scenario.loadDuration;
+  const questionStart = computeStart + computeDuration;
+  return {
+    policy, waitDuration, reusedTokens, recomputedTokens, computeDuration,
+    computeStart, questionStart, finish: questionStart + scenario.questionDuration,
+  };
 }
 
 // Exact labeled values in lmsys.org/images/blog/hicache/3fs_benchmark.png.
