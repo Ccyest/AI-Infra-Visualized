@@ -190,15 +190,7 @@ For a frequently reused document, proactive backup leaves a Host copy ready afte
 
 ### Hybrid-model state
 
-Matching the document's tokens is only the first step for a hybrid model. The same model can contain full-attention layers, sliding-window layers, and recurrent layers, each retaining a different form of history. Restoring the full-attention KV alone leaves the other layers without the data they need to continue from the document's end.
-
-#### Reuse boundaries
-
-The reuse boundary is where the cached prefix ends and new computation begins. To resume there, full attention needs the prefix's KV, sliding-window attention needs the KV in the trailing window, and a recurrent layer needs a checkpoint of its state at that exact position. That checkpoint records the recurrent state after reading the prefix. A later checkpoint has already incorporated more tokens, so trimming KV pages cannot turn it back into the earlier state.
-
-SGLang's Unified Radix Cache records these different data sets under the same token prefix. It checks that all the states needed at a candidate boundary are available; HiCache then restores their corresponding data to the GPU. This includes auxiliary buffers such as the sparse-attention indexer in DeepSeek-V3.2, alongside the attention KV.
-
-For example, the full-attention KV may cover the whole document while the recurrent checkpoint at its end is missing. The request cannot skip directly to the new question: it must resume from an earlier position with complete state and recompute the missing part. Saving the checkpoint together with the KV preserves the ability to resume at the document's end.
+Hybrid models may need sliding-window KV and recurrent state snapshots (checkpoints), alongside full-attention KV. [Unified Radix Cache](https://yichizhang.dev/AI-Infra-Visualized/en/lessons/unified-radix-cache/#the-safe-reuse-boundary) checks that the required states are available and determines where computation can resume. HiCache backs up these states across Host and L3, then restores them to the GPU when needed.
 
 #### Branch checkpoints
 
