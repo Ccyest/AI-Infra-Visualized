@@ -47,6 +47,7 @@ test("HiCache survives an early first animation frame and all playback controls"
         import OverlapViz from './src/viz/hicache/OverlapViz';
         import PrefetchViz from './src/viz/hicache/PrefetchViz';
         import StateRestoreViz from './src/viz/hicache/StateRestoreViz';
+        import HostModeViz from './src/viz/hicache/HostModeViz';
         export {act};
         export function mount(container) {
           const root = createRoot(container);
@@ -67,13 +68,18 @@ test("HiCache survives an early first animation frame and all playback controls"
           const root = createRoot(container);
           root.render(<PrefetchViz lang={lang}/>);
           return root;
+        }
+        export function mountHost(container, lang) {
+          const root = createRoot(container);
+          root.render(<HostModeViz lang={lang}/>);
+          return root;
         }`,
       loader: "tsx", resolveDir: process.cwd(),
     },
     bundle: true, platform: "node", format: "cjs", outfile: bundle,
     loader: { ".css": "empty" }, define: { "process.env.NODE_ENV": '"development"' },
   });
-  const { act, mount, mountOverlap, mountPrefetch, mountState } = createRequire(import.meta.url)(bundle);
+  const { act, mount, mountOverlap, mountPrefetch, mountState, mountHost } = createRequire(import.meta.url)(bundle);
   const container = document.getElementById("app");
   const button = (label) => [...container.querySelectorAll("button")].find((node) =>
     node.textContent === label || node.getAttribute("aria-label") === label);
@@ -223,6 +229,31 @@ test("HiCache survives an early first animation frame and all playback controls"
       await act(async () => container.querySelectorAll(".viz-controls button")[3].click());
       assert.equal(container.querySelector('input[type="range"]').value, "0");
       assert.equal(frames.size, 0, "Reset cancels in-flight animation");
+    } finally {
+      await act(async () => root.unmount());
+    }
+    await act(async () => { root = mountHost(container, lang); });
+    try {
+      const modes = [...container.querySelectorAll('[data-mode]')];
+      assert.equal(modes.length, 2, "Both Host modes remain visible at the same step");
+      const present = (mode, location) =>
+        mode.querySelector(`[data-location="${location}"] [data-present]`).dataset.present === "true";
+      const next = container.querySelectorAll('.viz-controls button')[2];
+      for (let step = 0; step <= 4; step++) {
+        for (const mode of modes) {
+          assert.ok(present(mode, "gpu-a"), "Backing up must keep the source GPU copy");
+          assert.equal(present(mode, "gpu-b"), step === 4);
+          assert.equal(present(mode, "l3"), step >= 2);
+        }
+        assert.deepEqual(modes.map(mode => present(mode, "host-a")), [step >= 1, step === 1]);
+        assert.deepEqual(modes.map(mode => present(mode, "host-b")), [step >= 3, step === 3]);
+        if (step < 4) await act(async () => next.click());
+      }
+      await act(async () => container.querySelectorAll('.viz-controls button')[1].click());
+      assert.ok(present(modes[1], "host-b"), "Stepping back restores the transient Host copy");
+      await act(async () => container.querySelectorAll('.viz-controls button')[3].click());
+      assert.equal(container.querySelector('input[type="range"]').value, "0");
+      assert.ok(modes.every(mode => !present(mode, "host-a") && !present(mode, "host-b")));
     } finally {
       await act(async () => root.unmount());
     }
