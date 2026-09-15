@@ -181,15 +181,15 @@ The write-through recovery test builds new branch checkpoints, evicts them from 
 
 Speculative decoding also requires backing up and restoring the draft model’s history. Otherwise, even if the target model reuses a cached prefix, missing draft history can lower the acceptance rate of proposed tokens.
 
-### Host memory as a buffer
+### Buffer-only mode
 
-Keeping a document's KV in Host gives the next request a fast L2 hit. But each serving instance has a private Host pool. In the diagram, instances A and B can each retain the same prefix P in Host, while shared L3 also holds a copy. Retaining more documents therefore keeps consuming each instance's Host memory even when L3 already stores them.
+The preceding sections use Host as an L2 cache: KV stays in memory so later requests can reuse it directly. If L3 is enabled but each instance has limited Host memory, Buffer-only is an optional mode. L3 retains the cached history, while Host holds only the temporary data needed for transfers.
 
-Buffer-only mode uses Host memory only while data is in transit. For backup, A copies P from GPU to Host and writes it to L3; once the transfer finishes and no longer needs the buffer, those Host slots can be reused. For recovery, B reads P from L3 into its Host buffer and loads it to the GPU, then releases the buffer. L3 retains P for future requests, while A and B reuse their Host slots for other transfers.
+In the diagram, instance A backs up prefix P by copying its KV from GPU to Host, then writing it to L3. Once the write completes, those Host slots are released for reuse. To restore P, instance B reads its KV from L3 into its own Host buffer, loads it to the GPU, and releases the buffer after the load completes. The GPU ↔ Host ↔ L3 transfer path stays the same; what changes is whether Host retains a copy after the transfer.
 
 <HostModeViz client:visible lang="en" />
 
-Host memory now needs room for the transfers in progress rather than a retained collection of documents. The tradeoff is that a future GPU miss must read L3 again instead of hitting a long-lived Host copy. A smaller Host buffer also holds fewer simultaneous transfers. Buffer-only saves retained Host copies by relying more on L3 reads.
+This mode allows a smaller Host pool to handle transfers between GPU and L3. The tradeoff is that reusing a prefix missing from GPU memory requires an L3 read, without the option of hitting a retained L2 copy. With sufficient Host memory, cache mode remains useful for keeping reusable KV close to the GPU and reducing storage reads.
 
 ## Results
 
