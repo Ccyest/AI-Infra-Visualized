@@ -7,25 +7,78 @@ import "./styles.css";
 
 const STEPS = ["savedPrefix", "branch", "incremental", "eviction", "recovery"] as const;
 
+function RequestPrefixes({ lang }: { lang: Locale }) {
+  return <div className="hc-checkpoint-prefixes">
+    {["A", "B"].map((request) => <div className="hc-checkpoint-request" key={request}>
+      <b>{UPDATE[request === "A" ? "stateRequestA" : "stateRequestB"][lang]}</b>
+      <span className="hc-checkpoint-document">{UPDATE.stateDocument[lang]}</span>
+      <span aria-hidden="true">→</span>
+      <span className="hc-checkpoint-question">{UPDATE[request === "A" ? "stateQuestionA" : "stateQuestionB"][lang]}</span>
+    </div>)}
+    <div className="hc-checkpoint-boundary">{UPDATE.stateBoundary[lang]}</div>
+  </div>;
+}
+
+function Snapshot({ lang, document, present, fresh = false }: {
+  lang: Locale; document: boolean; present: boolean; fresh?: boolean;
+}) {
+  return <div className="hc-checkpoint-snapshot" data-document={document} data-present={present} data-new={fresh && present}>
+    <small>{UPDATE.stateSlot[lang]}</small>
+    <strong>{UPDATE[document ? "state1" : "state0"][lang]}</strong>
+    <span>{UPDATE[present ? (fresh ? "stateNew" : "stateCached") : "stateAbsent"][lang]}</span>
+  </div>;
+}
+
+function StorageTier({ lang, host, documentPresent, snapshotPresent, fresh }: {
+  lang: Locale; host: boolean; documentPresent: boolean; snapshotPresent: boolean; fresh: boolean;
+}) {
+  return <section className="hc-checkpoint-tier" data-tier={host ? "host" : "gpu"}>
+    <h4>{host ? "Host · L2" : "GPU · L1"}</h4>
+    <div className="hc-checkpoint-pools">
+      <div className="hc-checkpoint-kv-pool">
+        <b>{UPDATE.full[lang]}</b>
+        <div className="hc-checkpoint-pages" data-present={documentPresent}>
+          <span>{UPDATE.stateDocument[lang]} KV</span>
+          {host && <span>{UPDATE.stateQuestionA[lang]} KV</span>}
+        </div>
+        <small>{UPDATE[documentPresent ? "stateCached" : "stateEmpty"][lang]}</small>
+      </div>
+      <div className="hc-checkpoint-state-pool">
+        <b>{UPDATE.statePool[lang]}</b>
+        <div className="hc-checkpoint-slots">
+          {host && <Snapshot lang={lang} document={false} present />}
+          <Snapshot lang={lang} document present={snapshotPresent} fresh={fresh} />
+        </div>
+      </div>
+    </div>
+  </section>;
+}
+
 export default function StateRestoreViz({ lang = "zh" }: { lang?: Locale }) {
   const [fixed, setFixed] = useState(true);
-  const player = useSimPlayer(4, 0.7);
-  const hasHostState = fixed && player.t >= 2;
-  const hasDeviceState = (player.t >= 1 && player.t < 3) || (player.t === 4 && fixed);
-  return <VizStage title={UPDATE.stateTitle[lang]} subtitle={UPDATE.stateNote[lang]} player={player} lang={lang} className="hc-viz">
+  const player = useSimPlayer(4, 0.55);
+  const t = player.t;
+  const onGpu = (t >= 1 && t <= 2) || (t === 4 && fixed);
+  const onHost = fixed && t >= 2;
+  const event = t === 0 ? "stateInitial" : t === 1 ? "stateCreated"
+    : t === 2 ? (fixed ? "newCopy" : "noCopy")
+    : t === 3 ? "stateEvicted" : (fixed ? "stateRestore" : "stateRecompute");
+
+  return <VizStage title={UPDATE.stateTitle[lang]} subtitle={UPDATE.stateNote[lang]} player={player} lang={lang} className="hc-viz hc-checkpoint-viz">
     <div className="hc-picker">{[false, true].map((value) => <button type="button" className="viz-btn" key={String(value)} aria-pressed={fixed === value} onClick={() => setFixed(value)}>{UPDATE[value ? "fixed" : "baseline"][lang]}</button>)}</div>
-    <div className="hc-state-branch">
-      <span className="hc-chip">{UPDATE.full[lang]} · P0 → P1 → P2 → P3</span><span>↙ &nbsp; ↘</span>
-      <div><span className="hc-chip">{UPDATE.state0[lang]}</span><span className={`hc-chip${player.t === 0 ? " hc-payload-absent" : ""}`}>{UPDATE.state1[lang]}</span></div>
+    <RequestPrefixes lang={lang} />
+    <nav className="hc-checkpoint-steps" aria-label={UPDATE.stateTitle[lang]}>
+      {STEPS.map((step, index) => <button type="button" key={step} onClick={() => player.seek(index)} aria-current={t === index ? "step" : undefined}>
+        <span>{index + 1}</span>{UPDATE[step][lang]}
+      </button>)}
+    </nav>
+    <div className="hc-checkpoint-storage">
+      <StorageTier lang={lang} host={false} documentPresent={onGpu} snapshotPresent={onGpu} fresh={t === 1} />
+      <div className="hc-checkpoint-transfer" data-step={t} data-fixed={fixed} aria-live="polite">
+        <span aria-hidden="true">{t === 2 && fixed ? "↓" : t === 4 && fixed ? "↑" : "·"}</span>
+        <strong>{UPDATE[event][lang]}</strong>
+      </div>
+      <StorageTier lang={lang} host documentPresent snapshotPresent={onHost} fresh={t === 2} />
     </div>
-    <div className="hc-state-pools">
-      <div className="hc-pool"><b>GPU</b><span className={`hc-chip${player.t === 0 || player.t === 3 ? " hc-payload-absent" : ""}`}>{UPDATE.full[lang]}</span><span className={`hc-chip${hasDeviceState ? "" : " hc-payload-absent"}`}>{UPDATE.state1[lang]}</span></div>
-      <div className="hc-pool"><b>CPU</b><span className="hc-chip">{UPDATE.full[lang]}</span><span className="hc-chip">{UPDATE.state0[lang]}</span><span className={`hc-chip${hasHostState ? "" : " hc-payload-absent"}`}>{UPDATE.state1[lang]}</span></div>
-    </div>
-    <div className="hc-update-stat" aria-live="polite">
-      {player.t === 2 && UPDATE[fixed ? "newCopy" : "noCopy"][lang]}
-      {player.t === 4 && <><span>{UPDATE.branchResult[lang]}</span><b>{fixed ? "10/10" : "1/10"}</b></>}
-    </div>
-    <div className="hc-route">{STEPS.map((step, index) => <span key={step} data-active={index === player.t}>{index > 0 && "→ "}{UPDATE[step][lang]}</span>)}</div>
   </VizStage>;
 }

@@ -192,11 +192,15 @@ For a frequently reused document, proactive backup leaves a Host copy ready afte
 
 Hybrid models may need sliding-window KV and recurrent state snapshots (checkpoints), alongside full-attention KV. [Unified Radix Cache](https://yichizhang.dev/AI-Infra-Visualized/en/lessons/unified-radix-cache/#the-safe-reuse-boundary) checks that the required states are available and determines where computation can resume. HiCache backs up these states across Host and L3, then restores them to the GPU when needed.
 
-#### Branch checkpoints
+#### Backing up new recurrent snapshots
 
-A new branch can need a checkpoint that did not exist when the KV was first backed up. In the diagram, Host holds the full-attention KV through P3 and checkpoint S0 at P3. A later request branches at the earlier position P2 and produces checkpoint S1 there. S0 already includes the tokens between P2 and P3, so the branch needs S1. A backup check that sees the existing Host KV and skips the node would miss this new checkpoint.
+This problem concerns layers that retain history as recurrent state, such as linear attention and Mamba. Their state changes as each token arrives. A checkpoint saves that state at a particular prefix end. Full-attention layers keep per-token KV; a recurrent layer's later snapshot cannot simply be sliced back to an earlier position.
 
-SGLang adds incremental checkpoint backup on the write-through path: keep the full-attention KV already in Host, and copy the newly created S1 separately. After S1 is evicted from GPU memory, a later request can restore it from Host and resume at P2.
+Suppose request A is “document + question A”. Host already holds its full-attention KV and the snapshot after question A. Request B is “the same document + question B”. In this example, processing B creates a snapshot at the document's end, before either question. A's existing snapshot includes question A, so it cannot replace this new document snapshot.
+
+Host stores full-attention KV and recurrent snapshots in separate pools, each associated with its prefix. Previously, an existing Host KV copy caused backup to skip the newly created snapshot. SGLang's write-through path now backs up that snapshot separately, leaving the existing KV and A's snapshot in place. When the document cache is later evicted from the GPU, its KV and document-end snapshot can both be restored from Host, avoiding recomputation caused by the missing state.
+
+Snapshots at the ends of questions A and B can also be retained separately, for continuing their respective histories. The snapshot added here is at the shared document's end: it lets a later request reuse the document and then compute its own question.
 
 <StateRestoreViz client:visible lang="en" />
 

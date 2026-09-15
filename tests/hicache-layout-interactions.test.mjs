@@ -45,6 +45,7 @@ test("HiCache survives an early first animation frame and all playback controls"
         import LayoutViz from './src/viz/hicache/LayoutViz';
         import OverlapViz from './src/viz/hicache/OverlapViz';
         import PrefetchViz from './src/viz/hicache/PrefetchViz';
+        import StateRestoreViz from './src/viz/hicache/StateRestoreViz';
         export {act};
         export function mount(container) {
           const root = createRoot(container);
@@ -54,6 +55,11 @@ test("HiCache survives an early first animation frame and all playback controls"
         export function mountOverlap(container, lang) {
           const root = createRoot(container);
           root.render(<OverlapViz lang={lang}/>);
+          return root;
+        }
+        export function mountState(container, lang) {
+          const root = createRoot(container);
+          root.render(<StateRestoreViz lang={lang}/>);
           return root;
         }
         export function mountPrefetch(container, lang) {
@@ -66,7 +72,7 @@ test("HiCache survives an early first animation frame and all playback controls"
     bundle: true, platform: "node", format: "cjs", outfile: bundle,
     loader: { ".css": "empty" }, define: { "process.env.NODE_ENV": '"development"' },
   });
-  const { act, mount, mountOverlap, mountPrefetch } = createRequire(import.meta.url)(bundle);
+  const { act, mount, mountOverlap, mountPrefetch, mountState } = createRequire(import.meta.url)(bundle);
   const container = document.getElementById("app");
   const button = (label) => [...container.querySelectorAll("button")].find((node) =>
     node.textContent === label || node.getAttribute("aria-label") === label);
@@ -157,6 +163,34 @@ test("HiCache survives an early first animation frame and all playback controls"
       assert.equal(overlapping.querySelectorAll('.hc-compute[data-active="true"]').length, 1);
       const serial = container.querySelector('[data-overlap="false"]');
       assert.equal(serial.querySelectorAll('.hc-compute[data-active="true"]').length, 0);
+      await act(async () => container.querySelectorAll(".viz-controls button")[3].click());
+      assert.equal(container.querySelector('input[type="range"]').value, "0");
+    } finally {
+      await act(async () => root.unmount());
+    }
+    await act(async () => { root = mountState(container, lang); });
+    try {
+      const steps = container.querySelectorAll(".hc-checkpoint-steps button");
+      const hostSnapshot = () => container.querySelector('[data-tier="host"] [data-document="true"]');
+      const gpuSnapshot = () => container.querySelector('[data-tier="gpu"] [data-document="true"]');
+      assert.equal(hostSnapshot().dataset.present, "false");
+      await act(async () => steps[1].click());
+      assert.equal(gpuSnapshot().dataset.present, "true");
+      assert.equal(hostSnapshot().dataset.present, "false", "New GPU state has not yet been backed up");
+      await act(async () => steps[2].click());
+      assert.equal(hostSnapshot().dataset.present, "true");
+      await act(async () => steps[3].click());
+      assert.equal(gpuSnapshot().dataset.present, "false");
+      assert.equal(hostSnapshot().dataset.present, "true", "Host copy survives GPU eviction");
+      await act(async () => steps[4].click());
+      assert.equal(gpuSnapshot().dataset.present, "true");
+      await act(async () => container.querySelectorAll(".hc-picker button")[0].click());
+      assert.equal(gpuSnapshot().dataset.present, "false", "Old path cannot restore the missing snapshot");
+      assert.equal(hostSnapshot().dataset.present, "false");
+      assert.equal(container.querySelector('[data-tier="host"] [data-document="false"]').dataset.present, "true", "The older A snapshot remains separate");
+      assert.equal(container.querySelector('[data-tier="host"] .hc-checkpoint-pages').dataset.present, "true", "KV alone is insufficient for full recovery");
+      await act(async () => steps[2].click());
+      assert.equal(hostSnapshot().dataset.present, "false", "Old backup skips the new state");
       await act(async () => container.querySelectorAll(".viz-controls button")[3].click());
       assert.equal(container.querySelector('input[type="range"]').value, "0");
     } finally {

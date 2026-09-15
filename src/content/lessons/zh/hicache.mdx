@@ -163,11 +163,15 @@ L1 命中直接复用；L2 命中先搬回 L1；L3 命中先取到 L2，再搬�
 
 混合模型除了全注意力的 KV，还可能需要滑窗内的 KV、递归层的状态快照（checkpoint）。[Unified Radix Cache](https://yichizhang.dev/AI-Infra-Visualized/lessons/unified-radix-cache/#安全复用边界) 检查所需状态是否齐全，判断能从哪里继续计算。HiCache 负责把这些状态备份到 Host、L3，并在需要时恢复到 GPU。
 
-#### 分支 checkpoint
+#### 补存递归状态快照
 
-新分支可能需要初次备份时还不存在的 checkpoint。图中 Host 已保存直到 P3 的全注意力 KV，以及 P3 处的快照 S0。后来一个请求在更早的 P2 处分支，并在那里计算出快照 S1。S0 已经包含 P2 到 P3 之间的 token，分支需要的是 S1。如果备份流程看到这个节点已经有 Host KV 就跳过，新增的 S1 就会漏存。
+这个问题针对 linear attention、Mamba 等用递归状态保存历史的层。状态随读入的 token 不断更新，checkpoint 就是在某段前缀末尾保存的状态快照。全注意力层按 token 保留 KV；递归层更晚的快照，却不能简单截短成更早的快照。
 
-SGLang 在 write-through 路径上增加了 checkpoint 增量备份：Host 已有的全注意力 KV 保留原样，把新生成的 S1 单独补存进去。这样，S1 从 GPU 驱逐后，后续请求仍能从 Host 恢复它，并从 P2 继续执行。
+假设请求甲是“文档＋问题甲”，Host 已保存它的全注意力 KV，以及读完问题甲后的快照。请求乙是“同一文档＋问题乙”。本例中，处理乙时在文档末尾生成了一份新快照，此时还没读入任何问题。甲的旧快照已经包含问题甲，不能代替这份文档快照。
+
+Host 把全注意力 KV 和递归快照存在不同的池里，各自关联对应的前缀。旧流程看到已有 Host KV，就跳过备份，漏掉了新快照。SGLang 的 write-through 路径现在会单独补存这份快照，已有 KV 和甲的快照都保留原样。文档缓存从 GPU 驱逐后，就能从 Host 恢复文档 KV 和文档末尾的快照，省去因状态丢失而产生的重算。
+
+甲、乙各自结束后的快照也可以分别保存，用来继续各自的历史。这里补存的是更早的文档末尾快照：后续请求可以先复用同一份文档，再计算自己的问题。
 
 <StateRestoreViz client:visible />
 
