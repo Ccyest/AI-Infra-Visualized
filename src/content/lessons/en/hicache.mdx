@@ -9,32 +9,6 @@ tryOnSglang: "https://github.com/sgl-project/sglang"
 references:
   - label: "LMSYS Blog: SGLang HiCache: Fast Hierarchical KV Caching with Your Favorite Storage Backends"
     url: "https://www.lmsys.org/blog/2025-09-10-sglang-hicache/"
-  - label: "sglang#8651: Support page first layout  zero copy for mooncake store"
-    url: "https://github.com/sgl-project/sglang/pull/8651"
-  - label: "sglang#9109: 3fs zerocopy"
-    url: "https://github.com/sgl-project/sglang/pull/9109"
-  - label: "SGLang Cookbook: HiCache"
-    url: "https://sgl-project-sglang-93.mintlify.app/optimization/hicache"
-  - label: "SGLang: HiCache benchmarks"
-    url: "https://github.com/sgl-project/sglang/tree/main/benchmark/hicache"
-  - label: "sglang#2693: Hierarchical Caching for SGLang"
-    url: "https://github.com/sgl-project/sglang/pull/2693"
-  - label: "sglang#7313: Kernels for efficient KV cache IO"
-    url: "https://github.com/sgl-project/sglang/pull/7313"
-  - label: "sglang#7704: Hicache Storage Layer Prototype"
-    url: "https://github.com/sgl-project/sglang/pull/7704"
-  - label: "sglang#21259: [HiCache & HybridModel] mooncake backend support DSA & mamba  model"
-    url: "https://github.com/sgl-project/sglang/pull/21259"
-  - label: "sglang#30393: [HiCache] Support packed and sidecar draft caches for MTP/EAGLE/DSpark"
-    url: "https://github.com/sgl-project/sglang/pull/30393"
-  - label: "sglang#33639: [Hicache][2/2]Support Mamba branching in Unified Radix Cache with HiCache"
-    url: "https://github.com/sgl-project/sglang/pull/33639"
-  - label: "sglang#34798: [HiCache] Buffer-only mode for HiCache host memory layer"
-    url: "https://github.com/sgl-project/sglang/pull/34798"
-  - label: "sglang#31920: [HiCache] Add model-aware key isolation to Mooncake Store"
-    url: "https://github.com/sgl-project/sglang/pull/31920"
-  - label: "sglang#37050: docs: state that HiCache L2 is instance-private and only L3 is shared"
-    url: "https://github.com/sgl-project/sglang/pull/37050"
   - label: "LMSYS Blog: Unified Radix Cache: One Tree for Hybrid Model Prefix Caching"
     url: "https://www.lmsys.org/blog/2026-08-11-unified-radix-cache/"
 ---
@@ -47,7 +21,6 @@ import PrefetchViz from "../../../viz/hicache/PrefetchViz";
 import ResultsViz from "../../../viz/hicache/ResultsViz";
 import TimelineViz from "../../../viz/hicache/TimelineViz";
 import StateRestoreViz from "../../../viz/hicache/StateRestoreViz";
-import DraftRestoreViz from "../../../viz/hicache/DraftRestoreViz";
 import HostModeViz from "../../../viz/hicache/HostModeViz";
 import MultiTurnBenchViz from "../../../viz/unified-radix-cache/MultiTurnBenchViz";
 
@@ -206,15 +179,7 @@ Snapshots at the ends of questions A and B can also be retained separately, for 
 
 The write-through recovery test builds new branch checkpoints, evicts them from the GPU, and requests the shared prefix again. Full recovery of the 6.4K shared prefix rises from **1/10 to 10/10 requests**; the token hit rate rises from **15.74% to 64.00%**. Each request has 6.4K shared tokens and 3.6K new tokens, so 64% means the entire shared prefix was recovered. See the [branch-backup test](https://github.com/sgl-project/sglang/pull/33639).
 
-### Draft-state recovery
-
-Speculative decoding uses a draft model to propose tokens and a target model to verify them. The draft can keep its own KV and other history buffers for the same document. If a cache hit restores only the target's data, the draft may have lost its history or be looking in the wrong memory slots. Its proposals can then become less likely to pass verification, even though the target successfully reused the prefix.
-
-HiCache therefore backs up and restores the associated draft state in the same operation as the target state. With compatible layouts, it packs draft data into the matching target Host pool. Other layouts use a separate sidecar pool whose slots follow the target's KV or sliding-window slots. Both arrangements preserve which draft data belongs to each cached prefix through L2 and L3 transfers.
-
-<DraftRestoreViz client:visible lang="en" />
-
-The DSpark test runs the same 200 prompts on DeepSeek-V4-Flash-0731, first cold and then after restoring from L3. Before the fix, draft acceptance falls from **46.77% to 33.57%** on restore. After the fix, the two runs achieve **46.12% and 46.86%**. Restoring the draft's history keeps its proposals useful after a cache hit. See the [draft-recovery validation](https://github.com/sgl-project/sglang/pull/30393).
+Speculative decoding also requires backing up and restoring the draft model’s history. Otherwise, even if the target model reuses a cached prefix, missing draft history can lower the acceptance rate of proposed tokens.
 
 ### Host memory as a buffer
 
@@ -225,14 +190,6 @@ Buffer-only mode uses Host memory only while data is in transit. For backup, A c
 <HostModeViz client:visible lang="en" />
 
 Host memory now needs room for the transfers in progress rather than a retained collection of documents. The tradeoff is that a future GPU miss must read L3 again instead of hitting a long-lived Host copy. A smaller Host buffer also holds fewer simultaneous transfers. Buffer-only saves retained Host copies by relying more on L3 reads.
-
-### Storage backends
-
-Suppose a deployment switches L3 from local files to Mooncake. Reading and writing KV now uses a storage service instead of file operations. But HiCache still needs to check for cached prefixes, start prefetches, schedule Host → GPU loads, and wait for the data before using it. These jobs should not need a new implementation for every storage backend.
-
-HiCache separates storage access from cache scheduling. A backend implements how to check whether a key exists, read its data into Host, and write Host data to storage. The shared cache controller decides when to issue these operations and coordinates their completion. Mooncake, DeepSeek 3FS, and local files use this interface; NIXL connects storage systems through a transfer library.
-
-Adding a backend therefore means implementing its storage access, while keeping HiCache's existing prefetch, backup, and GPU-loading flow. Deployments can choose where to retain their KV without building another cache scheduler.
 
 ## Results
 
@@ -273,25 +230,3 @@ the [multi-turn evaluation](https://www.lmsys.org/blog/2026-08-11-unified-radix-
 Input throughput counts all input tokens served per second, including cached
 tokens. Reusing a long prefix lets the service handle those tokens without
 recomputing their KV, leaving more GPU time for new input.
-
-## Summary
-
-HiCache extends the lifetime of reusable prefixes beyond GPU memory. Its
-engineering choices make that extra capacity usable: layout and loading reduce
-transfer overhead, policies control when I/O is worthwhile, and component and
-draft recovery preserve the state needed to continue inference. Host-buffer and
-backend choices adapt the same hierarchy to deployment resources.
-
-The combined benefit appears when saved prefill work exceeds recovery cost and
-the lower tiers retain history that would otherwise be lost. The benchmarks
-show that benefit for long inputs and growing conversations.
-
-## Original blog acknowledgments
-
-The original blog was written by Zhiqiang Xie. It credits the Alibaba Cloud
-TairKVCache team for 3FS integration; contributors from Ant Group, Alibaba Cloud,
-Approaching.AI, and the Mooncake community for Mooncake integration; and NVIDIA's
-Dynamo team for NIXL. It also thanks contributors from SGLang, LMCache, NVIDIA,
-and Stanford for the design and implementation, and the LMCache, AIBrix, PrisDB,
-and ByteDance EIC teams for ecosystem work. The original article lists the
-individual contributors.

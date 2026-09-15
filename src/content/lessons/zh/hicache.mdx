@@ -9,32 +9,6 @@ tryOnSglang: "https://github.com/sgl-project/sglang"
 references:
   - label: "LMSYS Blog：SGLang HiCache: Fast Hierarchical KV Caching with Your Favorite Storage Backends"
     url: "https://www.lmsys.org/blog/2025-09-10-sglang-hicache/"
-  - label: "sglang#8651：Support page first layout  zero copy for mooncake store"
-    url: "https://github.com/sgl-project/sglang/pull/8651"
-  - label: "sglang#9109：3fs zerocopy"
-    url: "https://github.com/sgl-project/sglang/pull/9109"
-  - label: "SGLang Cookbook：HiCache"
-    url: "https://sgl-project-sglang-93.mintlify.app/optimization/hicache"
-  - label: "SGLang：HiCache 基准测试"
-    url: "https://github.com/sgl-project/sglang/tree/main/benchmark/hicache"
-  - label: "sglang#2693：Hierarchical Caching for SGLang"
-    url: "https://github.com/sgl-project/sglang/pull/2693"
-  - label: "sglang#7313：Kernels for efficient KV cache IO"
-    url: "https://github.com/sgl-project/sglang/pull/7313"
-  - label: "sglang#7704：Hicache Storage Layer Prototype"
-    url: "https://github.com/sgl-project/sglang/pull/7704"
-  - label: "sglang#21259：[HiCache & HybridModel] mooncake backend support DSA & mamba  model"
-    url: "https://github.com/sgl-project/sglang/pull/21259"
-  - label: "sglang#30393：[HiCache] Support packed and sidecar draft caches for MTP/EAGLE/DSpark"
-    url: "https://github.com/sgl-project/sglang/pull/30393"
-  - label: "sglang#33639：[Hicache][2/2]Support Mamba branching in Unified Radix Cache with HiCache"
-    url: "https://github.com/sgl-project/sglang/pull/33639"
-  - label: "sglang#34798：[HiCache] Buffer-only mode for HiCache host memory layer"
-    url: "https://github.com/sgl-project/sglang/pull/34798"
-  - label: "sglang#31920：[HiCache] Add model-aware key isolation to Mooncake Store"
-    url: "https://github.com/sgl-project/sglang/pull/31920"
-  - label: "sglang#37050：docs: state that HiCache L2 is instance-private and only L3 is shared"
-    url: "https://github.com/sgl-project/sglang/pull/37050"
   - label: "LMSYS Blog: Unified Radix Cache: One Tree for Hybrid Model Prefix Caching"
     url: "https://www.lmsys.org/blog/2026-08-11-unified-radix-cache/"
 ---
@@ -47,7 +21,6 @@ import PrefetchViz from "../../../viz/hicache/PrefetchViz";
 import ResultsViz from "../../../viz/hicache/ResultsViz";
 import TimelineViz from "../../../viz/hicache/TimelineViz";
 import StateRestoreViz from "../../../viz/hicache/StateRestoreViz";
-import DraftRestoreViz from "../../../viz/hicache/DraftRestoreViz";
 import HostModeViz from "../../../viz/hicache/HostModeViz";
 import MultiTurnBenchViz from "../../../viz/unified-radix-cache/MultiTurnBenchViz";
 
@@ -177,15 +150,7 @@ Host到GPU能这样重叠，是因为Host搬回 GPU 时可以按模型层取数�
 
 恢复测试采用 write-through 策略：先生成新分支的快照，再把它们从 GPU 驱逐，最后重新请求共享前缀。完整恢复 6.4K 共享前缀的请求从 **1/10 增至 10/10**，token 命中率从 **15.74% 增至 64.00%**。每个请求包含 6.4K 共享 token 和 3.6K 新 token，因此 64% 表示共享前缀全部恢复。详见[分支备份测试](https://github.com/sgl-project/sglang/pull/33639)。
 
-### Draft 状态恢复
-
-投机解码由 draft 模型先提出候选 token，再由 target 模型验证。对于同一份文档，draft 也可能保存自己的 KV 和其他历史数据。如果缓存命中后只恢复 target 的数据，draft 可能已经丢失历史，或者去错误的内存位置读取历史。这样，即使 target 成功复用了前缀，draft 提出的 token 也可能更难通过验证。
-
-因此，HiCache 在备份和恢复 target 状态时，也带上对应的 draft 状态。布局兼容时，把 draft 数据打包进对应的 target Host 池；其他布局则单独分配一个 sidecar 池，让它的槽位跟随 target 的 KV 或滑窗槽位。这样，经过 L2、L3 搬运后，仍能找到每段前缀对应的 draft 数据。
-
-<DraftRestoreViz client:visible />
-
-DSpark 测试在 DeepSeek-V4-Flash-0731 上运行同一批 200 个 prompt，先做冷运行，再从 L3 恢复后运行。修复前，恢复后的 draft 接受率从 **46.77% 降至 33.57%**；修复后，两次运行分别为 **46.12% 和 46.86%**。恢复 draft 的历史后，缓存命中也能保住候选 token 的有效性。详见 [draft 恢复验证](https://github.com/sgl-project/sglang/pull/30393)。
+使用投机解码时，还需要一起备份和恢复 draft 模型的历史状态。否则，即使 target 命中了前缀缓存，draft 也可能因历史缺失而降低候选 token 的接受率。
 
 ### Host 内存作为缓冲
 
@@ -196,14 +161,6 @@ Buffer-only 模式让 Host 只在搬运期间保存数据。备份时，A 把 P 
 <HostModeViz client:visible />
 
 这样，Host 只需容纳正在搬运的数据，不必长期保存一整批文档。代价是下一次 GPU 未命中时，要重新读取 L3，无法命中长期保留的 Host 副本；Host 缓冲越小，也能同时容纳越少的搬运任务。Buffer-only 用更多的 L3 读取，换取更少的 Host 副本占用。
-
-### 存储后端
-
-假设部署把 L3 从本地文件换成 Mooncake，KV 的读写就从文件操作变成了访问存储服务。但 HiCache 仍然要查询缓存、发起预取、安排 Host → GPU 加载，并在使用数据前等待搬运完成。这些工作不应该每换一个存储后端就重写一遍。
-
-HiCache 把存储访问与缓存调度分开。后端实现怎样查询一个 key 是否存在、怎样把数据读到 Host，以及怎样把 Host 数据写入存储；共用的 cache controller 决定什么时候发起这些操作，并协调完成时机。Mooncake、DeepSeek 3FS 和本地文件都通过这套接口接入；NIXL 则通过传输库连接存储系统。
-
-因此，接入新后端时，只需实现对应的存储访问，就能沿用 HiCache 已有的预取、备份和 GPU 加载流程。部署可以更换 KV 的保存位置，同时保留同一套缓存调度。
 
 ## 整体效果
 
@@ -226,13 +183,3 @@ HiCache 把存储访问与缓存调度分开。后端实现怎样查询一个 ke
 L1 最先丢失可复用历史，L2 推迟了容量上限出现的时刻。相比仅 L1，增加 L3 后，DeepSeek-V4-Flash 的有效输入吞吐从 9.4K 增至 145.5K tokens/s，缓存命中率保持在约 98%。Inkling-Small 从 15.5K 增至 67.1K，最终命中率为 96.8%。结果表明，当混合模型的对话历史超过较小缓存的容量时，较低层仍能保住复用机会。详见[多轮基准](https://www.lmsys.org/blog/2026-08-11-unified-radix-cache/)。
 
 输入吞吐统计服务每秒处理的所有输入 token，包括命中缓存的部分。复用一段长前缀，就能省去这段前缀的 KV 重算，把更多 GPU 时间留给新增输入。
-
-## 总结
-
-HiCache 把可复用前缀的保存时间延长到了 GPU 显存之外。各项工程选择让新增容量真正可用：布局和加载方式减少搬运开销，策略控制何时值得做 I/O，组件与 draft 恢复保住所需的完整状态，host 缓冲与后端选择则让同一套分层机制适应不同部署资源。
-
-当省下的 prefill 工作超过恢复成本，而且较低层保住了原本会丢失的历史，系统就能获得整体收益。长输入和不断增长的对话基准验证了这种效果。
-
-## 原博客致谢
-
-原博客由 Zhiqiang Xie 撰写。文中感谢阿里云 TairKVCache 团队完成 3FS 集成；蚂蚁集团、阿里云、Approaching.AI 和 Mooncake 社区的贡献者推进 Mooncake 集成；NVIDIA Dynamo 团队完成 NIXL 集成。同时感谢 SGLang、LMCache、NVIDIA 和 Stanford 的贡献者参与设计与实现，以及 LMCache、AIBrix、PrisDB 和字节跳动 EIC 团队的生态工作。完整个人名单见原文。
