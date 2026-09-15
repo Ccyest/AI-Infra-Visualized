@@ -193,7 +193,7 @@ export const UPDATE = {
   state0: { en: "After document + question A", zh: "读完「文档＋问题甲」" },
   state1: { en: "After document only", zh: "只读完「文档」" },
   newCopy: { en: "GPU → Host: copy the document snapshot only", zh: "GPU → Host：只补存文档快照" },
-  noCopy: { en: "Host already has KV → snapshot backup skipped", zh: "Host 已有 KV → 跳过快照备份" },
+  noCopy: { en: "Full KV marked backed up → new snapshot skipped", zh: "全注意力 KV 已备份 → 新快照未触发补存" },
   draftTitle: { en: "DSpark L3 replay", zh: "DSpark L3 恢复" },
   draftNote: { en: "#30393 · DeepSeek-V4-Flash-0731 · 200 ShareGPT prompts · 128 output tokens/request", zh: "#30393 · DeepSeek-V4-Flash-0731 · 200 条 ShareGPT prompt · 每请求输出 128 token" },
   target: { en: "Target cache", zh: "Target 缓存" },

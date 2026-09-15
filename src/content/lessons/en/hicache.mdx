@@ -192,11 +192,13 @@ Hybrid models may need sliding-window KV and recurrent state snapshots (checkpoi
 
 #### Backing up new recurrent snapshots
 
-This problem concerns layers that retain history as recurrent state, such as linear attention and Mamba. Their state changes as each token arrives. A checkpoint saves that state at a particular prefix end. Full-attention layers keep per-token KV; a recurrent layer's later snapshot cannot simply be sliced back to an earlier position.
+This problem concerns layers that retain history as recurrent state, such as linear attention and Mamba. Their state changes as each token arrives. A checkpoint saves that state at a particular prefix end. Full-attention layers keep per-token KV; recurrent layers keep overwriting their state, so retaining their history requires additional care.
 
 Suppose request A is “document + question A”. Host already holds its full-attention KV and the snapshot after question A. Request B is “the same document + question B”. In this example, processing B creates a snapshot at the document's end, before either question. A's existing snapshot includes question A, so it cannot replace this new document snapshot.
 
-Host stores full-attention KV and recurrent snapshots in separate pools, each associated with its prefix. Previously, an existing Host KV copy caused backup to skip the newly created snapshot. SGLang's write-through path now backs up that snapshot separately, leaving the existing KV and A's snapshot in place. When the document cache is later evicted from the GPU, its KV and document-end snapshot can both be restored from Host, avoiding recomputation caused by the missing state.
+**Before: new nodes trigger backup.** The insertion flow starts a backup when it adds a new cache node. During execution, a node with full-attention KV already in Host is treated as backed up and skipped. A recurrent snapshot created later for an existing prefix can therefore remain on the GPU, without a path to back up that snapshot separately to Host.
+
+**After: a new snapshot on an existing prefix also triggers backup.** On the write-through path, SGLang checks the prefix’s recurrent snapshot: if it exists on the GPU but has no Host copy, it schedules a separate backup. Only the missing snapshot is copied; existing KV and snapshots stay in place. After GPU eviction, the snapshot can be restored from Host, reducing recomputation.
 
 Snapshots at the ends of questions A and B can also be retained separately, for continuing their respective histories. The snapshot added here is at the shared document's end: it lets a later request reuse the document and then compute its own question.
 
