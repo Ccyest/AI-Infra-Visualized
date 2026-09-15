@@ -12,7 +12,7 @@ import { JSDOM } from "jsdom";
 test("HiCache survives an early first animation frame and all playback controls", async (t) => {
   const temporary = await mkdtemp(path.join(tmpdir(), "hicache-interactions-"));
   const dom = new JSDOM('<div id="app"></div>', { url: "http://localhost" });
-  const globals = ["window", "document", "navigator", "HTMLElement", "performance", "requestAnimationFrame", "cancelAnimationFrame", "IS_REACT_ACT_ENVIRONMENT", "MessageChannel"];
+  const globals = ["window", "document", "navigator", "HTMLElement", "performance", "requestAnimationFrame", "cancelAnimationFrame", "IS_REACT_ACT_ENVIRONMENT", "MessageChannel", "ResizeObserver"];
   const descriptors = new Map(globals.map((name) => [name, Object.getOwnPropertyDescriptor(globalThis, name)]));
   const channels = [];
   globalThis.MessageChannel = class extends MessageChannel {
@@ -29,6 +29,7 @@ test("HiCache survives an early first animation frame and all playback controls"
   });
   Object.assign(globalThis, { window: dom.window, document: dom.window.document, HTMLElement: dom.window.HTMLElement, IS_REACT_ACT_ENVIRONMENT: true });
   Object.defineProperty(globalThis, "navigator", { value: dom.window.navigator, configurable: true });
+  globalThis.ResizeObserver = class { observe() {} disconnect() {} };
   window.matchMedia = () => ({ matches: false, addEventListener() {}, removeEventListener() {} });
   let now = 100;
   let frameId = 0;
@@ -173,16 +174,42 @@ test("HiCache survives an early first animation frame and all playback controls"
       const steps = container.querySelectorAll(".hc-checkpoint-steps button");
       const hostSnapshot = () => container.querySelector('[data-tier="host"] [data-document="true"]');
       const gpuSnapshot = () => container.querySelector('[data-tier="gpu"] [data-document="true"]');
+      const advance = async (count) => {
+        for (let i = 0; i < count; i++) await act(async () => {
+          now += 50;
+          const callbacks = [...frames.values()]; frames.clear();
+          callbacks.forEach((callback) => callback(now));
+        });
+      };
       assert.equal(hostSnapshot().dataset.present, "false");
       await act(async () => steps[1].click());
+      await advance(40);
       assert.equal(gpuSnapshot().dataset.present, "true");
       assert.equal(hostSnapshot().dataset.present, "false", "New GPU state has not yet been backed up");
       await act(async () => steps[2].click());
+      await advance(12);
+      const flight = container.querySelector('.hc-checkpoint-flight[data-kind="snapshot"]');
+      assert.ok(flight, "The snapshot travels between the pools");
+      assert.ok(Number(flight.dataset.progress) > 0 && Number(flight.dataset.progress) < 1);
+      assert.equal(hostSnapshot().dataset.present, "false", "Host cannot expose a copy before it lands");
+      assert.equal(gpuSnapshot().dataset.present, "true", "Backup retains its GPU source");
+      await act(async () => container.querySelectorAll(".viz-controls button")[0].click());
+      const paused = flight.dataset.progress;
+      await advance(5);
+      assert.equal(flight.dataset.progress, paused, "Pause freezes the flying block");
+      await act(async () => container.querySelectorAll(".viz-controls button")[2].click());
+      await advance(40);
       assert.equal(hostSnapshot().dataset.present, "true");
+      assert.equal(container.querySelector('.hc-checkpoint-flight'), null);
       await act(async () => steps[3].click());
+      await advance(40);
       assert.equal(gpuSnapshot().dataset.present, "false");
       assert.equal(hostSnapshot().dataset.present, "true", "Host copy survives GPU eviction");
       await act(async () => steps[4].click());
+      await advance(12);
+      assert.equal(container.querySelectorAll('.hc-checkpoint-flight').length, 2, "Recovery transfers KV and recurrent state");
+      assert.equal(gpuSnapshot().dataset.present, "false", "GPU waits for recovery to finish");
+      await advance(30);
       assert.equal(gpuSnapshot().dataset.present, "true");
       await act(async () => container.querySelectorAll(".hc-picker button")[0].click());
       assert.equal(gpuSnapshot().dataset.present, "false", "Old path cannot restore the missing snapshot");
@@ -190,9 +217,12 @@ test("HiCache survives an early first animation frame and all playback controls"
       assert.equal(container.querySelector('[data-tier="host"] [data-document="false"]').dataset.present, "true", "The older A snapshot remains separate");
       assert.equal(container.querySelector('[data-tier="host"] .hc-checkpoint-pages').dataset.present, "true", "KV alone is insufficient for full recovery");
       await act(async () => steps[2].click());
-      assert.equal(hostSnapshot().dataset.present, "false", "Old backup skips the new state");
+      await advance(12);
+      assert.equal(container.querySelector('.hc-checkpoint-flight'), null, "Skipped backups do not animate a copy");
+      assert.equal(hostSnapshot().dataset.present, "false");
       await act(async () => container.querySelectorAll(".viz-controls button")[3].click());
       assert.equal(container.querySelector('input[type="range"]').value, "0");
+      assert.equal(frames.size, 0, "Reset cancels in-flight animation");
     } finally {
       await act(async () => root.unmount());
     }

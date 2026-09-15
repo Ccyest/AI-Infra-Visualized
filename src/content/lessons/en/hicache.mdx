@@ -170,9 +170,9 @@ Suppose the GPU is processing request A when request B arrives. B needs a docume
 
 If B is ready to run but its L3 read is unfinished, the prefetch policy decides what happens next. Best-effort stops waiting, reuses the prefix already available, and recomputes the rest. Wait-complete keeps B waiting for the read to finish. Timeout gives the read more time, up to a limit, then proceeds with the available prefix.
 
-<PrefetchViz client:visible lang="en" />
-
 Waiting is useful when loading the missing KV takes less time than recomputing it. For a long cached document, a short extra wait can save substantial prefill work. When the storage read is much slower, recomputing can finish sooner. Prefetch tries to complete the read before this choice is necessary; the policy handles whatever wait remains.
+
+<PrefetchViz client:visible lang="en" />
 
 #### Backup
 
@@ -185,8 +185,6 @@ For GPU → Host backup, HiCache provides three choices:
 | Write-through | Proactively copy KV to Host when it enters the cache | Preserve more prefixes, with more backup traffic |
 | Write-through-selective | Use hit counts to select hot prefixes for Host backup | Spend less bandwidth on rarely reused prefixes |
 | Write-back | Defer Host backup until the KV is being evicted from GPU memory | Save the early copy, but add backup work at eviction |
-
-For a frequently reused document, proactive backup leaves a Host copy ready after its GPU copy is evicted. Selective backup favors these hot documents over one-off inputs. Write-back keeps the KV on the GPU until eviction makes the backup necessary, trading less early backup traffic for work at eviction time.
 
 ### Hybrid-model state
 

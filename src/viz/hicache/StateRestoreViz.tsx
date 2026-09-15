@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import VizStage from "../../components/core/VizStage";
-import { useSimPlayer } from "../../components/core/useSimPlayer";
+import { useLayoutTransfer } from "./useLayoutTransfer";
+import CheckpointFlight from "./CheckpointFlight";
 import type { Locale } from "../../lib/i18n";
 import { UPDATE } from "./strings";
 import "./styles.css";
@@ -56,29 +57,46 @@ function StorageTier({ lang, host, documentPresent, snapshotPresent, fresh }: {
 
 export default function StateRestoreViz({ lang = "zh" }: { lang?: Locale }) {
   const [fixed, setFixed] = useState(true);
-  const player = useSimPlayer(4, 0.55);
-  const t = player.t;
-  const onGpu = (t >= 1 && t <= 2) || (t === 4 && fixed);
-  const onHost = fixed && t >= 2;
+  const transfer = useLayoutTransfer(4);
+  const storage = useRef<HTMLDivElement>(null);
+  const progress = transfer.progress;
+  const t = Math.ceil(progress);
+  const backingUp = fixed && progress > 1 && progress < 2;
+  const restoring = fixed && progress > 3 && progress < 4;
+  const onGpu = (progress >= 1 && progress < 3) || (progress === 4 && fixed);
+  const onHost = fixed && progress >= 2;
+  const selectStep = (step: number) => {
+    transfer.seek(Math.max(0, step - 1));
+    if (step > 0) transfer.nextStep();
+  };
+  const player = {
+    t, total: 4, playing: transfer.playing, toggle: transfer.toggle, reset: transfer.reset,
+    seek: selectStep,
+    stepBy: (delta: number) => delta > 0 ? transfer.nextStep() : transfer.seek(Math.max(0, t - 1)),
+  };
   const event = t === 0 ? "stateInitial" : t === 1 ? "stateCreated"
     : t === 2 ? (fixed ? "newCopy" : "noCopy")
     : t === 3 ? "stateEvicted" : (fixed ? "stateRestore" : "stateRecompute");
 
   return <VizStage title={UPDATE.stateTitle[lang]} subtitle={UPDATE.stateNote[lang]} player={player} lang={lang} className="hc-viz hc-checkpoint-viz">
-    <div className="hc-picker">{[false, true].map((value) => <button type="button" className="viz-btn" key={String(value)} aria-pressed={fixed === value} onClick={() => setFixed(value)}>{UPDATE[value ? "fixed" : "baseline"][lang]}</button>)}</div>
+    <div className="hc-picker">{[false, true].map((value) => <button type="button" className="viz-btn" key={String(value)} aria-pressed={fixed === value} onClick={() => { transfer.seek(t); setFixed(value); }}>{UPDATE[value ? "fixed" : "baseline"][lang]}</button>)}</div>
     <RequestPrefixes lang={lang} />
     <nav className="hc-checkpoint-steps" aria-label={UPDATE.stateTitle[lang]}>
       {STEPS.map((step, index) => <button type="button" key={step} onClick={() => player.seek(index)} aria-current={t === index ? "step" : undefined}>
         <span>{index + 1}</span>{UPDATE[step][lang]}
       </button>)}
     </nav>
-    <div className="hc-checkpoint-storage">
+    <div className="hc-checkpoint-storage" ref={storage}>
       <StorageTier lang={lang} host={false} documentPresent={onGpu} snapshotPresent={onGpu} fresh={t === 1} />
       <div className="hc-checkpoint-transfer" data-step={t} data-fixed={fixed} aria-live="polite">
         <span aria-hidden="true">{t === 2 && fixed ? "↓" : t === 4 && fixed ? "↑" : "·"}</span>
         <strong>{UPDATE[event][lang]}</strong>
       </div>
       <StorageTier lang={lang} host documentPresent snapshotPresent={onHost} fresh={t === 2} />
+      {(backingUp || restoring) && <CheckpointFlight container={storage} restoring={restoring}
+        progress={progress - (restoring ? 3 : 1)} kind="snapshot" lang={lang} />}
+      {restoring && <CheckpointFlight container={storage} restoring
+        progress={progress - 3} kind="kv" lang={lang} />}
     </div>
   </VizStage>;
 }
