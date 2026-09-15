@@ -176,7 +176,7 @@ Waiting is useful when loading the missing KV takes less time than recomputing i
 
 #### Backup
 
-A later request can hit Host memory only if the KV was backed up earlier. After the GPU computes a document's KV, HiCache can copy it to Host and, with L3 enabled, retain it in storage as well. Copying every cached prefix also spends bandwidth and memory on documents that nobody asks about again.
+A later request can hit Host memory only if the KV was backed up earlier. After the GPU computes a document's KV, HiCache can copy it to Host and, with L3 enabled, retain it in storage as well. A backup adds a copy in a lower tier. The GPU copy can remain until it is evicted. The same prefix KV can therefore coexist in L1, L2, and L3, although not every prefix always has three copies. Copying every cached prefix also spends bandwidth and memory on documents that nobody asks about again.
 
 For GPU → Host backup, HiCache provides three choices:
 
