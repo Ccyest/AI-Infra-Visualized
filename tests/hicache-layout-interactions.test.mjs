@@ -239,6 +239,14 @@ test("HiCache survives an early first animation frame and all playback controls"
       const present = (mode, location) =>
         mode.querySelector(`[data-location="${location}"] [data-present]`).dataset.present === "true";
       const next = container.querySelectorAll('.viz-controls button')[2];
+      const advance = async (count) => {
+        for (let i = 0; i < count; i++) await act(async () => {
+          now += 50;
+          const callbacks = [...frames.values()];
+          frames.clear();
+          callbacks.forEach(callback => callback(now));
+        });
+      };
       for (let step = 0; step <= 4; step++) {
         for (const mode of modes) {
           assert.ok(present(mode, "gpu-a"), "Backing up must keep the source GPU copy");
@@ -247,7 +255,26 @@ test("HiCache survives an early first animation frame and all playback controls"
         }
         assert.deepEqual(modes.map(mode => present(mode, "host-a")), [step >= 1, step === 1]);
         assert.deepEqual(modes.map(mode => present(mode, "host-b")), [step >= 3, step === 3]);
-        if (step < 4) await act(async () => next.click());
+        if (step === 4) continue;
+        await act(async () => next.click());
+        await advance(16);
+        const flights = [...container.querySelectorAll('.hc-host-flight')];
+        assert.equal(flights.length, 2, "Both modes animate the same transfer");
+        assert.equal(flights[0].dataset.progress, flights[1].dataset.progress);
+        const destination = ["host-a", "l3", "host-b", "gpu-b"][step];
+        assert.ok(modes.every(mode => !present(mode, destination)), "Destination appears only after landing");
+        const source = ["gpu-a", "host-a", "l3", "host-b"][step];
+        assert.ok(modes.every(mode => present(mode, source)), "Source stays available until landing");
+        if (step === 0 || step === 3) {
+          await act(async () => container.querySelector('.viz-controls button').click());
+          const paused = flights[0].dataset.progress;
+          await advance(10);
+          assert.equal(container.querySelector('.hc-host-flight').dataset.progress, paused);
+          assert.equal(container.querySelector('.viz-controls button').textContent, lang === "zh" ? "播放" : "Play");
+          await act(async () => next.click());
+        }
+        await advance(36);
+        assert.equal(container.querySelectorAll('.hc-host-flight').length, 0);
       }
       await act(async () => container.querySelectorAll('.viz-controls button')[1].click());
       assert.ok(present(modes[1], "host-b"), "Stepping back restores the transient Host copy");

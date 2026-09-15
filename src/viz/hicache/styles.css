@@ -61,7 +61,7 @@
 .hc-host-comparison { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; padding: 0 20px 20px; }
 .hc-host-mode { min-width: 0; border: 1px solid var(--grid); border-radius: 10px; padding: 16px; }
 .hc-host-mode h4 { margin: 0 0 16px; text-align: center; font-size: 15px; }
-.hc-host-grid { display: grid; grid-template-columns: 42px repeat(2, minmax(0, 1fr)); gap: 6px 10px; align-items: center; text-align: center; font-size: 12px; }
+.hc-host-grid { position: relative; display: grid; grid-template-columns: 42px repeat(2, minmax(0, 1fr)); gap: 6px 10px; align-items: center; text-align: center; font-size: 12px; }
 .hc-host-grid > b { font-weight: 500; }
 .hc-host-grid .hc-host-tier { text-align: left; font-weight: 700; }
 .hc-host-slot { display: flex; justify-content: center; align-items: center; min-height: 38px; border: 1px dashed var(--grid); border-radius: 6px; color: var(--muted); }
