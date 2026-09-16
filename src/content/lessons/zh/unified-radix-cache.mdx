@@ -25,7 +25,6 @@ import ReuseRuleViz from "../../../viz/unified-radix-cache/ReuseRuleViz";
 import ComponentMatrixViz from "../../../viz/unified-radix-cache/ComponentMatrixViz";
 import TreeReplayViz from "../../../viz/unified-radix-cache/TreeReplayViz";
 import BoundaryVoteViz from "../../../viz/unified-radix-cache/BoundaryVoteViz";
-import TierFlowViz from "../../../viz/unified-radix-cache/TierFlowViz";
 import IndexReuseViz from "../../../viz/unified-radix-cache/IndexReuseViz";
 import MultiTurnBenchViz from "../../../viz/unified-radix-cache/MultiTurnBenchViz";
 import SessionEvictViz from "../../../viz/unified-radix-cache/SessionEvictViz";
@@ -65,11 +64,7 @@ Matching 沿匹配路径走查，各组件在每个候选边界检查自己的�
 
 ## HiCache 跨内存层级
 
-HiCache 把缓存扩展到 GPU L1、主机内存 L2 和外部存储 L3。Write-through 将 L1 数据备份到 L2，两层同时保留副本，节点分别记录两层的页索引。内存吃紧时，各层回收符合驱逐条件的页，其他层的副本可继续复用。
-
-新请求先匹配本地树，检查各组件的复用条件和数据位置，得到 GPU 可直接复用的边界，以及包含 L2 数据的可用边界。余下的前缀通过 hash/key 查询独立存储的 L3，命中的数据先预取到 L2，再将所需的 L2 页回载到 L1，供 GPU 使用。
-
-<TierFlowViz client:visible />
+HiCache 将 Unified Radix Cache 扩展到 GPU L1、主机内存 L2 和外部存储 L3，分层设计与数据搬运见 [SGLang HiCache](https://yichizhang.dev/AI-Infra-Visualized/lessons/hicache/) 一文。
 
 ### 组件与 sidecar
 

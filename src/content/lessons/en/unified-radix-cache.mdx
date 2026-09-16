@@ -25,7 +25,6 @@ import ReuseRuleViz from "../../../viz/unified-radix-cache/ReuseRuleViz";
 import ComponentMatrixViz from "../../../viz/unified-radix-cache/ComponentMatrixViz";
 import TreeReplayViz from "../../../viz/unified-radix-cache/TreeReplayViz";
 import BoundaryVoteViz from "../../../viz/unified-radix-cache/BoundaryVoteViz";
-import TierFlowViz from "../../../viz/unified-radix-cache/TierFlowViz";
 import IndexReuseViz from "../../../viz/unified-radix-cache/IndexReuseViz";
 import MultiTurnBenchViz from "../../../viz/unified-radix-cache/MultiTurnBenchViz";
 import SessionEvictViz from "../../../viz/unified-radix-cache/SessionEvictViz";
@@ -65,11 +64,7 @@ Matching walks the matched path, and each component checks its data at every can
 
 ## HiCache across memory tiers
 
-HiCache extends the cache to GPU L1, host memory L2, and external storage L3. Write-through backs up L1 data to L2, keeping both copies and recording their page indices separately on the node. Under memory pressure, each tier reclaims eligible pages while copies in other tiers remain available for reuse.
-
-A new request first matches the local tree, checking reuse conditions and data locations. This finds the boundary ready for GPU reuse and the boundary available with L2 data. The remaining prefix is looked up by hash/key in independent L3 storage. Hits are prefetched into L2, then the required L2 pages are loaded into L1 for the GPU.
-
-<TierFlowViz client:visible lang="en" />
+HiCache extends Unified Radix Cache across GPU L1, host memory L2, and external storage L3. See [HiCache in SGLang](https://yichizhang.dev/AI-Infra-Visualized/en/lessons/hicache/) for its tiering and data transfers.
 
 ### Components and sidecars
 
