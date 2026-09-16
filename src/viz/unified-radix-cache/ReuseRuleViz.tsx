@@ -2,9 +2,7 @@ import type { Locale } from "../../lib/i18n";
 import { REUSE } from "./strings";
 import "./styles.css";
 
-/* 同一条 12-token 匹配前缀上,三种组件各自能复用的区域:
-   FULL 盖满整条路径,SWA 只认最后 4 个槽(更早的是 tombstone),
-   MAMBA 只有 t8 处一个 checkpoint。纯静态,无数字来自 benchmark。 */
+/* Component requirements at the same candidate boundary; gray is optional storage. */
 
 const N = 12;
 const SWA_WINDOW = 4;
@@ -33,21 +31,21 @@ export default function ReuseRuleViz({ lang = "zh" }: { lang?: Locale }) {
         <div className="urc-reuse-row">
           <span className="urc-reuse-rowlabel full">{REUSE.fullLabel[lang]}</span>
           {tokens.map((i) => (
-            <span className="urc-reuse-cell covered full" key={i} />
+            <span className={`urc-reuse-cell${i <= CKPT ? " covered full" : ""}`} key={i} />
           ))}
         </div>
 
         <div className="urc-reuse-row">
           <span className="urc-reuse-rowlabel swa">{REUSE.swaLabel[lang]}</span>
           {tokens.map((i) =>
-            i > N - SWA_WINDOW ? (
+            i > CKPT - SWA_WINDOW && i <= CKPT ? (
               <span
                 className="urc-reuse-cell covered swa"
                 key={i}
                 title={REUSE.window[lang]}
               />
             ) : (
-              <span className="urc-reuse-cell tomb" key={i} />
+              <span className="urc-reuse-cell" key={i} title={REUSE.optional[lang]} />
             ),
           )}
         </div>

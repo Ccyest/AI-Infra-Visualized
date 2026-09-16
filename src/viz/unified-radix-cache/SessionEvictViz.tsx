@@ -6,7 +6,7 @@ import { SESSION, SESSION_STEPS } from "./strings";
 import "./styles.css";
 
 /* 6 步走查(t=0..5):同一批缓存条目,左边按 LRU、右边按会话感知驱逐。
-   设定:A1、A2 属于在座会话 A,B1 属于在座会话 B,C1、C2 无引用;
+   设定:A1 由 A 引用,AB 由 A/B 共享,B1 由 B 引用,C1、C2 无引用;
    C2 恰好最近被访问过(LRU 因此留它)。A1、B1 访问时间最久。 */
 
 const TOTAL = 5;
@@ -18,7 +18,7 @@ interface Entry {
 
 const ENTRIES: Entry[] = [
   { id: "A1", cls: "sa" },
-  { id: "A2", cls: "sa" },
+  { id: "AB", cls: "sa" },
   { id: "B1", cls: "sb" },
   { id: "C1", cls: "sc" },
   { id: "C2", cls: "sc" },
@@ -41,6 +41,7 @@ export default function SessionEvictViz({ lang = "zh" }: { lang?: Locale }) {
     if (pane === "lru") {
       return e.id === "C2" ? SESSION.recentTag[lang] : "";
     }
+    if (e.id === "AB") return t >= 4 ? "A · 1" : "A + B · 2";
     if (e.cls === "sa") return `A · ${SESSION.active[lang]}`;
     if (e.cls === "sb")
       return t >= 4 ? `B · ${SESSION.closed[lang]}` : `B · ${SESSION.active[lang]}`;

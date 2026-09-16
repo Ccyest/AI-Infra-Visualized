@@ -12,15 +12,16 @@ import type { Localized } from "../../lib/i18n";
 export const REUSE = {
   title: { zh: "三种复用语义图示", en: "Reuse semantics diagram" },
   subtitle: {
-    zh: "同一条 12-token 匹配前缀 · SWA 窗口取 4 · checkpoint 在 t8",
-    en: "One 12-token matched prefix · SWA window of 4 · checkpoint at t8",
+    zh: "候选边界 t8 · SWA 窗口 W = 4 · 灰格表示边界外的数据",
+    en: "Candidate boundary t8 · SWA window W = 4 · gray cells are outside the required range",
   },
   prefixLabel: { zh: "匹配到的 token 前缀", en: "Matched token prefix" },
   fullLabel: { zh: "FULL · 整条路径", en: "FULL · whole path" },
-  swaLabel: { zh: "SWA · 尾部窗口", en: "SWA · trailing window" },
+  swaLabel: { zh: "SWA · 所需窗口", en: "SWA · required window" },
   mambaLabel: { zh: "MAMBA · 单点 checkpoint", en: "MAMBA · exact checkpoint" },
   checkpoint: { zh: "checkpoint", en: "checkpoint" },
-  window: { zh: "窗口", en: "window" },
+  window: { zh: "复用所需窗口", en: "Required reuse window" },
+  optional: { zh: "本次复用无需此处数据；可以保留或回收", en: "Not required for this reuse; may be retained or evicted" },
 } satisfies Record<string, Localized>;
 
 /* ---------------- ComponentMatrixViz ---------------- */
@@ -83,49 +84,36 @@ export const VOTE = {
 /* ---------------- TierFlowViz ---------------- */
 
 export const TIER = {
-  title: { zh: "跨层搬运图示", en: "Tier movement diagram" },
-  subtitle: {
-    zh: "L3 为 500 GiB Mooncake Store",
-    en: "L3 is a 500 GiB Mooncake Store",
-  },
+  title: { zh: "HiCache 备份与回载", en: "HiCache backup and load" },
+  subtitle: { zh: "FULL 前缀 p · write-through 示例 · 各帧表示操作完成后的状态", en: "FULL prefix p · write-through example · frames show completed operations" },
   l1: { zh: "GPU L1", en: "GPU L1" },
   l2: { zh: "Host L2", en: "Host L2" },
-  l3: { zh: "外部 L3 · Mooncake", en: "External L3 · Mooncake" },
-  payload: { zh: "prefix p 的 FULL KV", en: "FULL KV of prefix p" },
-  sidecars: { zh: "sidecar 跟着搬(同一套索引)", en: "sidecars move along (same indices)" },
-  identity: { zh: "前缀身份:不变", en: "Prefix identity: unchanged" },
+  l3: { zh: "外部 L3", en: "External L3" },
+  host: { zh: "L2 命中", en: "L2 hit" },
+  storage: { zh: "L3 命中", en: "L3 hit" },
+  payload: { zh: "前缀 p 的 KV 副本", en: "KV copy for prefix p" },
+  empty: { zh: "无副本", en: "No copy" },
 } satisfies Record<string, Localized>;
 
-export const TIER_STEPS: Localized[] = [
-  {
-    zh: "prefix p 的 payload 和 sidecar 都驻留在 GPU L1,radix 树上的身份是 token 序列坐标。",
-    en: "Prefix p's payload and sidecars reside in GPU L1; its identity on the radix tree is the token-sequence coordinate.",
-  },
-  {
-    zh: "L1 容量吃紧,payload 下沉到 Host L2。sidecar 跟着来源池一起搬,身份不变。",
-    en: "L1 fills up, so the payload moves down to Host L2. Sidecars move with their source pool; identity is unchanged.",
-  },
-  {
-    zh: "更冷之后继续下沉到外部 L3(Mooncake)。树上的节点还在,只是 payload 换了楼层。",
-    en: "As it cools further it moves to external L3 (Mooncake). The tree node remains; only the payload changed floors.",
-  },
-  {
-    zh: "新请求命中 prefix p:组件 validator 照常投票。「能不能复用」和「存在哪层」是两个独立问题。",
-    en: "A new request hits prefix p, and component validators vote as usual. Reusability and residence are independent questions.",
-  },
-  {
-    zh: "HybridCacheController 把 payload 取回 L1,sidecar 按同样的索引跟回来,前缀身份从头到尾没变。",
-    en: "HybridCacheController fetches the payload back to L1; sidecars follow on the same indices. The prefix identity never changed.",
-  },
-];
+export const TIER_STEPS = {
+  computed: { zh: "计算完成，KV 驻留 L1。", en: "Computation completes with KV in L1." },
+  backup: { zh: "备份完成，L1 和 L2 同时保留副本。", en: "Backup completes; L1 and L2 both retain a copy." },
+  store: { zh: "按 key 写入 L3，本地副本仍在。", en: "The copy is written to L3 by key; local copies remain." },
+  evictDevice: { zh: "内存压力下释放符合条件的 GPU 页，L2 和 L3 的副本仍在。", en: "Memory pressure reclaims eligible GPU pages; L2 and L3 copies remain." },
+  matchHost: { zh: "新请求本地匹配：device 命中 0，包含 host 的边界为 p。", en: "A new request matches locally: device hit 0; the host-inclusive boundary is p." },
+  evictHost: { zh: "L2 也回收这段数据，本例中对应的本地节点被移除。", en: "L2 reclaims this prefix too; its local nodes are removed in this example." },
+  query: { zh: "新请求本地未命中，用 hash/key 查询 L3，找到前缀 p。", en: "A new request misses locally and finds prefix p by querying L3 with its hash/key." },
+  prefetch: { zh: "预取到 L2 后，把数据接入本地树。", en: "Prefetch completes in L2 and attaches the data to the local tree." },
+  load: { zh: "所需 host 页回载到 L1，GPU 开始复用。", en: "The required host pages load into L1, ready for GPU reuse." },
+} satisfies Record<string, Localized>;
 
 /* ---------------- IndexReuseViz ---------------- */
 
 export const IDX = {
   title: { zh: "索引复用图示", en: "Index reuse diagram" },
   subtitle: {
-    zh: "原文归一化的六页示意 · 点任意一列看这份索引的去向",
-    en: "The blog's normalized six-page case · click a column to trace one index",
+    zh: "原文归一化的六页示意 · 本例仅保留尾部两页 SWA",
+    en: "The blog's normalized six-page case · only the final two SWA pages retained here",
   },
   fullRow: { zh: "FULL 页(组件)", en: "FULL pages (component)" },
   fullSide: { zh: "sidecar ×3 跟随 FULL", en: "sidecars ×3 follow FULL" },
@@ -137,9 +125,9 @@ export const IDX = {
 export const IDX_NOTE = {
   copyOnly: {
     zh: (i: number) =>
-      `选中页号 ${i}:FULL 的 F${i} 和跟随它的三个 sidecar 用同一个页号 ${i}。SWA 窗口不覆盖这一列,没有对应槽。`,
+      `选中页号 ${i}:FULL 的 F${i} 和跟随它的三个 sidecar 用同一个页号 ${i}。本例已回收这一列的 SWA 数据。`,
     en: (i: number) =>
-      `Page ${i}: FULL's F${i} and its three sidecars share page number ${i}. The SWA window does not cover this column, so it has no slot here.`,
+      `Page ${i}: FULL's F${i} and its three sidecars share page number ${i}. This example has reclaimed the SWA data in this column.`,
   },
   copyAndXlate: {
     zh: (i: number) =>
@@ -176,13 +164,13 @@ export const MULTI = {
 export const SESSION = {
   title: { zh: "会话感知驱逐图示", en: "Session-aware eviction diagram" },
   subtitle: {
-    zh: "两栏缓存内容完全相同;引用只改驱逐顺序,不 pin 内存",
-    en: "Both panes hold identical cache content; references reorder eviction, they do not pin",
+    zh: "FULL 条目 · 均未加锁且符合驱逐条件 · AB 由 A、B 共享",
+    en: "FULL entries · unlocked and eligible for eviction · AB is shared by A and B",
   },
   lruHead: { zh: "普通 LRU", en: "Ordinary LRU" },
   sessHead: { zh: "会话感知驱逐", en: "Session-aware eviction" },
-  active: { zh: "在座", en: "active" },
-  closed: { zh: "已结账", en: "closed" },
+  active: { zh: "活跃", en: "active" },
+  closed: { zh: "已关闭", en: "closed" },
   finished: { zh: "无引用", en: "unreferenced" },
   evicted: { zh: "已驱逐", en: "evicted" },
   hit: { zh: "命中 ✓", en: "hit ✓" },
@@ -192,8 +180,8 @@ export const SESSION = {
 
 export const SESSION_STEPS: Localized[] = [
   {
-    zh: "三个会话的前缀都在 GPU:A、B 在座(有会话引用),C 已经结束(无引用)。LRU 只知道谁最近被访问过。",
-    en: "Three sessions' prefixes sit on the GPU: A and B are active (session-referenced), C already finished (unreferenced). LRU only knows what was accessed recently.",
+    zh: "A、B 仍有会话引用，AB 由两者共享，C1、C2 已无引用。",
+    en: "A and B retain session references, AB is shared by both, and C1/C2 are unreferenced.",
   },
   {
     zh: "内存压力到来,需要腾出两块。",
@@ -208,12 +196,12 @@ export const SESSION_STEPS: Localized[] = [
     en: "Session A's next turn arrives: the left pane misses and recomputes the whole prefill; the right pane hits.",
   },
   {
-    zh: "B 调 /close_session:它的引用被移除,条目降级为普通可驱逐,但不会立刻删除。",
-    en: "B calls /close_session: its references are removed and its entries become ordinary evictable data, without being deleted immediately.",
+    zh: "关闭 B：B1 的引用变为 0，AB 仍保留 A 的引用。",
+    en: "Closing B leaves B1 with zero references; AB keeps its reference from A.",
   },
   {
-    zh: "再一次压力:会话感知现在先驱逐 B 的条目;如果还不够,有引用的条目也能作为兜底被驱逐——引用改变顺序,不是 pin。",
-    en: "Pressure again: session-aware eviction now drops B's entries first; if that is not enough, referenced entries remain evictable as fallback — references reorder, they do not pin.",
+    zh: "再次需要空间，本例先驱逐无引用的 B1。AB 仍被 A 引用。",
+    en: "When more space is needed, unreferenced B1 is evicted first in this example. AB still has A's reference.",
   },
 ];
 
@@ -234,8 +222,8 @@ export const SWE = {
 export const RUST_SPLIT = {
   title: { zh: "Rust / Python 所有权图示", en: "Rust and Python ownership diagram" },
   subtitle: {
-    zh: "支持 FULL/SWA/MAMBA,不含 HiCache",
-    en: "Supports FULL/SWA/MAMBA, no HiCache",
+    zh: "树结构与池操作的所有权分工",
+    en: "Ownership of tree structure and pool operations",
   },
   rustHead: { zh: "Rust 树核拥有", en: "Rust tree core owns" },
   rustItems: {
@@ -256,17 +244,13 @@ export const RUST_SPLIT = {
 export const RUST_BENCH = {
   title: { zh: "Rust 原型基准结果图示", en: "Rust prototype benchmark diagram" },
   subtitle: {
-    zh: "200 轮合成对话 · 每轮 100 入 + 100 出 · 6 次试验 · 与 Python 树同机顺序对跑",
-    en: "200-turn synthetic conversation · 100 in + 100 out per turn · 6 trials · run sequentially against the Python tree on the same GPUs",
+    zh: "原型 #29074 · 仅 L1 · 200 轮 · 每轮 100 入 + 100 出 · 6 次试验 · 与 Python 同机顺序对跑",
+    en: "Prototype #29074 · L1 only · 200 turns · 100 in + 100 out per turn · 6 trials · sequential runs on the same GPUs",
   },
   overall: { zh: "全程 200 轮", en: "All 200 turns" },
   tail: { zh: "第 176–200 轮", en: "Turns 176–200" },
   tailShort: { zh: "最后 25 轮", en: "Last 25 turns" },
   ttftLower: { zh: "TTFT 降幅", en: "TTFT reduction" },
-  note: {
-    zh: "「总 TTFT − GPU prefill」的残差含树记账、调度、采样、detokenize 等未打点工作,不是 CPU 时间的直接测量",
-    en: "The residual (total TTFT minus GPU prefill) mixes tree bookkeeping, scheduling, sampling, detokenization, and other uninstrumented work; it is not a direct CPU-time measurement",
-  },
 } satisfies Record<string, Localized>;
 
 /* ---------------- TreeReplayViz ---------------- */
@@ -274,8 +258,8 @@ export const RUST_BENCH = {
 export const REPLAY = {
   title: { zh: "统一 radix 树重放图示", en: "Unified radix tree replay" },
   subtitle: {
-    zh: "滑动窗口 W = 4",
-    en: "Sliding window W = 4",
+    zh: "窗口 W = 4 · 每格一个 token · 请求 2 后保留较早的 CSFA",
+    en: "Window W = 4 · one token per cell · earlier CSFA retained after request 2",
   },
   req1: { zh: "请求 1", en: "Request 1" },
   req2: { zh: "请求 2", en: "Request 2" },
@@ -284,6 +268,7 @@ export const REPLAY = {
   flag: { zh: "复用边界", en: "reuse boundary" },
   branchLabel: { zh: "请求 3 的分支", en: "request 3's branch" },
   mismatchTag: { zh: "D ≠ C", en: "D ≠ C" },
+  legendPending: { zh: "虚线 = 正在计算，尚未缓存", en: "dashed = computing, not cached yet" },
   legendF: { zh: "F = FULL KV 页", en: "F = FULL KV pages" },
   legendS: { zh: "S = SWA 窗口槽", en: "S = SWA window slot" },
   legendM: { zh: "M = MAMBA checkpoint", en: "M = MAMBA checkpoint" },

@@ -88,9 +88,6 @@ export default function RustBenchViz({ lang = "zh" }: { lang?: Locale }) {
         ))}
       </div>
 
-      <div className="viz-footer">
-        <span className="urc-note">{RUST_BENCH.note[lang]}</span>
-      </div>
     </figure>
   );
 }
