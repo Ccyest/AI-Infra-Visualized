@@ -734,6 +734,47 @@
   flex-wrap: wrap;
 }
 
+.urc-hit-chart {
+  display: grid;
+  gap: 0.5rem;
+  min-width: 0;
+  margin-top: 0.6rem;
+}
+
+.urc-hit-chart > svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+.urc-hit-axes line { stroke: var(--grid); }
+.urc-hit-axes text { fill: var(--muted); font-size: 11px; }
+
+.urc-hit-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.urc-hit-legend button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.2rem 0.4rem;
+  border: 1px solid var(--grid);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink-2);
+  font: inherit;
+  font-size: var(--urc-font-xs);
+  cursor: pointer;
+}
+
+.urc-hit-legend button[aria-pressed="false"] { opacity: 0.4; }
+.urc-hit-legend button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.urc-hit-legend svg { width: 24px; height: 8px; }
+
 .urc-stat-chip {
   border: 1px solid var(--grid);
   border-radius: 8px;

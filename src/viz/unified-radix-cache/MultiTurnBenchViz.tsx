@@ -1,12 +1,13 @@
 import type { Locale } from "../../lib/i18n";
 import type { Localized } from "../../lib/i18n";
+import CacheHitChart from "./CacheHitChart";
+import { CACHE_HIT_SOURCE, DEEPSEEK_HITS, INKLING_HITS, type CacheHitSamples } from "./cache-hit-data";
 import { MULTI } from "./strings";
 import "./styles.css";
 
 /* 多轮基准的最终数字,全部取自博客正文:
    DeepSeek-V4-Flash:9.4K / 14.3K / 145.5K tok/s,L3 命中率 ~98%,TTFT < 9 s;
-   Inkling-Small:15.5K / 21.1K / 67.1K tok/s,L3 命中率 96.8%,TTFT 1.23 s。
-   逐轮曲线不在此复绘(见原文 Figure 4),避免编造中间数据点。 */
+   Inkling-Small:15.5K / 21.1K / 67.1K tok/s,L3 命中率 96.8%,TTFT 1.23 s。 */
 
 interface TierBar {
   label: string;
@@ -21,6 +22,7 @@ interface ModelPanel {
   max: number;
   hit: string;
   ttft: string;
+  hits: CacheHitSamples;
 }
 
 const PANELS: ModelPanel[] = [
@@ -35,6 +37,7 @@ const PANELS: ModelPanel[] = [
     max: 145.5,
     hit: "~98%",
     ttft: "< 9 s",
+    hits: DEEPSEEK_HITS,
   },
   {
     model: "Inkling-Small",
@@ -47,6 +50,7 @@ const PANELS: ModelPanel[] = [
     max: 67.1,
     hit: "96.8%",
     ttft: "1.23 s",
+    hits: INKLING_HITS,
   },
 ];
 
@@ -79,6 +83,7 @@ export default function MultiTurnBenchViz({ lang = "zh" }: { lang?: Locale }) {
                 <output>{b.value}K</output>
               </div>
             ))}
+            <CacheHitChart model={p.model} samples={p.hits} lang={lang} />
             <span className="urc-bench-head">{MULTI.hitHead[lang]}</span>
             <span className="urc-stat-chips">
               <span className="urc-stat-chip">
@@ -95,6 +100,7 @@ export default function MultiTurnBenchViz({ lang = "zh" }: { lang?: Locale }) {
       </div>
 
       <div className="viz-footer">
+        <span className="urc-note">{MULTI.hitCurveNote[lang]} <a href={CACHE_HIT_SOURCE}>{MULTI.hitCurveSource[lang]}</a></span>
       </div>
     </figure>
   );
