@@ -31,7 +31,7 @@ import BenchmarkViz from "../../../viz/unified-memory/BenchmarkViz";
 When a model reads a document, it saves data that it will use to generate the answer. A hybrid model has different kinds of layers, which save that history in different ways:
 
 - **Full-attention layers keep keys and values, or KV, for each token.** Reading more tokens adds more KV. During generation, attention reads this KV to look back at the document.
-- **Recurrent layers update a fixed-size state.** Each new token changes the contents of that state, without making the state larger. Each active request needs its own working state. Saving a checkpoint for later reuse takes another state slot.
+- **Recurrent layers update a fixed-size state.** Each new token changes the contents of that state, without making the state larger. Each active request needs its own working state. Keeping a copy of that state for later reuse, called a checkpoint, takes another state slot.
 
 The figure follows one request. As its context grows, KV accumulates while the recurrent state is updated in place. A hybrid model needs both to continue generating.
 
@@ -55,7 +55,7 @@ Here, “Unified Memory” means sharing capacity between SGLang's caches on the
 
 ### Pack data into movable blocks
 
-Sharing free bytes also requires a layout that lets SGLang hand those bytes from one kind of data to another. Models have many layers. If each layer has its own KV buffer, the data for one page of tokens is scattered across those buffers. Releasing that page leaves several small gaps.
+SGLang allocates KV in pages, each holding several tokens. A model has many layers. If each layer has its own KV buffer, the data for one page of tokens is scattered across those buffers. Releasing that page leaves several small gaps.
 
 SGLang instead stores a page's KV from all relevant layers together in one contiguous block, called a **page envelope**. The figure uses three layers and two pages. Page 1 contains the same data in both layouts; the change is where its pieces sit in memory.
 
