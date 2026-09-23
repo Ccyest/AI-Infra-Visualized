@@ -108,4 +108,4 @@ The experiment below first caches 28 different prefixes, then sends an unrelated
 
 This gain has a precondition: a single allocation must be large. In the experiment, the 7,000-token request allocates all its KV at once. When it is split into four 2,048-token chunks, the old and new rules give the same result, both keeping 17 prefixes. Overall throughput showed no stable change.
 
-Unified Memory also has costs: the location table, block copies during compaction and the layout costs described earlier. Across [five models](https://github.com/sgl-project/sglang/pull/35177), median time between output tokens ranged from 0.81% faster to 1.32% slower; this covers generation only. The benefit is better use of memory, not faster computation.
+Unified Memory also has costs: the location table, block copies during compaction and the layout costs described earlier. Across [five models](https://github.com/sgl-project/sglang/pull/35177), median time between output tokens ranged from 0.81% faster to 1.32% slower. The benefit is better use of memory, not faster computation.

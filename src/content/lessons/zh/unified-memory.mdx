@@ -65,7 +65,7 @@ KV 默认并不是这样存的。SGLang 按页分配 KV，一页存若干个 tok
 
 使用不同存放布局的代价则是：
 
-- kernel 必须能处理这种跨步视图，所以 Unified Memory 目前只支持一部分 attention 后端，也要求 K 和 V 的 head_dim 相同。
+- kernel 必须能按跨步方式读取每一层的数据，所以 Unified Memory 目前只支持一部分 attention 后端，也要求 K 和 V 的 head_dim 相同。
 - 每次 forward 前，需要把虚拟编号换算成物理位置。
 
 实测开销见文末“实验结果”。
@@ -108,4 +108,4 @@ SGLang 的[驱逐优化](https://github.com/sgl-project/sglang/pull/33091)会在
 
 这个收益有前提：一次分配要足够大。实验中，7,000 token 的长请求一次申请全部 KV 空间；如果按 2,048 token 分四次申请，新旧规则的结果一样，都保留 17 段前缀。整体吞吐也没有稳定提升。
 
-Unified Memory 本身也有开销：维护位置表、压实时复制数据块，以及上文说的按页布局代价。在 [5 个模型](https://github.com/sgl-project/sglang/pull/35177)上，token 间延迟中位数从快 0.81% 到慢 1.32% 不等，这只测了生成阶段。它的收益是更好地利用显存，而不是让计算更快。
+Unified Memory 本身也有开销：维护位置表、压实时复制数据块，以及上文说的按页布局代价。在 [5 个模型](https://github.com/sgl-project/sglang/pull/35177)上，token 间延迟中位数从快 0.81% 到慢 1.32% 不等。它的收益是更好地利用显存，而不是让计算更快。
