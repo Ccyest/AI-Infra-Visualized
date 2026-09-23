@@ -2,7 +2,7 @@
 title: "HiCache in SGLang: hybrid-model caching with up to 15.5× input throughput"
 description: "SGLang reuses cached prefixes to avoid repeated prefill, but GPU memory cannot retain every growing conversation. This article explains SGLang HiCache and how it extends the cache to CPU memory and external storage. In a DeepSeek-V4-Flash multi-turn benchmark, adding Mooncake L3 brings effective input throughput to **15.5×** the GPU-only baseline, with cache hits near **98%**."
 publishedDate: "2026-09-10"
-updatedDate: "2026-09-14"
+updatedDate: "2026-09-23"
 order: 8
 concepts: []
 tryOnSglang: "https://github.com/sgl-project/sglang"
@@ -75,7 +75,7 @@ Reuse requires identical prefix tokens; similar meaning alone is not enough.
 The hierarchy creates a path for retaining and recovering prefixes. Making that
 path useful introduces several implementation problems:
 
-- **Memory layout:** GPU computation groups data by model layer, while storage I/O groups it by page. How can transfers between these layouts remain efficient?
+- **Memory layout:** By default, GPU computation groups data by model layer, while storage I/O groups it by page. How can transfers between these layouts remain efficient?
 - **Overlapping data transfers and computation:** which transfers can overlap with GPU computation to keep the GPU from waiting?
 - **Cache policies:** prefetching and backup spend time, bandwidth, and capacity.
   When is waiting or saving another copy worthwhile?
@@ -107,7 +107,7 @@ path useful introduces several implementation problems:
 
 ### Memory layout
 
-This optimization handles the different KV layouts used by GPU computation and storage I/O. The GPU processes one model layer at a time, so its KV is grouped by layer for convenient access. External L3 storage reads and writes pages: for example, page 1 contains tokens 1–4 and page 2 contains tokens 5–8.
+This optimization handles the different KV layouts used by GPU computation and storage I/O. The GPU processes one model layer at a time, so by default its KV is grouped by layer for convenient access. External L3 storage reads and writes pages: for example, page 1 contains tokens 1–4 and page 2 contains tokens 5–8.
 
 If Host keeps the same layout, transfers incur the overhead of many small copies, as shown in the diagram. With a page-first Host layout, a whole page can be transferred to external L3 storage at once, reducing the number of transfers and their overhead.
 

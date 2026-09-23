@@ -1,8 +1,8 @@
 ---
 title: "Unified Memory in SGLang: retain 1.9× as many cached prefixes under pressure"
-description: "SGLang's hybrid models save both per-token KV and recurrent states. Giving each a fixed share of GPU memory can leave requests waiting while space in the other pool sits unused. Unified Memory lets both draw from one buffer as their needs change. This article explains how SGLang shares that space, moves data safely and stops evicting cached prefixes once enough room is available. In a cache-pressure experiment, the eviction improvement retained **1.9×** as many prefixes and reduced the returning requests' total time by **37.9%**. Both variants already used Unified Memory."
+description: "To support modern hybrid attention models, SGLang saves both per-token KV (for full attention) and recurrent states (for Mamba layers). Giving each a fixed share of GPU memory can fill one while the other still has room, leaving memory unused. Unified Memory lets both share one buffer and allocates space as demand changes. This article explains how SGLang makes that work and the optimization built on it. In a cache-pressure experiment, the eviction improvement retained **1.9×** as many prefixes and reduced the returning requests' total time by **37.9%**."
 publishedDate: "2026-09-09"
-updatedDate: "2026-09-22"
+updatedDate: "2026-09-23"
 order: 7
 concepts: []
 tryOnSglang: "https://github.com/sgl-project/sglang"
@@ -26,18 +26,20 @@ import CompactionViz from "../../../viz/unified-memory/CompactionViz";
 import EvictionViz from "../../../viz/unified-memory/EvictionViz";
 import BenchmarkViz from "../../../viz/unified-memory/BenchmarkViz";
 
+> Prerequisite: read [Unified Radix Cache](../unified-radix-cache/).
+
 ## Background
 
-When a model reads a document, it saves data that it will use to generate the answer. A hybrid model has different kinds of layers, which save that history in different ways:
+During inference, a model saves keys and values, or KV, for use when generating the answer. The KV cache is the container that holds this KV. Modern hybrid models have different kinds of attention layers, and they save this history in different ways:
 
-- **Full-attention layers keep keys and values, or KV, for each token.** Reading more tokens adds more KV. During generation, attention reads this KV to look back at the document.
-- **Recurrent layers update a fixed-size state.** Each new token changes the contents of that state, without making the state larger. Each active request needs its own working state. Keeping a copy of that state for later reuse, called a checkpoint, takes another state slot.
+- **Full-attention layers keep keys and values for each token.** Reading more tokens adds more KV. During generation, attention reads this KV to look back at the document.
+- **Recurrent layers update a fixed-size state.** Each new token is written into that state, overwriting its earlier contents: the contents change, but the state does not grow. Because of this overwriting, a state can be reused only if it was saved at exactly the same position; otherwise the history it held has already been overwritten. Each active request needs its own working state. Keeping a copy of that state for later reuse, called a checkpoint, takes another state slot.
 
 The figure follows one request. As its context grows, KV accumulates while the recurrent state is updated in place. A hybrid model needs both to continue generating.
 
 <StateGrowthViz client:visible lang="en" />
 
-This creates a sizing problem. Many short requests need many state slots but little KV per request. A few long requests need fewer working states but much more KV. If SGLang reserves a fixed amount of memory for each kind at startup, one pool can fill up while the other still has unused space.
+This creates a sizing problem. Many short requests need many state slots but little KV per request. A few long requests need fewer working states but much more KV. If SGLang reserves a fixed amount of memory for each kind at startup, one pool can fill up while the other still has unused space, so no fixed split handles both cases.
 
 ## Unified Memory
 
@@ -55,17 +57,33 @@ Here, “Unified Memory” means sharing capacity between SGLang's caches on the
 
 ### Pack data into movable blocks
 
-SGLang allocates KV in pages, each holding several tokens. A model has many layers. If each layer has its own KV buffer, the data for one page of tokens is scattered across those buffers. Releasing that page leaves several small gaps.
+The shared buffer is one continuous range of GPU memory. The allocator hands out space from its two ends. It also has to return freed space to the free region in the middle, and as shown below, it sometimes moves blocks to close holes. All of this requires each block it manages to occupy one continuous range.
 
-SGLang instead stores a page's KV from all relevant layers together in one contiguous block, called a **page envelope**. The figure uses three layers and two pages. Page 1 contains the same data in both layouts; the change is where its pieces sit in memory.
+KV is not stored that way by default. SGLang allocates KV in pages, each holding several tokens, and every full-attention layer keeps its own KV for those tokens. Normally each layer has a separate buffer, so one page is split into one piece per layer, spread across those buffers. Releasing the page leaves a small hole in every layer's buffer, so the freed space stays scattered across the separate layer buffers.
+
+Unified Memory therefore switches to a page-major layout. All layers' KV for one page sits side by side in one contiguous block, called a **page envelope**. The data in the page is unchanged; only its position in memory differs. Releasing the page now frees one continuous range, which can return to the shared free region or be used for recurrent state. Moving the page copies one block instead of one piece per layer.
+
+Does this slow down GPU computation? Attention works on one layer at a time and reads that layer's K and V page by page. As long as each piece it reads is contiguous, the GPU can load it in large chunks. Both layouts provide this. In a page envelope, layer 1's K for page 1 is still one contiguous block; it just sits farther from the same layer's block in the next page. Paged attention already reads one page at a time through a page table, and a request's pages were never guaranteed to be adjacent, so reads stay essentially as efficient. SGLang builds a strided view for each layer over the shared buffer, so kernels still see one K/V tensor per layer, and it converts each token index to its position inside the envelope.
+
+The costs are elsewhere:
+
+- Kernels must accept these strided views, so Unified Memory currently supports only some attention backends and requires K and V heads of the same size.
+- Some recurrent-layer prefill kernels accept only contiguous state. SGLang copies the batch's states into a contiguous buffer, runs the kernel, then writes the results back.
+- Each forward pass translates virtual IDs into physical positions.
+
+Results at the end of this article reports the measured overhead.
+
+The layer-major GPU layout described in [HiCache](../hicache/) is the default; GPU KV becomes page-major only when Unified Memory is enabled. HiCache's page-major host layout is a separate choice in CPU memory, made so that host memory and storage can exchange whole pages.
+
+The figure uses three layers and two pages. Select “Release page 1”: separate layer buffers are left with three scattered holes, while page envelopes leave one continuous free range.
 
 <PageLayoutViz client:visible lang="en" />
 
 A recurrent-state block similarly holds the state needed across the recurrent layers. KV pages and state blocks keep their own sizes. Both draw from the same buffer, so freeing a large state block can make room for several smaller KV pages.
 
-### Reclaim gaps inside the pool
+### Consolidate freed space at runtime
 
-A freed block may sit between two live blocks. In the figure, state blocks A, B and C occupy the left end. Releasing B leaves a hole, but C still separates that hole from the shared free region. SGLang moves C into B's old location. C's old space then joins the free region, where new KV pages can be allocated.
+In Unified Memory, a freed block may sit between two live blocks. In the figure, state blocks A, B and C occupy the left end. Releasing B leaves a hole, but C still separates that hole from the shared free region, so the freed space cannot be fully used. SGLang therefore moves C into B's old location. C's old space then joins the free region, where new KV pages can be allocated.
 
 Requests still need to find C after it moves. SGLang gives C a stable **virtual ID** and keeps a table of its current location. The request continues to refer to C; the table changes from “C is at 8” to “C is at 4”. Moving the data does not require rewriting every request that refers to it.
 
@@ -95,4 +113,4 @@ The experiment below first caches 28 different prefixes, then sends an unrelated
 
 The experiment limits the pool to 8,192 full-attention tokens and 32 recurrent-state slots, with an 8,192-token prefill chunk. With smaller 2,048-token chunks, both variants retain 17 of the 28 prefixes. The improvement depends on whether freeing state capacity can cover the pending KV allocation; this experiment did not show a stable increase in overall throughput.
 
-Sharing capacity also costs work: SGLang maintains location mappings and sometimes copies blocks. In the [three-pool evaluation](https://github.com/sgl-project/sglang/pull/35177), median time between output tokens changed by −0.81% to +1.32% across the tested models at matched attention backends. The benefit is better use of available memory when demand shifts between pools. It does not make every GPU computation faster.
+Sharing capacity also costs work: SGLang maintains location mappings, sometimes copies blocks and pays the layout costs described above. In the [three-pool evaluation](https://github.com/sgl-project/sglang/pull/35177), median time between output tokens changed by −0.81% to +1.32% across the tested models at matched attention backends. These figures measure generation; the evaluation did not separately report the cost of the prefill state copy. The benefit is better use of available memory when demand shifts between pools. It does not make every GPU computation faster.
