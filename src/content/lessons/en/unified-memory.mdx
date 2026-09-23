@@ -61,21 +61,16 @@ The shared buffer is one continuous range of GPU memory. The allocator hands out
 
 KV is not stored that way by default. SGLang allocates KV in pages, each holding several tokens, and every full-attention layer keeps its own KV for those tokens. Normally each layer has a separate buffer, so one page is split into one piece per layer, spread across those buffers. Releasing the page leaves a small hole in every layer's buffer, so the freed space stays scattered across the separate layer buffers.
 
-Unified Memory therefore switches to a page-major layout. All layers' KV for one page sits side by side in one contiguous block, called a **page envelope**. The data in the page is unchanged; only its position in memory differs. Releasing the page now frees one continuous range, which can return to the shared free region or be used for recurrent state. Moving the page copies one block instead of one piece per layer.
+Unified Memory therefore switches to a page-major layout. All layers' KV for one page sits side by side in one contiguous block, called a **page envelope**. The data in the page is unchanged; only its position in memory differs. Releasing the page now frees one continuous range, which can return to the shared free region. Moving the page copies one block instead of one piece per layer.
 
-Does this slow down GPU computation? Attention works on one layer at a time and reads that layer's K and V page by page. As long as each piece it reads is contiguous, the GPU can load it in large chunks. Both layouts provide this. In a page envelope, layer 1's K for page 1 is still one contiguous block; it just sits farther from the same layer's block in the next page. Paged attention already reads one page at a time through a page table, and a request's pages were never guaranteed to be adjacent, so reads stay essentially as efficient. SGLang builds a strided view for each layer over the shared buffer, so kernels still see one K/V tensor per layer, and it converts each token index to its position inside the envelope.
+This different layout has costs:
 
-The costs are elsewhere:
+- Kernels must read each layer through strided views into the envelopes, so Unified Memory currently supports only some attention backends and requires K and V heads of the same size.
+- Each forward pass must first translate virtual IDs into physical positions.
 
-- Kernels must accept these strided views, so Unified Memory currently supports only some attention backends and requires K and V heads of the same size.
-- Some recurrent-layer prefill kernels accept only contiguous state. SGLang copies the batch's states into a contiguous buffer, runs the kernel, then writes the results back.
-- Each forward pass translates virtual IDs into physical positions.
+The measured overhead is covered under Results at the end.
 
-Results at the end of this article reports the measured overhead.
-
-The layer-major GPU layout described in [HiCache](../hicache/) is the default; GPU KV becomes page-major only when Unified Memory is enabled. HiCache's page-major host layout is a separate choice in CPU memory, made so that host memory and storage can exchange whole pages.
-
-The figure uses three layers and two pages. Select “Release page 1”: separate layer buffers are left with three scattered holes, while page envelopes leave one continuous free range.
+The figure compares the two layouts using three layers and two pages.
 
 <PageLayoutViz client:visible lang="en" />
 
@@ -89,15 +84,15 @@ Requests still need to find C after it moves. SGLang gives C a stable **virtual 
 
 <CompactionViz client:visible lang="en" />
 
-This process is called **compaction**. SGLang can leave a hole temporarily and compact when an allocation needs the space. It must wait until moving the data is safe, then prepare GPU reads and writes with the updated locations. Data still in use by GPU computation or a network transfer cannot be moved underneath that operation.
+This process is called **compaction**. SGLang can leave a hole temporarily and compact when an allocation needs the space. Moving data must wait until it is safe: data still in use by GPU computation or a network transfer cannot be moved in the middle of that operation.
 
 The [shared-pool implementation](https://github.com/sgl-project/sglang/pull/29678) introduced this allocation and mapping mechanism. A [later extension](https://github.com/sgl-project/sglang/pull/35177) lets three kinds share the buffer: full-attention KV, sliding-window KV and recurrent state. Sliding-window layers only need a recent window of tokens; their capacity demand can differ from both of the other pools.
 
-## Keep more reusable prefixes
+## Eviction policy in Unified Memory
 
-SGLang can keep a document's KV and a recurrent-state checkpoint after a request finishes. When another request starts with exactly the same token prefix, it can reuse that saved history and compute only the new suffix. Evicting the cached prefix frees memory now, but a later request may have to compute it again.
+After a request finishes, SGLang can keep the document's KV and a recurrent-state checkpoint from the end of the request. When another request starts with exactly the same token prefix, it can reuse that saved history and compute only the new suffix. When memory is limited, evicting the cached prefix frees space immediately, but a later request may have to compute it again.
 
-With shared memory, the eviction decision must count all the capacity it can reclaim. Suppose a new allocation needs 6 units of KV space. Evicting one cached prefix releases 1 unit of KV and a 2-unit state checkpoint. After two evictions and any needed compaction, 6 units are available. Counting only the 2 KV units would make SGLang keep deleting prefixes even though the allocation already fits.
+With shared memory, the eviction decision must count all the capacity it can reclaim. Suppose a new allocation needs 6 units of KV space. Evicting one cached prefix releases 1 unit of KV and a 2-unit state checkpoint. After two evictions and any needed compaction, (1 + 2) × 2 = 6 units are available. Counting only the 2 KV units would make SGLang keep deleting prefixes even though the allocation already fits.
 
 <EvictionViz client:visible lang="en" />
 
@@ -111,6 +106,6 @@ The experiment below first caches 28 different prefixes, then sends an unrelated
 
 <BenchmarkViz client:visible lang="en" />
 
-The experiment limits the pool to 8,192 full-attention tokens and 32 recurrent-state slots, with an 8,192-token prefill chunk. With smaller 2,048-token chunks, both variants retain 17 of the 28 prefixes. The improvement depends on whether freeing state capacity can cover the pending KV allocation; this experiment did not show a stable increase in overall throughput.
+This gain has a precondition: a single allocation must be large. In the experiment, the 7,000-token request allocates all its KV at once. When it is split into four 2,048-token chunks, the old and new rules give the same result, both keeping 17 prefixes. Overall throughput showed no stable change.
 
-Sharing capacity also costs work: SGLang maintains location mappings, sometimes copies blocks and pays the layout costs described above. In the [three-pool evaluation](https://github.com/sgl-project/sglang/pull/35177), median time between output tokens changed by −0.81% to +1.32% across the tested models at matched attention backends. These figures measure generation; the evaluation did not separately report the cost of the prefill state copy. The benefit is better use of available memory when demand shifts between pools. It does not make every GPU computation faster.
+Unified Memory also has costs: the location table, block copies during compaction and the layout costs described earlier. Across [five models](https://github.com/sgl-project/sglang/pull/35177), median time between output tokens ranged from 0.81% faster to 1.32% slower; this covers generation only. The benefit is better use of memory, not faster computation.
