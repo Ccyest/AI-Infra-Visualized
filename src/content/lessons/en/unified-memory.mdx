@@ -1,5 +1,5 @@
 ---
-title: "Unified Memory in SGLang: retain 1.9× as many cached prefixes under pressure"
+title: "Unified Memory in SGLang: 1.9× as many prefixes retained, 37.9% less time for returning requests"
 description: "To support modern hybrid attention models, SGLang saves both per-token KV (for full attention) and recurrent states (for Mamba layers). Giving each a fixed share of GPU memory can fill one while the other still has room, leaving memory unused. Unified Memory lets both share one buffer and allocates space as demand changes. This article explains how SGLang makes that work and the optimization built on it. In a cache-pressure experiment, the eviction improvement retained **1.9×** as many prefixes and reduced the returning requests' total time by **37.9%**."
 publishedDate: "2026-09-09"
 updatedDate: "2026-09-23"

@@ -1,5 +1,5 @@
 ---
-title: "SGLang Unified Memory：显存吃紧时，前缀保留量达到 1.9 倍"
+title: "SGLang Unified Memory：前缀保留量 1.9 倍，重复请求耗时降低 37.9%"
 description: "SGLang 为了支持现代的混合注意力模型，既要保存每个 token 的 KV（用于full attention），也要保存循环状态（用于mamba attention）。如果给它们各分一块固定大小的显存，可能一边已经放满，另一边却还有空位，导致显存放不满。Unified Memory 则让两种attention共用缓存区，按需动态分配空间。本文讲清如何实现这样的效果，并基于此做了什么优化。在一项缓存压力实验中，驱逐优化让保留的前缀增至 **1.9 倍**，返回请求的总耗时降低 **37.9%**。"
 publishedDate: "2026-09-09"
 updatedDate: "2026-09-23"
