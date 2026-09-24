@@ -5,7 +5,7 @@ import "./styles.css";
 export default function TimelineViz({ lang = "zh" }: { lang?: Locale }) {
   return (
     <figure className="viz-stage hc-viz hc-history-viz">
-      <div className="viz-head"><span className="viz-title">{UPDATE.timeline[lang]}</span><span className="viz-subtitle">{UPDATE.timelineNote[lang]}</span></div>
+      <div className="viz-head"><span className="viz-title">{UPDATE.timeline[lang]}</span></div>
       <ol className="hc-history">
         {HISTORY.map((item) => <li key={item.pr}>
           <time dateTime={item.date}>{item.date}</time>

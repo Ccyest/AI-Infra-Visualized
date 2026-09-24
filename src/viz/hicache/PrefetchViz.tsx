@@ -63,7 +63,7 @@ export default function PrefetchViz({ lang = "zh" }: { lang?: Locale }) {
   const fastest = Math.min(...outcomes.map(({ finish }) => finish));
   const slowest = Math.max(...outcomes.map(({ finish }) => finish));
   return <figure className="viz-stage hc-viz hc-prefetch">
-    <div className="viz-head"><span className="viz-title">{TEXT.title[lang]}</span><span className="viz-subtitle">{TEXT.zero[lang]}</span></div>
+    <div className="viz-head"><span className="viz-title">{TEXT.title[lang]}</span></div>
     <div className="hc-prefetch-scenario">
       <span>{TEXT.total[lang]} <b>X = {SCENARIO.totalTokens}</b> tokens</span>
       <span>{TEXT.ready[lang]} <b>Y = {SCENARIO.readyTokens}</b> tokens</span>
@@ -83,11 +83,10 @@ export default function PrefetchViz({ lang = "zh" }: { lang?: Locale }) {
     <div className="hc-prefetch-control">
       <div><label htmlFor={id}>{TEXT.cost[lang]}</label><output htmlFor={id}>{recomputeDuration} {TEXT.unit[lang]}</output></div>
       <input id={id} type="range" min={SCENARIO.minRecompute} max={SCENARIO.maxRecompute} step={0.5} value={recomputeDuration}
-        aria-describedby={`${id}-assumption`} aria-valuetext={`${recomputeDuration} ${TEXT.unit[lang]}`}
+        aria-valuetext={`${recomputeDuration} ${TEXT.unit[lang]}`}
         onChange={(event) => setRecomputeDuration(Number(event.target.value))} />
       <div className="hc-prefetch-endpoints"><span>{TEXT.cheap[lang]}</span><span>{TEXT.expensive[lang]}</span></div>
       <output className="hc-prefetch-announcement" aria-live="polite">{outcomes.map(({ policy, finish }) => `${TEXT[policy][lang]}: ${finish} ${TEXT.unit[lang]}`).join("; ")}</output>
     </div>
-    <figcaption id={`${id}-assumption`} className="hc-prefetch-assumption">{TEXT.assumption[lang]}</figcaption>
   </figure>;
 }

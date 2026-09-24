@@ -60,7 +60,7 @@ export default function HostModeViz({ lang = "zh" }: { lang?: Locale }) {
     seek: transfer.seek,
     stepBy: (delta: number) => delta > 0 ? transfer.nextStep() : transfer.seek(Math.max(0, activeStep - 1)),
   };
-  return <VizStage title={UPDATE.hostTitle[lang]} subtitle={UPDATE.hostNote[lang]} player={player} lang={lang} className="hc-viz">
+  return <VizStage title={UPDATE.hostTitle[lang]} player={player} lang={lang} className="hc-viz">
     <div className="hc-host-step" aria-live="polite">
       <span>{activeStep + 1}/{STEPS.length}</span>{UPDATE[STEPS[activeStep]][lang]}
     </div>

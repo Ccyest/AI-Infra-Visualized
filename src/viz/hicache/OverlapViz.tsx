@@ -42,7 +42,7 @@ function Timeline({ schedule, overlap, t, lang }: {
 
 export default function OverlapViz({ lang = "zh" }: { lang?: Locale }) {
   const player = useSimPlayer(TOTAL, 1);
-  return <VizStage title={TEXT.overlapTitle[lang]} subtitle={TEXT.overlapNote[lang]} player={player} lang={lang} className="hc-viz hc-overlap">
+  return <VizStage title={TEXT.overlapTitle[lang]} player={player} lang={lang} className="hc-viz hc-overlap">
     <div className="hc-overlap-scroll" tabIndex={0} role="region" aria-label={TEXT.overlapTitle[lang]}>
       <div className="hc-timelines">
         <Timeline schedule={SERIAL} overlap={false} t={player.t} lang={lang} />

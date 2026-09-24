@@ -78,7 +78,7 @@ export default function StateRestoreViz({ lang = "zh" }: { lang?: Locale }) {
     : t === 2 ? (fixed ? "newCopy" : "noCopy")
     : t === 3 ? "stateEvicted" : (fixed ? "stateRestore" : "stateRecompute");
 
-  return <VizStage title={UPDATE.stateTitle[lang]} subtitle={UPDATE.stateNote[lang]} player={player} lang={lang} className="hc-viz hc-checkpoint-viz">
+  return <VizStage title={UPDATE.stateTitle[lang]} player={player} lang={lang} className="hc-viz hc-checkpoint-viz">
     <div className="hc-picker">{[false, true].map((value) => <button type="button" className="viz-btn" key={String(value)} aria-pressed={fixed === value} onClick={() => { transfer.seek(t); setFixed(value); }}>{UPDATE[value ? "fixed" : "baseline"][lang]}</button>)}</div>
     <RequestPrefixes lang={lang} />
     <nav className="hc-checkpoint-steps" aria-label={UPDATE.stateTitle[lang]}>

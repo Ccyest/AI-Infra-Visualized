@@ -33,11 +33,10 @@
 .hc-prefetch-control output { font-weight: 600; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .hc-prefetch-control input { display: block; width: 100%; margin: 12px 0 5px; accent-color: var(--series-2); cursor: pointer; }
 .hc-prefetch-endpoints { font-size: 11px; color: var(--muted); }
-.hc-prefetch-assumption { padding: 10px 20px 16px; font-size: 11px; color: var(--muted); line-height: 1.6; }
 .hc-prefetch-announcement { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .hc-prefetch-scroll:focus-visible, .hc-prefetch-control input:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
 @media (max-width: 600px) {
-  .hc-prefetch-scenario, .hc-prefetch-legend, .hc-prefetch-assumption { padding-left: 14px; padding-right: 14px; }
+  .hc-prefetch-scenario, .hc-prefetch-legend { padding-left: 14px; padding-right: 14px; }
   .hc-prefetch-control { margin: 0 14px; padding: 12px; }
   .hc-prefetch-control label { max-width: 75%; }
 }

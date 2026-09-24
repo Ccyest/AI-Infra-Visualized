@@ -54,12 +54,13 @@ const PANELS: ModelPanel[] = [
   },
 ];
 
-export default function MultiTurnBenchViz({ lang = "zh" }: { lang?: Locale }) {
+/** minimal:只留图表本体,去掉副标题、面板配置行和底部注释(HiCache 课程复用) */
+export default function MultiTurnBenchViz({ lang = "zh", minimal = false }: { lang?: Locale; minimal?: boolean }) {
   return (
     <figure className="viz-stage urc-viz" style={{ margin: "1.6rem 0" }}>
       <div className="viz-head">
         <span className="viz-title">{MULTI.title[lang]}</span>
-        <span className="viz-subtitle">{MULTI.subtitle[lang]}</span>
+        {!minimal && <span className="viz-subtitle">{MULTI.subtitle[lang]}</span>}
       </div>
 
       <div className="urc-bench">
@@ -67,7 +68,7 @@ export default function MultiTurnBenchViz({ lang = "zh" }: { lang?: Locale }) {
           <div className="urc-bench-panel" key={p.model}>
             <span className="urc-bench-model">
               {p.model}
-              <small>{p.config[lang]}</small>
+              {!minimal && <small>{p.config[lang]}</small>}
             </span>
             <span className="urc-bench-head">{MULTI.throughputHead[lang]}</span>
             {p.bars.map((b) => (
@@ -99,9 +100,9 @@ export default function MultiTurnBenchViz({ lang = "zh" }: { lang?: Locale }) {
         ))}
       </div>
 
-      <div className="viz-footer">
+      {!minimal && <div className="viz-footer">
         <span className="urc-note">{MULTI.hitCurveNote[lang]} <a href={CACHE_HIT_SOURCE}>{MULTI.hitCurveSource[lang]}</a></span>
-      </div>
+      </div>}
     </figure>
   );
 }

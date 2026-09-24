@@ -1,7 +1,7 @@
 import { useId, useState } from "react";
 import type { Locale } from "../../lib/i18n";
 import { REUSE_CASES, type CacheTier, type ReuseCase } from "./engine";
-import { REUSE, REUSE_EXPLANATION } from "./strings";
+import { REUSE } from "./strings";
 import "./cache-reuse.css";
 
 const CASES: ReuseCase[] = ["l1Hit", "l2Hit", "l3Hit", "miss"];
@@ -38,9 +38,7 @@ export default function CacheReuseViz({ lang = "zh" }: { lang?: Locale }) {
       </div>
       <div className="hc-reuse-action">
         <span>{REUSE.action[lang]}</span><strong>{REUSE[ACTION[selected]][lang]}</strong>
-        <p>{REUSE_EXPLANATION[selected][lang]}</p>
       </div>
     </div>
-    <div className="hc-reuse-backup"><strong>{REUSE.backup[lang]}</strong><span>{REUSE.backupNote[lang]}</span></div>
   </figure>;
 }

@@ -6,10 +6,6 @@ import "./storage-location.css";
 type View = "cluster" | "gpu" | "host" | "storage";
 type Navigate = (view: View, node?: number, gpu?: number) => void;
 type ViewProps = { lang: Locale; navigate: Navigate };
-const DETAIL = {
-  cluster: "clusterDetail", gpu: "gpuDetail",
-  host: "hostDetail", storage: "storageDetail",
-} as const;
 
 function ClusterView({ lang, navigate }: ViewProps) {
   return <div className="hc-location-boundary">
@@ -83,8 +79,7 @@ export default function StorageLocationViz({ lang = "zh" }: { lang?: Locale }) {
     pathRef.current?.focus();
   };
   return <figure className="viz-stage hc-location" aria-labelledby={titleId}>
-    <figcaption className="viz-head"><span className="viz-title" id={titleId}>{LOCATION.title[lang]}</span>
-      <span className="viz-subtitle">{LOCATION.note[lang]}</span></figcaption>
+    <figcaption className="viz-head"><span className="viz-title" id={titleId}>{LOCATION.title[lang]}</span></figcaption>
     <div className="hc-location-nav">
       <span className="hc-location-path" ref={pathRef} tabIndex={-1} aria-live="polite">
         {LOCATION.path[lang]}{LOCATION.cluster[lang]}
@@ -100,7 +95,5 @@ export default function StorageLocationViz({ lang = "zh" }: { lang?: Locale }) {
       {view === "host" && <HostView lang={lang} />}
       {view === "storage" && <StorageView lang={lang} />}
     </div>
-    <p className="hc-location-detail" aria-live="polite">{LOCATION[DETAIL[view]][lang]}</p>
-    <div className="hc-location-route">{LOCATION.route[lang]}</div>
   </figure>;
 }

@@ -12,10 +12,8 @@
 .hc-reuse-tier > strong { font-size: 20px; color: var(--ink); }
 .hc-reuse-tier small { margin-top: 6px; font-size: 11px; }
 .hc-reuse-tier[data-present="true"] { border-style: solid; border-color: var(--series-3); background: color-mix(in srgb, var(--series-3) 6%, var(--surface)); color: var(--ink); }
-.hc-reuse-action { margin: 14px 0; padding-left: 10px; border-left: 3px solid var(--accent); font-size: 13px; }
+.hc-reuse-action { margin: 14px 0 0; padding-left: 10px; border-left: 3px solid var(--accent); font-size: 13px; }
 .hc-reuse-action > span { display: block; color: var(--muted); font-size: 11px; margin-bottom: 4px; }
-.hc-reuse-action p { margin: 6px 0 0; font-size: 12px; line-height: 1.6; }
-.hc-reuse-backup { display: flex; flex-wrap: wrap; gap: 6px 12px; border-top: 1px solid var(--grid); padding-top: 10px; font-size: 11px; color: var(--muted); }
 .hc-reuse button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 @media (max-width: 480px) {
   .hc-reuse-request { flex-wrap: wrap; gap: 6px; }

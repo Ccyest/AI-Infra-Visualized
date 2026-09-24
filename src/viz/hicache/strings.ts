@@ -2,7 +2,6 @@ import type { Localized } from "../../lib/i18n";
 
 export const LOCATION = {
   title: { en: "Where the cache lives", zh: "缓存存在哪里" },
-  note: { en: "Example deployment: two serving nodes connected to a shared storage service.", zh: "部署示例：两个推理节点接入同一个共享存储服务。" },
   path: { en: "Storage path: ", zh: "存储路径：" },
   cluster: { en: "Cluster", zh: "集群" },
   node: { en: "Serving node", zh: "推理节点" },
@@ -28,11 +27,6 @@ export const LOCATION = {
   localDisk: { en: "Disk in the serving node", zh: "推理节点内的磁盘" },
   alternatives: { en: "L3 backend alternatives", zh: "L3 后端的不同选择" },
   shared: { en: "Shared storage service", zh: "共享存储服务" },
-  clusterDetail: { en: "L1 and L2 belong to serving instances. In this deployment, both nodes connect to the same L3 service over the network.", zh: "L1、L2 属于各自的服务实例。这个部署中，两个节点通过网络接入同一个 L3 服务。" },
-  gpuDetail: { en: "Each GPU has its own HBM, packaged alongside its compute die. The L1 KV pool occupies part of that HBM; weights and other buffers also use GPU memory.", zh: "每块 GPU 都有自己的 HBM，与计算芯片一起封装。L1 KV 池占用其中一部分；模型权重和其他 buffer 也会使用显存。" },
-  hostDetail: { en: "CPU DRAM is the server’s system memory, outside the GPU package. HiCache allocates its L2 pool here. This pool is private to the serving instance, even when multiple instances run on one server.", zh: "CPU DRAM 是服务器的系统内存，位于 GPU 封装之外。HiCache 在这里分配 L2 池。即使多个实例运行在同一台服务器上，它们的 L2 池也各自私有。" },
-  storageDetail: { en: "L3 is accessed through a storage backend. A shared service can run inside the same cluster and serve compatible instances. L3 can also use local files, so “external” does not mean outside the cluster or necessarily shared.", zh: "L3 通过存储后端访问。共享服务可以部署在同一个集群内，供配置兼容的实例复用缓存。L3 也可以使用本地文件，因此“外部”不代表在集群之外，也不代表一定共享。" },
-  route: { en: "L3 hit: storage → host DRAM → GPU HBM → attention", zh: "L3 命中：存储 → 主机 DRAM → GPU HBM → Attention" },
 } satisfies Record<string, Localized>;
 
 export const TEXT = {
@@ -50,7 +44,6 @@ export const TEXT = {
   absent: { en: "No local node", zh: "无本地节点" },
   layer: { en: "Layer", zh: "层" },
   overlapTitle: { en: "Overlapping data transfers and computation", zh: "重叠搬运与计算操作" },
-  overlapNote: { en: "Illustrative units: page read 1 · layer load 1 · layer compute 2", zh: "示意时间：整页读取 1 · 逐层搬运 1 · 每层计算 2" },
   storageRead: { en: "L3 → Host", zh: "L3 → Host" },
   wholePage: { en: "whole page", zh: "整页" },
   pageLabel: { en: "Page", zh: "页" },
@@ -63,14 +56,12 @@ export const TEXT = {
   elapsed: { en: "Completion", zh: "完成时刻" },
   unit: { en: "units", zh: "单位" },
   benchTitle: { en: "Long-context benchmark", zh: "长上下文基准" },
-  benchNote: { en: "DeepSeek-R1 · 8 × H20-3e · LooGLE", zh: "DeepSeek-R1 · 8 × H20-3e · LooGLE" },
   ttft: { en: "Average TTFT (s) ↓", zh: "平均 TTFT（秒）↓" },
   throughput: { en: "Input throughput (tokens/s) ↑", zh: "输入吞吐（tokens/s）↑" },
   gpuOnly: { en: "GPU only", zh: "仅 GPU" },
   l2: { en: "+ CPU L2", zh: "+ CPU L2" },
   l3: { en: "+ 3FS L3", zh: "+ 3FS L3" },
   populated: { en: "+ Prepopulated L3", zh: "+ 预先填充 L3" },
-  warmNote: { en: "Prepopulated L3: reusable KV is written to storage before the benchmark starts.", zh: "预先填充 L3：基准开始前，先把可复用的 KV 写入存储。" },
   relative: { en: "Relative to GPU only", zh: "相对仅 GPU" },
   lower: { en: "lower TTFT", zh: "TTFT 降低" },
   higher: { en: "throughput", zh: "吞吐" },
@@ -81,7 +72,6 @@ export const PREFETCH = {
   total: { en: "Reusable prefix", zh: "可复用前缀" },
   ready: { en: "Ready at B’s turn", zh: "轮到 B 时已就绪" },
   budget: { en: "Extra wait limit", zh: "额外等待上限" },
-  zero: { en: "t = 0: B’s turn · time in illustrative units", zh: "t = 0：轮到 B · 时间为示意单位" },
   "best-effort": { en: "Best-effort", zh: "Best-effort" },
   "wait-complete": { en: "wait-complete", zh: "wait-complete" },
   timeout: { en: "timeout", zh: "timeout" },
@@ -102,10 +92,6 @@ export const PREFETCH = {
   cheap: { en: "Cheap to recompute", zh: "重算便宜" },
   expensive: { en: "Expensive to recompute", zh: "重算昂贵" },
   unit: { en: "units", zh: "单位" },
-  assumption: {
-    en: "Illustrative model: L3 reads 2 tokens/unit; recompute time scales with missing tokens. Each policy includes 1 unit for Host → GPU and 1 for the new question.",
-    zh: "示意模型：L3 每单位读回 2 个 token，重算耗时与缺失 token 数成正比。三种策略均计入 Host → GPU 搬运 1 单位、新问题计算 1 单位。",
-  },
 } satisfies Record<string, Localized>;
 
 export const LAYOUT = {
@@ -166,22 +152,11 @@ export const REUSE = {
   fromL2: { en: "L2 → L1 → reuse on GPU", zh: "L2 → L1 → GPU 复用" },
   fromL3: { en: "L3 → L2 → L1 → reuse on GPU", zh: "L3 → L2 → L1 → GPU 复用" },
   cold: { en: "GPU computes the document + question", zh: "GPU 计算文档 + 新问题" },
-  backup: { en: "Backup: L1 → L2 → L3", zh: "备份：L1 → L2 → L3" },
-  backupNote: { en: "With backups enabled, lower tiers can retain a copy after GPU eviction.", zh: "启用备份后，GPU 清掉的缓存仍可能保留在下层。" },
-} satisfies Record<string, Localized>;
-
-export const REUSE_EXPLANATION = {
-  l1Hit: { en: "The document’s KV is already on the GPU. Reuse it directly and compute only the new question.", zh: "文档的 KV 已在 GPU 上，直接复用，只计算新问题。" },
-  l2Hit: { en: "The GPU copy is gone, but CPU memory still has it. Load it into L1, then compute only the new question.", zh: "GPU 上的副本已被清掉，但 CPU 内存里还有。搬回 L1 后，只计算新问题。" },
-  l3Hit: { en: "Neither L1 nor L2 has the document’s KV, but L3 does. Fetch it into L2, load it into L1, and compute only the new question.", zh: "L1、L2 都没有文档缓存，但 L3 还有。先取到 L2，再搬到 L1，只计算新问题。" },
-  miss: { en: "The document’s KV is missing from all three tiers. The GPU must compute both the document and the new question.", zh: "三层都找不到文档缓存。GPU 需要计算整份文档和新问题。" },
 } satisfies Record<string, Localized>;
 
 export const UPDATE = {
   timeline: { en: "HiCache design milestones", zh: "HiCache 技术演化时间线" },
-  timelineNote: { en: "Design milestones · UTC merge dates", zh: "技术里程碑 · 合入 main 的 UTC 日期" },
   stateTitle: { en: "Backing up new recurrent snapshots", zh: "补存新生成的递归快照" },
-  stateNote: { en: "Full attention + recurrent layers · write-through", zh: "全注意力层 + 递归层 · write-through" },
   baseline: { en: "Before", zh: "改动前" },
   fixed: { en: "After", zh: "改动后" },
   savedPrefix: { en: "A backed up", zh: "甲已备份" },
@@ -205,7 +180,6 @@ export const UPDATE = {
   acceptance: { en: "DSpark acceptance rate (%)", zh: "DSpark 接受率（%）" },
   acceptLength: { en: "Average accepted length", zh: "平均接受长度" },
   hostTitle: { en: "Host memory modes", zh: "Host 内存模式" },
-  hostNote: { en: "P = KV for the same prefix", zh: "P = 同一段前缀的 KV" },
   cacheMode: { en: "Cache (default)", zh: "缓存模式（默认）" },
   bufferMode: { en: "Buffer-only (optional)", zh: "Buffer-only（可选）" },
   instanceA: { en: "Instance A", zh: "实例 A" },

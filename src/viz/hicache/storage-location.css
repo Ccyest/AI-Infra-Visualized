@@ -4,7 +4,7 @@
 .hc-location-path { color: var(--muted); }
 .hc-location-path:focus { outline: none; }
 .hc-location-back { margin-left: auto; }
-.hc-location-scene { padding: 0 14px; }
+.hc-location-scene { padding: 0 14px 14px; }
 .hc-location-boundary { border: 1px dashed var(--axis); border-radius: 10px; padding: 10px; background: var(--page-2); }
 .hc-location-label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 8px; }
 .hc-location-nodes { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
@@ -33,8 +33,6 @@ button.hc-location-host { background: color-mix(in srgb, var(--series-1) 9%, var
 .hc-location-host .hc-location-memory strong { border-color: var(--series-1); background: color-mix(in srgb, var(--series-1) 14%, var(--surface)); }
 .hc-location-storage-options { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
 .hc-location-disk { margin-top: auto; border: 1px solid var(--axis); border-top: 5px double var(--axis); border-radius: 6px; padding: 10px 6px; background: var(--page-2); }
-.hc-location p.hc-location-detail { margin: 10px 14px; padding-left: 10px; border-left: 3px solid var(--accent); font-size: 12px; line-height: 1.6; }
-.hc-location-route { border-top: 1px solid var(--grid); padding: 8px 14px; font-size: 11px; color: var(--muted); }
 @media (max-width: 480px) {
   .hc-location-nodes { gap: 6px; }
   .hc-location-node { padding: 6px; }

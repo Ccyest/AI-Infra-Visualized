@@ -178,7 +178,7 @@ Host到GPU能这样重叠，是因为Host搬回 GPU 时可以按模型层取数�
 
 多轮对话提供了不断增长的工作集：每一轮都新增后续请求可能复用的历史。2026 年 8 月的测试比较 GPU L1、L1 加 CPU L2，以及再加 500 GiB Mooncake L3。DeepSeek-V4-Flash 使用 FULL 与 SWA，Inkling-Small 使用 FULL、SWA 与 MAMBA。
 
-<MultiTurnBenchViz client:visible />
+<MultiTurnBenchViz client:visible minimal />
 
 L1 最先丢失可复用历史，L2 推迟了容量上限出现的时刻。相比仅 L1，增加 L3 后，DeepSeek-V4-Flash 的有效输入吞吐从 9.4K 增至 145.5K tokens/s，缓存命中率保持在约 98%。Inkling-Small 从 15.5K 增至 67.1K，最终命中率为 96.8%。结果表明，当混合模型的对话历史超过较小缓存的容量时，较低层仍能保住复用机会。详见[多轮基准](https://www.lmsys.org/blog/2026-08-11-unified-radix-cache/)。
 
