@@ -1,0 +1,150 @@
+---
+title: "SGLang HiCache 的存储硬件：HBM、DRAM 与 SSD 如何分工"
+description: "SGLang HiCache 把可复用前缀保留到 GPU 显存之外，但新增容量只有在恢复 KV 值得时才能带来收益。为什么正在使用的 KV 放在 HBM？为什么要在 CPU 内存保留副本？下一层该用远端 DRAM，还是 SSD？本文从存储单元、GPU 封装、PCIe 链路和 SSD 控制器出发，解释这些硬件取舍如何影响 HiCache 的分层、搬运与备份。"
+publishedDate: "2026-10-26"
+order: 9
+concepts: []
+tryOnSglang: "https://github.com/sgl-project/sglang"
+references:
+  - label: "AI Infra Visualized：SGLang HiCache"
+    url: "https://yichizhang.dev/AI-Infra-Visualized/lessons/hicache/"
+  - label: "SGLang：HiCache 系统设计"
+    url: "https://docs.sglang.io/docs/advanced_features/hicache_design"
+  - label: "LMSYS Blog：SGLang HiCache"
+    url: "https://www.lmsys.org/blog/2025-09-10-sglang-hicache/"
+  - label: "Micron：DDR5 DRAM"
+    url: "https://www.micron.com/products/memory/dram-components/ddr5-sdram"
+  - label: "Micron：HBM3E 架构与封装"
+    url: "https://www.micron.com/about/blog/applications/ai/microns-hbm3e-powering-the-future-of-ai-with-high-bandwidth-memory"
+  - label: "NVIDIA：Hopper 架构"
+    url: "https://developer.nvidia.com/blog/nvidia-hopper-architecture-in-depth/"
+  - label: "NVIDIA：CUDA Best Practices Guide"
+    url: "https://docs.nvidia.com/cuda/cuda-c-best-practices-guide/index.html"
+  - label: "KIOXIA：SSD 垃圾回收与写放大"
+    url: "https://blog-us.kioxia.com/post/2025/06/20/how-fdp-can-reduce-garbage-collection-and-ultimately-waf-use-fdp-enabled-kioxia-xd8-series-data-center-ssds"
+---
+
+import HardwareViz from "../../../viz/hicache-storage/HardwareViz";
+import TransferViz from "../../../viz/hicache-storage/TransferViz";
+import CostViz from "../../../viz/hicache-storage/CostViz";
+
+## 背景
+
+假设用户围绕同一份文档连续提问。只要请求的前缀 token 相同，模型状态也兼容，SGLang 就能复用文档对应的 key 和 value，简称 KV。它只计算新增问题，无需重复执行文档的 prefill。这里缓存的是 attention 使用的一组张量，不是文档的文本副本。
+
+这些张量与模型权重、活跃请求、执行缓冲一起占用 GPU 显存。把所有历史对话都留下，最终就会挤占处理新请求的空间。HiCache 把可复用的历史保存在其他存储层，需要时再搬回来。[已有的 HiCache 课程](https://yichizhang.dev/AI-Infra-Visualized/lessons/hicache/)介绍了软件机制，这篇文章则深入硬件，解释为什么需要这样的设计。
+
+先区分两个概念。**HBM 本身也是 DRAM。** 这里真正要比较的是 GPU 旁边的 HBM，与 CPU 连接的 DDR DRAM。其次，**HiCache 的 L1/L2/L3 是软件分层。** HiCache L1 指 GPU 显存，在本文讨论的加速卡上通常是 HBM，并不是 GPU 芯片内部的硬件 L1 cache。
+
+<HardwareViz client:visible />
+
+## HBM：GPU 旁边的高带宽内存
+
+### 存储单元
+
+一个典型的 DRAM 存储单元用电容中的电荷表示一个 bit，再通过晶体管控制读写。电荷会泄漏，因此必须定期刷新。读取时也要检测微小的电荷差异，并恢复电荷。DRAM 把单元组织成行和 bank：读取新的一行前，需要先激活这一行；在同一个 bank 中切换行，还可能需要先进行预充电。这些操作都要花时间，不会因为外部接口的带宽很高就消失。详见 [Micron 的 DRAM 介绍](https://www.micron.com/products/memory/dram-components/ddr5-sdram)和 [HBM 读写机制](https://assets.micron.com/adobe/assets/urn%3Aaaid%3Aaem%3A275edf31-79e3-4b6c-8bbd-a233babe9281/original/as/micron-hbm2e-memory-wp.pdf)。
+
+HBM 仍然具有这些 DRAM 特征。它的主要优势来自同时搬运更多 bit，以及内存与处理器之间的连接方式。**带宽表示每秒能持续搬运多少字节，延迟表示一次访问需要等待多久。** 接口宽了很多，不代表每次有依赖关系的随机读取也会按相同比例变快。
+
+### 堆叠与宽接口
+
+HBM 把多层 DRAM 裸片垂直堆叠，通过穿硅通孔，也就是 TSV，连接堆叠中的信号。HBM 堆栈与 GPU 裸片放在同一个先进封装中，由高密度连线连接。它离 GPU 很近，但不在 GPU 的计算裸片内部。
+
+这种封装能够用较短的连线提供很宽的数据接口。多个 channel 和 bank 可以并行处理不同请求。GPU 同时发起大量独立访问时，就有机会利用这份总带宽；只有少量串行访问时，则未必能用满。较短的连接也有利于降低每 bit 的搬运能耗。[Micron 的 HBM3E 介绍](https://www.micron.com/about/blog/applications/ai/microns-hbm3e-powering-the-future-of-ai-with-high-bandwidth-memory)解释了这些封装选择。
+
+代价是先进封装昂贵，GPU 周围的面积有限，多层堆叠增加了制造与散热难度。扩容通常需要换用不同的堆栈或加速卡设计，不能像服务器加装 DIMM 内存条那样操作。HBM 也属于易失性内存，断电后不能继续保留数据。
+
+### 为什么用作 HiCache L1
+
+Attention 在生成过程中持续读取之前计算出的 KV。对于 full attention，长上下文可能意味着每一步 decode 都要读取大量历史 KV。HBM 提供靠近计算单元的高带宽访问路径，供大量 GPU 线程并行读取这些张量。片上 cache 和 shared memory 帮助 kernel 复用较小的数据块，而完整的 KV 池仍放在 GPU 显存里。
+
+因此，HBM 适合保存现在正在使用的 KV。把暂时不活跃的对话长期留在这里，则会占用本来可以交给活跃请求的容量。HiCache 允许这段前缀离开 GPU，同时在下层保留副本。在使用 GDDR 的 GPU 上，同一个软件角色由该 GPU 的显存承担；HBM 是硬件选择，不是 L1 的定义。
+
+## Host DRAM：容量更大，但多一段链路
+
+### DDR 内存与容量
+
+服务器 DDR 内存把 DRAM 芯片放在 DIMM 内存条上，由 CPU 内存控制器访问。多个内存通道可以并行工作，受支持的插槽和 DIMM 容量也提供了更多容量配置方式。相比 HBM 的先进封装，这种方式通常能以更低的单位容量成本扩容，但仍受服务器规格限制。
+
+DDR 内存同样存在 bank 冲突、刷新和带宽上限。容量增加也不代表带宽一定增加：装满了多少通道、使用什么 DIMM 配置、CPU 控制器支持什么，都会影响结果。在 Grace 等平台上，CPU 内存还可以采用 LPDDR5X。对 HiCache 而言，关键是它属于 Host 内存，具体的 DRAM 接口取决于机器。
+
+### CPU 的内存带宽不等于 GPU 的恢复带宽
+
+在传统 PCIe 服务器中，KV 从 Host 恢复到 GPU，要经过 CPU 内存子系统和 PCIe 链路，最后写入 GPU 显存。即使 CPU 读取本地 DRAM 很快，GPU 接收数据的速度仍受整条路径中最慢的部分限制。多个 GPU 还可能共享内存通道或上游链路。
+
+用具体规格看一下量级。NVIDIA 为 H100 SXM 标注的 HBM 带宽是 **3.35 TB/s**；Hopper 架构介绍中的 PCIe Gen 5 x16 是**双向合计 128 GB/s，单向 64 GB/s**。以十进制 1 GB 数据除以这些带宽，理想化的 HBM 连续访问约需 **0.30 ms**，单向 PCIe 搬运约需 **15.6 ms**。这只是按带宽计算的时间，不是 KV 恢复实测，两者也不是完全相同的操作。[H100 规格](https://www.nvidia.com/en-us/data-center/h100/) · [PCIe 带宽口径](https://developer.nvidia.com/blog/nvidia-hopper-architecture-in-depth/)
+
+所以，用“80 GB CPU 内存”替代“80 GB GPU 显存”，并不能保留相同的性能。容量可能够了，但访问路径变了。CPU–GPU 一致性互连会改变这个取舍，例如 Grace Hopper 使用 NVLink-C2C，而不是上述传统 PCIe 路径。即使如此，共享地址空间也不意味着访问 Host 内存与本地 HBM 一样快。详见 [Grace Hopper 架构](https://developer.nvidia.com/blog/nvidia-grace-hopper-superchip-architecture-in-depth/)。
+
+### 为什么保留 L2 副本
+
+Host DRAM 适合保存暂时离开 GPU、但可能很快再次使用的前缀。把前缀恢复一次，就有机会省掉它的 prefill；之后 attention 使用已经恢复到 GPU 的副本。这与每一步 decode 都通过 PCIe 读取整段历史 KV，有不同的带宽成本。
+
+Host 池还承担 I/O 缓冲的作用。Pinned memory 把物理内存页固定下来，使其能够用于 DMA 传输，而不会被操作系统换出。它不会让 DRAM 芯片本身变快，固定过多内存也会减少系统其他部分可用的容量。在多路 CPU 服务器上，把 Host 内存分配到靠近 GPU 的 CPU socket，还能避免额外经过 CPU 之间的互连。这就是 pinned memory 和 NUMA 亲和性会影响搬运性能的原因。详见 [CUDA 搬运建议](https://docs.nvidia.com/cuda/cuda-c-best-practices-guide/index.html#data-transfer-between-host-and-device)。
+
+## L3：远端内存或 SSD
+
+### 远端 DRAM
+
+L3 表示存储后端这一层，不限定具体介质。一个服务可以汇集多台机器的 DRAM，把它们作为共享缓存。[HiCache 的多轮对话测试](https://www.lmsys.org/blog/2026-08-11-unified-radix-cache/)就使用了 500 GiB 的 Mooncake Store 分布式内存层。这份 L3 存在内存里，不会因为排在第三层就变成 SSD。
+
+远端 DRAM 可以提供更大的总容量，也能让多个推理实例复用同一段前缀。但访问成本包含后端查询、网络传输、网卡和 PCIe 流量，以及并发请求的竞争。RDMA 让网卡访问已经注册的内存，减少 CPU 参与和软件复制。数据仍然要经过硬件链路，远端内存不会因此获得本地 HBM 的访问速度。
+
+因此，本地 L2 与远端 DRAM L3 即使采用同一种存储单元，端到端表现也可以很不一样。L2 属于单个推理实例；共享 L3 还要求后端命名空间、配置和缓存状态兼容。本地文件后端也不会仅仅因为叫 L3 就自动成为共享存储。详见 [HiCache 各层的共享范围](https://docs.sglang.io/docs/advanced_features/hicache_design#tier-sharing-scope)。
+
+### NAND flash 与 SSD
+
+SSD 由 NAND flash 和控制器等部件组成。Flash 断电后仍可保留数据，较高的单元密度和多层堆叠使它能够保存大得多的历史，单位容量成本通常也低于 DRAM。
+
+深入到单元内部，存储的电荷会改变晶体管的阈值电压，器件通过区分不同电压范围读取数据。TLC 用八种状态表示三个 bit，QLC 用十六种状态表示四个 bit。状态越多，每个单元能存的数据越多，但相邻状态之间的裕量也越小，对编程、纠错和耐久性的要求随之提高。因此，容量相同、都使用 NVMe 接口的 SSD，写入表现仍可能不同。详见 [KIOXIA 的单元原理](https://www.kioxia.com/en-jp/rd/technology/multi-level-cell.html)与 [NAND 寿命说明](https://americas.kioxia.com/content/dam/kioxia/en-us/business/memory/asset/KIOXIA-SSD-NAND-Endurance-Tech-Brief.pdf)。
+
+它的访问机制不同。NAND 按页读取和编程，却需要按更大的块擦除。更新一个逻辑地址时，通常先把新内容写到其他物理位置，再把旧内容标为无效。之后，垃圾回收会搬走仍然有效的数据，擦除整个块，再供后续写入。这些额外写入消耗带宽和器件寿命，后台工作也可能增加尾延迟。详见 [KIOXIA 对垃圾回收与写放大的解释](https://blog-us.kioxia.com/post/2025/06/20/how-fdp-can-reduce-garbage-collection-and-ultimately-waf-use-fdp-enabled-kioxia-xd8-series-data-center-ssds)。
+
+NVMe 是许多 PCIe SSD 使用的命令接口，不是存储介质。很高的顺序吞吐数字，不能直接代表小块随机读取延迟、低队列深度表现，或持续读写混合负载下的性能。分布式 SSD 后端还会在器件 I/O 之外增加网络和服务开销。
+
+对于 HiCache，如果大量历史仍有足够的复用价值，值得付出写入和再次读取的成本，SSD 容量就有吸引力。选择性备份可以减少给低复用前缀花的带宽与 flash 写入。Flash 能断电保存，也不自动意味着某个 KV 服务支持重启恢复；这还需要保留元数据，并确保模型状态兼容。
+
+## 各类存储如何分工
+
+还需要补上 SRAM。典型 SRAM 使用晶体管电路，在通电时保持一个 bit，不需要 DRAM 那样的定期刷新。它适合片上快速访问，但每 bit 占用的硅面积大得多。因此，SRAM 适合较小的硬件 cache 和 shared memory，不适合保存大量对话历史。Attention kernel 处理的小块 KV 可以经过这些 SRAM 结构，HiCache 则不会把 SRAM 当成第四层历史缓存。NVIDIA 的 [CUDA 内存空间对比](https://docs.nvidia.com/cuda/cuda-c-best-practices-guide/index.html#device-memory-spaces)区分了这些片上资源与 device memory。
+
+| 介质与位置 | 主要优势 | 主要代价 | 在 HiCache 中的角色 |
+| --- | --- | --- | --- |
+| GPU 片上 SRAM | 访问延迟低，片上带宽高 | 占用硅面积大，容量小，断电丢失 | Kernel 工作数据与硬件 cache，不是 HiCache 层级 |
+| GPU 旁的 HBM | 靠近计算单元，总带宽高 | 容量与封装成本受限，断电丢失 | L1：活跃 KV 与保留在 GPU 的前缀 |
+| CPU 连接的 DRAM | 容量配置灵活，内存访问快 | GPU 使用前要经过互连，断电丢失 | L2：本地可复用副本与传输缓冲 |
+| 缓存服务背后的 DRAM | 可汇集容量，可支持跨实例复用 | 网络与服务开销，断电丢失 | L3 的一种实现 |
+| 本地或远端 SSD 中的 NAND | 大容量，可断电保存 | I/O 延迟、写放大与寿命限制 | L3 的另一种实现 |
+
+这种分层同时考虑复用价值与访问成本。同一段前缀可以在多层保留副本：向下备份不必立即删除 GPU 副本，从 L3 读取也不必删除存储中的副本。
+
+## 把 KV 搬回计算位置
+
+考虑一段只保留在 L3 的文档前缀。在经过 Host 中转的 HiCache 路径上，后端先把所需 KV 写入 Host 内存，再由 HiCache 搬到 GPU KV 池。Attention 所需的 KV 到达后，才能使用这份数据。下图只展示一份数据的副本变化，实际传输可以继续按 token 页和模型层拆分。
+
+<TransferViz client:visible />
+
+沿着这条路径，就更容易理解 HiCache 为什么调整内存布局。GPU 计算逐层进行，按模型层排列 KV 有利于读取。存储后端取回的是一页 token 的缓存，把这一页的数据放在连续的 Host 内存中，则可以减少分散的小 I/O。**HiCache 的 page 是一组 token，不等于操作系统内存页，也不等于 NAND 的物理页。**
+
+大块传输可以分摊请求提交等固定开销，却不会减少必须经过链路的字节数。同样，zero-copy 集成省掉的是额外的软件缓冲复制，不代表数据完全没有物理移动。因此，优化传输 kernel 和 Host 页布局，可以提高链路利用率，但不会改变 PCIe 或 SSD 的峰值带宽。详见 [HiCache 的数据搬运设计](https://www.lmsys.org/blog/2025-09-10-sglang-hicache/)。
+
+Host 数据就绪后，还能在 GPU 计算较早模型层的同时，继续搬运后续层的 KV。L3 预取则可以利用请求等待 GPU 调度的时间，提前读取数据。两种方式都能减少暴露给请求的等待，但不保证 I/O 开销全部消失：某层数据到得太慢，GPU 仍然要等；同时恢复的请求太多，也可能占满共享链路。
+
+## 什么时候值得恢复
+
+真正需要比较的是：**恢复缺失前缀带来的额外等待，与复用它省掉的计算。** L3 命中不自动意味着延迟降低。存储介质比较慢，也不意味着缓存没有价值：一次相对慢的读取，仍可能比长前缀的 prefill 更便宜。
+
+下面的计算器假设需要恢复十进制 1 GB KV，Host → GPU 有效带宽为 50 GB/s，因此这一段需要 20 ms。如果 L3 → Host 的有效带宽为 10 GB/s，则还需要 100 ms。两段串行时，共需 120 ms。若预取在调度前已经完成了 80 ms 的 L3 读取，剩下的等待就变成 40 ms。这些是教学假设，不是器件规格或 HiCache 实测。
+
+<CostViz client:visible />
+
+计算器让 KV 大小与重算成本独立变化，便于观察取舍。真实工作负载中，它们取决于模型、前缀长度、KV 精度、并行方式和 batching。图中没有加入查询、启动、排队与逐层重叠。部署时需要测量有效搬运速度与请求延迟，不能直接拿器件峰值代替。
+
+这些硬件特点对应了几类实际选择：
+
+- **本实例频繁复用：** 如果 Host 容量与 CPU–GPU 带宽允许，较大的 Host 缓存可以减少反复读取 L3。
+- **跨实例复用：** 共享后端能在实例私有 L2 之外保留可访问的历史，实际副本数量与流量仍取决于后端复制和路由。
+- **历史很大，但复用较少：** 如果恢复仍能省掉足够的 prefill，SSD 后端可以降低保留历史的容量成本。此时也要看备份流量与写入寿命。
+- **Host 容量紧张：** HiCache 课程介绍的 buffer-only 模式只在搬运期间占用 Host 槽位。它减少长期驻留的 Host 副本，但放弃后续直接命中 L2 的机会，也没有去掉 Host 中转路径。
+
+原 HiCache 基准展示的是保留更多可复用历史的收益，并不是把 HBM 换成慢介质就会自然加速。HBM 为 GPU 计算提供当前需要的 KV；Host DRAM 和 L3 保留更多前缀，让引擎有机会在恢复更便宜时，省掉重新构建这些状态的计算。
