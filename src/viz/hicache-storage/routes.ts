@@ -16,21 +16,19 @@ export const ROUTES = {
   gds: { nodes: ["ssd", "gpu"], links: ["gds"] },
 } as const satisfies Record<string, Route>;
 export type RouteId = keyof typeof ROUTES;
-export const ROUTE_TICKS = 4;
-
-export function routeFrame(id: RouteId, tick: number) {
+export function routeFrame(id: RouteId, progress: number) {
   const route: Route = ROUTES[id];
-  const total = route.links.length * ROUTE_TICKS;
-  if (!Number.isInteger(tick) || tick < 0 || tick > total) {
-    throw new RangeError("Route tick is outside the scenario");
+  const total = route.links.length;
+  if (!Number.isFinite(progress) || progress < 0 || progress > total) {
+    throw new RangeError("Route progress is outside the scenario");
   }
-  const completed = Math.floor(tick / ROUTE_TICKS);
-  const progress = tick % ROUTE_TICKS / ROUTE_TICKS;
+  const completed = Math.floor(progress);
+  const fraction = progress - completed;
   return {
     total,
-    ready: tick === total,
+    ready: progress === total,
     arrived: route.nodes.map((_, index) => index <= completed),
-    flight: progress > 0 ? { edge: completed, progress } : null,
+    flight: fraction > 0 ? { edge: completed, progress: fraction } : null,
     activeLink: route.links[Math.min(completed, route.links.length - 1)],
     cpuCopies: route.links.filter(link => link === "cpu").length,
     hostBuffers: route.nodes.filter(node => ["pageable", "pinned", "socket", "host"].includes(node)).length,

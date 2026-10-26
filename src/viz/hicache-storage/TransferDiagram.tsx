@@ -14,12 +14,12 @@ export default function TransferDiagram({ frame, focus, isBufferOnly, lang }: {
   const flight = frame.flight;
   return <div className="storage-diagram-scroll">
     <svg className="storage-flow-diagram" viewBox="0 0 720 355" role="img" aria-label={FLOW[frame.phase][lang]}>
-      {COLUMNS.map(column => <g key={column.key}>
+      {COLUMNS.map(column => <g key={column.key} data-tier={column.key}>
         <rect x={column.x} y="10" width="190" height="290" rx="10" className="flow-tier" />
         <text x={column.x + 95} y="38" textAnchor="middle" className="flow-title">{column.name}</text>
         {frame[column.key].map((hasCopy, page) => {
           const isReleased = column.key === "host" && isBufferOnly && frame.l3[page] && frame.gpu[page];
-          return <g key={page} style={{ opacity: focus === null || focus === page ? 1 : 0.25 }}>
+          return <g key={page} data-page={page} data-present={hasCopy} style={{ opacity: focus === null || focus === page ? 1 : 0.25 }}>
             <rect x={column.x + 22} y={58 + page * 51} width="146" height="38" rx="5"
               fill={hasCopy ? `var(--series-${page + 1})` : "var(--surface)"}
               fillOpacity={hasCopy ? 0.16 : 1} stroke={hasCopy ? `var(--series-${page + 1})` : "var(--grid)"}
@@ -32,9 +32,10 @@ export default function TransferDiagram({ frame, focus, isBufferOnly, lang }: {
           {FLOW.slots[lang]} {frame[column.key].filter(Boolean).length}/{PAGE_COUNT}</text>
       </g>)}
       {[215, 455].map(x => <g key={x}><path d={`M${x + 3} 153 H${x + 44} l-7 -5 m7 5 l-7 5`} className="detail-pointer" /></g>)}
-      {flight && <g className="flow-flight" style={{ transform: `translate(${(flight.from === "l3" ? 120 : 360) + flight.progress * 240}px, ${77 + flight.page * 51}px)` }}>
-        <rect x="-27" y="-15" width="54" height="30" rx="5" fill={`var(--series-${flight.page + 1})`} />
-        <text y="5" textAnchor="middle" className="flow-flight-label">{flight.page + 1}</text>
+      {flight && <g className="flow-flight" data-progress={flight.progress}
+        transform={`translate(${(flight.from === "l3" ? 120 : 360) + flight.progress * 240} ${77 + flight.page * 51})`}>
+        <rect x="-73" y="-19" width="146" height="38" rx="5" fill={`var(--series-${flight.page + 1})`} />
+        <text y="5" textAnchor="middle" className="flow-flight-label">{FLOW.page[lang]} {flight.page + 1}</text>
       </g>}
       <text x="600" y="330" textAnchor="middle" className={frame.phase === "compute" ? "flow-computing" : "flow-counter"}>
         {frame.phase === "compute" ? "▶ Attention" : frame.gpu.every(Boolean) ? FLOW.ready[lang] : FLOW.waiting[lang]}</text>

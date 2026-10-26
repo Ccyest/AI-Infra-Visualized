@@ -48,6 +48,8 @@ test("HiCache survives an early first animation frame and all playback controls"
         import PrefetchViz from './src/viz/hicache/PrefetchViz';
         import StateRestoreViz from './src/viz/hicache/StateRestoreViz';
         import HostModeViz from './src/viz/hicache/HostModeViz';
+        import StorageRouteViz from './src/viz/hicache-storage/RouteViz';
+        import StorageTransferViz from './src/viz/hicache-storage/TransferViz';
         export {act};
         export function mount(container) {
           const root = createRoot(container);
@@ -73,13 +75,18 @@ test("HiCache survives an early first animation frame and all playback controls"
           const root = createRoot(container);
           root.render(<HostModeViz lang={lang}/>);
           return root;
+        }
+        export function mountStorage(container, lang, route) {
+          const root = createRoot(container);
+          root.render(route ? <StorageRouteViz lang={lang}/> : <StorageTransferViz lang={lang}/>);
+          return root;
         }`,
       loader: "tsx", resolveDir: process.cwd(),
     },
     bundle: true, platform: "node", format: "cjs", outfile: bundle,
     loader: { ".css": "empty" }, define: { "process.env.NODE_ENV": '"development"' },
   });
-  const { act, mount, mountOverlap, mountPrefetch, mountState, mountHost } = createRequire(import.meta.url)(bundle);
+  const { act, mount, mountOverlap, mountPrefetch, mountState, mountHost, mountStorage } = createRequire(import.meta.url)(bundle);
   const container = document.getElementById("app");
   const button = (label) => [...container.querySelectorAll("button")].find((node) =>
     node.textContent === label || node.getAttribute("aria-label") === label);
@@ -308,6 +315,106 @@ test("HiCache survives an early first animation frame and all playback controls"
         if (!slowest) assert.equal(container.querySelectorAll('[data-rank="tied"]').length, 3);
         const computeWidth = parseFloat(policies[0].querySelector('[data-stage="recompute"]').style.width);
         assert.ok(Math.abs(computeWidth - value / 14 * 100) < 1e-8, "Recompute blocks keep a fixed time scale");
+      }
+    } finally {
+      await act(async () => root.unmount());
+    }
+  }
+
+  const advanceStorage = async (count) => {
+    for (let i = 0; i < count; i++) await act(async () => {
+      now += 16;
+      const callbacks = [...frames.values()]; frames.clear();
+      callbacks.forEach(callback => callback(now));
+    });
+  };
+  const control = (index) => container.querySelectorAll('.viz-controls button')[index];
+  const clickStorage = async (label) => {
+    assert.ok(button(label), `Missing storage control: ${label}`);
+    await act(async () => button(label).click());
+  };
+  const seekStorage = async (value) => {
+    const range = container.querySelector('.viz-scrub');
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set.call(range, String(value));
+      range.dispatchEvent(new window.Event('input', { bubbles: true }));
+    });
+  };
+  for (const lang of ['zh', 'en']) for (const isRoute of [true, false]) {
+    await act(async () => { root = mountStorage(container, lang, isRoute); });
+    try {
+      const flight = () => container.querySelector(isRoute ? '.route-flight' : '.flow-flight');
+      const arrivals = () => container.querySelectorAll(isRoute ? '.route-memory.is-ready' : '[data-tier="host"] [data-present="true"]').length;
+      const initial = arrivals();
+      await act(async () => control(2).click());
+      await advanceStorage(2);
+      let last = 0;
+      for (let i = 0; i < 10; i++) {
+        await advanceStorage(1);
+        const progress = Number(flight().dataset.progress);
+        assert.ok(progress > last && progress < 1, 'Every animation frame advances the same transfer');
+        last = progress;
+        assert.equal(arrivals(), initial, 'Destination stays empty until landing');
+      }
+      await act(async () => control(0).click());
+      await advanceStorage(5);
+      assert.equal(Number(flight().dataset.progress), last, 'Pause freezes the actual flight');
+      await act(async () => control(2).click());
+      await advanceStorage(110);
+      assert.equal(flight(), null);
+      assert.equal(arrivals(), initial + 1, 'One click finishes one complete transfer');
+      assert.equal(frames.size, 0, 'Single-step stops at the destination');
+      await act(async () => control(1).click());
+      assert.equal(arrivals(), initial, 'Back restores the previous complete state');
+      await act(async () => control(0).click());
+      await advanceStorage(10);
+      await seekStorage(2);
+      assert.equal(frames.size, 0, 'Seeking cancels playback');
+      assert.equal(flight(), null);
+      assert.equal(arrivals(), initial + 2);
+      await act(async () => control(3).click());
+      assert.equal(arrivals(), initial);
+
+      if (isRoute) {
+        for (const [mode, total] of [['Pageable', 2], ['Pinned + DMA', 1], ['TCP / sockets', 3], ['RDMA → Host', 2], ['GPUDirect RDMA', 1], ['SSD → Host → GPU', 2], ['GPUDirect Storage', 1]]) {
+          await clickStorage(mode);
+          assert.equal(container.querySelector('.viz-scrub').max, String(total));
+          assert.equal(arrivals(), 1, 'Switching routes resets all destination buffers');
+          await act(async () => control(0).click());
+          await advanceStorage(105 * total);
+          assert.equal(arrivals(), total + 1, 'Autoplay completes every hop');
+          assert.equal(frames.size, 0);
+          await act(async () => control(0).click());
+          await advanceStorage(10);
+          await act(async () => control(3).click());
+          assert.equal(arrivals(), 1, 'Reset cancels a replay in flight');
+        }
+      } else {
+        assert.equal(container.querySelector('.viz-scrub').max, '8');
+        await seekStorage(8);
+        assert.equal(container.querySelectorAll('[data-present="true"]').length, 12);
+        await clickStorage('Buffer-only');
+        const l2 = button(lang === 'zh' ? 'L2 命中' : 'L2 hit');
+        assert.equal(l2.disabled, true);
+        await seekStorage(4);
+        await act(async () => control(2).click());
+        await advanceStorage(20);
+        assert.equal(container.querySelector('[data-tier="host"] [data-page="0"]').dataset.present, 'true');
+        assert.equal(container.querySelector('[data-tier="gpu"] [data-page="0"]').dataset.present, 'false');
+        await advanceStorage(90);
+        assert.equal(container.querySelector('[data-tier="host"] [data-page="0"]').dataset.present, 'false');
+        assert.equal(container.querySelector('[data-tier="gpu"] [data-page="0"]').dataset.present, 'true');
+        await act(async () => control(1).click());
+        assert.equal(container.querySelector('[data-tier="host"] [data-page="0"]').dataset.present, 'true');
+        await clickStorage(lang === 'zh' ? '保留 L2 副本' : 'Retain L2 copies');
+        await clickStorage(lang === 'zh' ? 'L2 命中' : 'L2 hit');
+        assert.equal(container.querySelector('.viz-scrub').max, '4');
+        await act(async () => control(0).click());
+        await advanceStorage(430);
+        assert.equal(container.querySelectorAll('[data-tier="gpu"] [data-present="true"]').length, 4);
+        await clickStorage(lang === 'zh' ? 'L1 命中' : 'L1 hit');
+        assert.equal(container.querySelector('.viz-controls'), null, 'L1 hits require no transfer controls');
+        assert.equal(container.querySelectorAll('[data-tier="gpu"] [data-present="true"]').length, 4);
       }
     } finally {
       await act(async () => root.unmount());

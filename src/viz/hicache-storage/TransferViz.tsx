@@ -1,9 +1,9 @@
 import { useState } from "react";
 import VizStage from "../../components/core/VizStage";
-import { useSimPlayer } from "../../components/core/useSimPlayer";
 import type { Locale } from "../../lib/i18n";
 import { FLOW, TEXT } from "./strings";
-import { PAGE_COUNT, transferDuration, transferFrame, type HitTier } from "./transfer";
+import { PAGE_COUNT, transferStepCount, transferFrame, type HitTier } from "./transfer";
+import { useTransferPlayer } from "./useTransferPlayer";
 import TransferDiagram from "./TransferDiagram";
 import "./styles.css";
 import "./details.css";
@@ -12,8 +12,8 @@ export default function TransferViz({ lang = "zh" }: { lang?: Locale }) {
   const [hit, setHit] = useState<HitTier>("l3");
   const [isBufferOnly, setIsBufferOnly] = useState(false);
   const [focus, setFocus] = useState<number | null>(null);
-  const player = useSimPlayer(transferDuration(hit), 4);
-  const frame = transferFrame(hit, isBufferOnly, Math.min(player.t, transferDuration(hit)));
+  const { player, progress } = useTransferPlayer(transferStepCount(hit));
+  const frame = transferFrame(hit, isBufferOnly, progress);
   const setSource = (next: HitTier) => { player.reset(); setHit(next); };
   const setMode = (buffer: boolean) => {
     player.reset(); setIsBufferOnly(buffer);

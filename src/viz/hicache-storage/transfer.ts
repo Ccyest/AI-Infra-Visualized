@@ -1,46 +1,43 @@
 export type HitTier = "l1" | "l2" | "l3";
 export const PAGE_COUNT = 4;
-export const TICKS_PER_PAGE = 4;
-const STAGE_TICKS = PAGE_COUNT * TICKS_PER_PAGE;
 
 export interface TransferFrame {
   l3: boolean[];
   host: boolean[];
   gpu: boolean[];
   flight: { page: number; from: "l3" | "host"; progress: number } | null;
-  phase: "storage" | "host" | "ready" | "compute";
+  phase: "storage" | "host" | "compute";
 }
 
-export function transferDuration(hit: HitTier): number {
-  if (hit === "l1") return 1;
-  return (hit === "l3" ? STAGE_TICKS * 2 : STAGE_TICKS) + 1;
+export function transferStepCount(hit: HitTier): number {
+  if (hit === "l1") return 0;
+  return hit === "l3" ? PAGE_COUNT * 2 : PAGE_COUNT;
 }
 
-/** Whole-payload L3 staging, then page copies to GPU. Ticks are schematic, not time. */
-export function transferFrame(hit: HitTier, isBufferOnly: boolean, tick: number): TransferFrame {
-  if (!Number.isInteger(tick) || tick < 0 || tick > transferDuration(hit)) {
-    throw new RangeError("Transfer tick is outside the scenario");
+/** One page copy per step; fractional progress only draws the flight between steps. */
+export function transferFrame(hit: HitTier, isBufferOnly: boolean, progress: number): TransferFrame {
+  if (!Number.isFinite(progress) || progress < 0 || progress > transferStepCount(hit)) {
+    throw new RangeError("Transfer progress is outside the scenario");
   }
   if (isBufferOnly && hit === "l2") throw new RangeError("Buffer-only has no retained L2 hit");
-  const hostStart = hit === "l3" ? STAGE_TICKS : 0;
-  const gpuTicks = Math.max(0, tick - hostStart);
-  const isStorage = hit === "l3" && tick < STAGE_TICKS;
-  const isHost = hit !== "l1" && tick >= hostStart && gpuTicks < STAGE_TICKS;
-  const completedGpu = hit === "l1" ? PAGE_COUNT : Math.min(PAGE_COUNT, Math.floor(gpuTicks / TICKS_PER_PAGE));
-  const stageTick = isStorage ? tick : gpuTicks;
-  const phaseTick = stageTick % TICKS_PER_PAGE;
-  const flight = (isStorage || isHost) && phaseTick > 0
-    ? { page: Math.floor(stageTick / TICKS_PER_PAGE), from: isStorage ? "l3" as const : "host" as const, progress: phaseTick / TICKS_PER_PAGE }
+  const hostStart = hit === "l3" ? PAGE_COUNT : 0;
+  const gpuProgress = Math.max(0, progress - hostStart);
+  const isStorage = hit === "l3" && progress < PAGE_COUNT;
+  const completedGpu = hit === "l1" ? PAGE_COUNT : Math.floor(gpuProgress);
+  const stageProgress = isStorage ? progress : gpuProgress;
+  const fraction = stageProgress % 1;
+  const flight = fraction > 0
+    ? { page: Math.floor(stageProgress), from: isStorage ? "l3" as const : "host" as const, progress: fraction }
     : null;
   const pages = Array.from({ length: PAGE_COUNT }, (_, page) => page);
   return {
     l3: pages.map(() => hit === "l3"),
     host: pages.map(page => {
-      const hasArrived = hit === "l2" || (hit === "l3" && tick >= (page + 1) * TICKS_PER_PAGE);
+      const hasArrived = hit === "l2" || (hit === "l3" && progress >= page + 1);
       return hasArrived && !(isBufferOnly && page < completedGpu);
     }),
     gpu: pages.map(page => page < completedGpu),
     flight,
-    phase: tick === transferDuration(hit) ? "compute" : isStorage ? "storage" : isHost ? "host" : "ready",
+    phase: progress === transferStepCount(hit) ? "compute" : isStorage ? "storage" : "host",
   };
 }

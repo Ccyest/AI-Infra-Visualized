@@ -16,7 +16,7 @@
 .route-hop > span { position: absolute; top: 25px; left: 30%; right: 0; font-size: .75rem; color: var(--muted); }
 .route-wire { position: absolute; top: 6px; bottom: 6px; left: 18%; width: 3px; background: var(--route-color); }
 .route-wire > i { position: absolute; bottom: 0; left: -4px; width: 11px; height: 11px; transform: rotate(45deg); border-right: 2px solid var(--route-color); border-bottom: 2px solid var(--route-color); }
-.route-flight { position: absolute; left: 50%; transform: translate(-50%, -50%); background: var(--route-color); color: var(--surface); padding: 3px 6px; border-radius: 4px; font-size: .7rem; transition: top .35s linear; }
+.route-flight { position: absolute; left: 18%; transform: translate(-50%, -50%); background: var(--route-color); color: var(--surface); padding: 3px 6px; border-radius: 4px; font-size: .7rem; }
 .route-explanation section { border-top: 1px solid var(--grid); margin-top: 1rem; padding-top: 1rem; }
 .route-explanation p { margin: 0; font-size: .88rem; }
 .route-counts { display: grid; grid-template-columns: 1fr 1fr; gap: .8rem; }
@@ -27,4 +27,3 @@
   .route-options strong { flex-basis: 100%; }
   .route-layout { grid-template-columns: minmax(0, 1fr); }
 }
-@media (prefers-reduced-motion: reduce) { .route-flight { transition: none; } }

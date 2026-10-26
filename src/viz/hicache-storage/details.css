@@ -36,7 +36,6 @@
 .storage-flow-diagram .flow-title { font-size: 16px; font-weight: 600; }
 .storage-flow-diagram .flow-counter { fill: var(--muted); font-size: 13px; }
 .storage-flow-diagram .flow-computing { fill: var(--series-3); font-weight: 700; }
-.flow-flight { transition: transform .18s linear; }
 .storage-flow-diagram .flow-flight-label { fill: var(--surface); font-weight: 700; }
 .storage-focus { margin-bottom: 0; font-size: .8rem; }
 .cost-metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: .8rem; margin: 1rem 0; }
@@ -62,5 +61,5 @@
   .cost-metrics output { font-size: 1.1rem; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .detail-die, .detail-charge, .detail-tsv, .flow-flight, .storage-bar-track i { transition: none; }
+  .detail-die, .detail-charge, .detail-tsv, .storage-bar-track i { transition: none; }
 }

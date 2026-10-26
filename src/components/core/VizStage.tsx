@@ -88,7 +88,7 @@ export default function VizStage({
 
       {children}
 
-      <div className="viz-controls">
+      {total > 0 && <div className="viz-controls">
         <button
           type="button"
           className="viz-btn primary"
@@ -152,7 +152,7 @@ export default function VizStage({
         <span className="viz-tick">
           t = {t}/{total}
         </span>
-      </div>
+      </div>}
 
       {footer && <div className="viz-footer">{footer}</div>}
     </figure>
