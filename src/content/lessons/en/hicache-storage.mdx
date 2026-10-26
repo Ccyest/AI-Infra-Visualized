@@ -37,6 +37,22 @@ Keeping that KV on the GPU would make the next request easy. The problem is that
 
 HiCache calls GPU memory L1, CPU memory L2, and its storage backend L3. These names describe where HiCache keeps data; L1 does not mean the small hardware L1 cache inside a GPU core. On the accelerators discussed here, GPU memory is HBM. **HBM is also a kind of DRAM.** We will compare how HBM connects to the GPU with how ordinary server DRAM connects to the CPU.
 
+## Storage at a glance
+
+Before looking inside the hardware, it helps to separate four properties. **Capacity** is how much data it can hold; **bandwidth** is how many bytes it can move per second; **latency** is how long one access takes; **cost per byte** is how much we pay for the same amount of storage. Different devices make different tradeoffs:
+
+<div className="storage-glossary" tabIndex={0} role="region" aria-label="Storage terminology comparison">
+
+| Term and meaning | Main advantages | Main limitations | Use in HiCache |
+| --- | --- | --- | --- |
+| **SRAM** (Static Random-Access Memory): small memories inside the GPU chip | Low latency and high on-chip bandwidth | Large silicon area per bit, so capacity is small and costly | Hardware caches and kernel working data; not a separate HiCache tier |
+| **HBM** (High Bandwidth Memory): stacked DRAM beside the GPU chip | High aggregate bandwidth for reading large amounts of KV | Expensive packaging and limited room for capacity; cannot expand by adding DIMMs | **L1**: KV being used by the GPU and prefixes retained in GPU memory |
+| **CPU DRAM**: DRAM means Dynamic Random-Access Memory; CPU memory commonly uses DDR or LPDDR | Usually offers more capacity at a lower cost per byte than HBM | GPU reads or copies must cross the CPU–GPU link; CPU memory bandwidth is not the same as transfer bandwidth to the GPU | **L2**: reusable local KV copies and transfer buffers |
+| **Remote DRAM**: memory on other machines, accessed through a cache service | Pools capacity and can share KV across inference instances | Adds network and service latency; limited by NICs and network bandwidth | One option for **L3**, such as a distributed memory cache |
+| **SSD / NAND flash**: an SSD is a solid-state drive; NAND flash is the medium it uses to store data | Large capacity, usually cheaper per byte than DRAM, and retains data without power | Higher access latency than memory, plus extra work during updates and finite write endurance | Another option for **L3**, for retaining a larger history |
+
+</div>
+
 <HardwareViz client:visible lang="en" />
 
 ## HBM: feeding the GPU
@@ -58,6 +74,8 @@ The cost of this design is in the package as well as the memory chips. There is 
 ### What stays in L1
 
 HBM is therefore a good place for KV that attention is using now. GPU kernels read chunks of that data into on-chip caches and shared memory as they work, while the full KV pool stays in GPU memory. If the GPU uses GDDR instead of HBM, its GPU memory still serves as HiCache L1; the software tier does not require one particular memory technology.
+
+The GPU’s on-chip caches and shared memory use SRAM. A typical SRAM cell holds a bit in a transistor circuit while power is supplied, without DRAM’s periodic refresh. This makes it useful for fast on-chip access, but each bit takes much more silicon area. It can hold the small working blocks a kernel needs, not the entire history of many conversations. HiCache therefore does not treat it as another storage tier. [CUDA memory spaces](https://docs.nvidia.com/cuda/cuda-c-best-practices-guide/index.html#device-memory-spaces)
 
 Once the answer is finished, the document’s KV may sit unused until the next question. Keeping it in HBM saves a future load, but also takes space away from new requests. HiCache can keep a copy in a lower tier and reclaim the GPU space when needed. That leads to the next question: where can we keep more KV without paying for more GPU memory?
 
@@ -104,18 +122,6 @@ Updating data creates another cost. NAND reads and programs pages, but erases la
 This is also why “NVMe SSD” is not enough to predict performance. NVMe describes the command interface, not the storage medium. A large sequential read, a small random read, and a sustained mix of reads and writes stress the same SSD differently. A remote SSD service adds network and service time on top of the device I/O.
 
 For HiCache, writing every discarded prefix to SSD would spend bandwidth and endurance on data that might never be used again. Selective backup is useful when likely reuse justifies that cost. Flash retaining bytes across power loss is a separate issue from a KV service recovering after restart: the service also needs its metadata and compatible model state.
-
-## Choosing where to keep KV
-
-One memory type is missing from the hierarchy so far: SRAM. GPUs use it for small on-chip caches and shared memory. A typical SRAM cell holds a bit in a transistor circuit while power is supplied, without DRAM’s periodic refresh. This makes it useful for fast on-chip access, but each bit takes much more silicon area. It can hold the small working blocks a kernel needs, not the entire history of many conversations. HiCache therefore does not treat it as another storage tier. [CUDA memory spaces](https://docs.nvidia.com/cuda/cuda-c-best-practices-guide/index.html#device-memory-spaces)
-
-| Medium and placement | Main advantage | Main limitation | Role in HiCache |
-| --- | --- | --- | --- |
-| GPU on-chip SRAM | Low access latency and high local bandwidth | Expensive silicon area, small capacity, volatile | Kernel working data and hardware caches; not a HiCache tier |
-| GPU-attached HBM | High aggregate bandwidth near compute | Capacity and packaging cost, volatile | L1: active KV and retained GPU prefixes |
-| CPU-attached DRAM | Larger configurable capacity, fast memory access | GPU access crosses an interconnect, volatile | L2: local reusable copies and transfer buffers |
-| DRAM behind a cache service | Pooled capacity and possible cross-instance reuse | Network and service overhead, volatile | One possible L3 implementation |
-| NAND in local or remote SSDs | Large, persistent capacity | I/O latency, write amplification, endurance | Another possible L3 implementation |
 
 These tiers can hold copies of the same KV at the same time. Backing up the document to L2 does not require deleting its GPU copy immediately. Loading it from L3 does not require deleting the L3 copy either. We choose which copies to retain based on the available space and how likely the document is to be used again.
 
