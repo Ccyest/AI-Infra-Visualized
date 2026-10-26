@@ -27,6 +27,7 @@ references:
 import HardwareViz from "../../../viz/hicache-storage/HardwareViz";
 import TransferViz from "../../../viz/hicache-storage/TransferViz";
 import CostViz from "../../../viz/hicache-storage/CostViz";
+import RouteViz from "../../../viz/hicache-storage/RouteViz";
 
 ## Background
 
@@ -117,6 +118,46 @@ SRAM completes the picture. Conventional SRAM uses transistor circuits to retain
 | NAND in local or remote SSDs | Large, persistent capacity | I/O latency, write amplification, endurance | Another possible L3 implementation |
 
 This hierarchy balances reuse against access cost. The same prefix can have copies in several tiers. A backup need not immediately remove the GPU copy, and an L3 read need not delete the stored copy.
+
+## How data reaches the GPU
+
+A memory technology tells us where bytes are stored. A transfer path tells us which links and buffers those bytes cross. **PCIe and NVLink are interconnects; DMA and RDMA describe ways to move data.** They can work together. A remote RDMA transfer can cross a network, reach a NIC, and then cross PCIe on its way to GPU memory.
+
+### PCIe, NVLink, and NVLink-C2C
+
+| Interconnect | What it connects | Advantage | Constraint |
+| --- | --- | --- | --- |
+| PCIe | CPUs, GPUs, NICs, and NVMe controllers through a PCIe topology | Widely available and supports several device types | Negotiated link width, generation, switches, and shared upstream links limit throughput |
+| GPU NVLink / NVSwitch | GPUs within a supported NVLink fabric | High aggregate bandwidth for GPU peer traffic | Requires compatible GPUs and topology; a GPU–GPU link does not accelerate a CPU–GPU PCIe segment |
+| NVLink-C2C | CPU and GPU chips in platforms such as Grace Hopper | High-bandwidth coherent access across CPU and GPU memory | Platform-specific; accessing Host memory still consumes link bandwidth and has a different cost from local HBM |
+
+The endpoints matter as much as the link name. GPUs connected by NVLink may still receive Host data over PCIe. Conversely, Grace Hopper's CPU–GPU connection is NVLink-C2C. A coherent address space makes data accessible; it does not make all memory equally local. [NVIDIA topology guide](https://docs.nvidia.com/datacenter/dcgm/latest/learn/core-services/topology-and-links.html) · [Grace Hopper architecture](https://developer.nvidia.com/blog/nvidia-grace-hopper-superchip-architecture-in-depth/)
+
+### DMA, pinned memory, and GPU kernels
+
+With DMA, software submits a transfer and a hardware engine moves the payload without making CPU cores load and store every byte. DMA still reads the source memory, crosses the interconnect, and writes the destination. For a conventional CUDA transfer from pageable Host memory, the runtime may first stage data in pinned memory. Allocating or registering a pinned buffer ahead of time avoids that staging step and enables asynchronous transfers. Pinning itself has a cost, so long-lived pools are useful. The GPU must still wait for the required transfer to complete. [CUDA transfer guidance](https://docs.nvidia.com/cuda/cuda-c-best-practices-guide/index.html#data-transfer-between-host-and-device)
+
+HiCache also provides GPU-assisted transfer kernels. GPU threads can gather and scatter KV across many pages and handle the differing Host and GPU layouts. This can reduce the overhead of many small copy submissions. The tradeoff is that those kernels use GPU execution resources, so their benefit depends on the layout, transfer size, and concurrent inference work. CUDA copies and GPU kernels change how the link is used; neither increases its physical bandwidth. [HiCache data-plane design](https://www.lmsys.org/blog/2025-09-10-sglang-hicache/)
+
+### TCP and RDMA
+
+A conventional TCP socket path uses the operating system's networking stack and usually copies received data from socket buffers into application buffers. Its strengths are broad compatibility and familiar deployment tools. CPU protocol work and buffer copies can become expensive at high data rates; offloads and optimized APIs can reduce that overhead.
+
+RDMA lets compatible NICs move data into registered memory with less CPU data-path work and fewer copies. It is available over InfiniBand and Ethernet technologies such as RoCE. Registration, queue management, and appropriate network configuration add deployment work. Software still manages connections and completion, while the NIC and links still carry the payload. **RDMA into Host DRAM leaves the Host → GPU transfer in place.** RDMA does not inherently mean GPU memory is the destination. [NVIDIA RDMA programming guide](https://networking-docs.nvidia.com/doca/archive/3-4-0/rdma-aware-networks-programming-guide)
+
+### GPUDirect RDMA and GPUDirect Storage
+
+GPUDirect RDMA allows a compatible NIC to access GPU memory, removing a Host staging buffer and the following Host–GPU copy from that route. This requires support across the GPU, NIC, drivers, and PCIe topology. Completion and memory ordering must also be correct before a GPU kernel consumes the received data. The network and GPU-side PCIe traffic remain. [GPUDirect RDMA](https://docs.nvidia.com/cuda/gpudirect-rdma/index.html)
+
+GPUDirect Storage targets storage I/O through cuFile. On a supported direct path, it moves data between storage and GPU memory without a CPU-memory bounce buffer. This saves Host memory traffic, but requires application integration and a compatible storage stack. Fallback paths may still use Host staging. It also cannot remove time spent reading NAND, or help CPU processing that needs to inspect the payload first. [GPUDirect Storage design](https://docs.nvidia.com/gpudirect-storage/design-guide/index.html)
+
+<RouteViz client:visible lang="en" />
+
+### What this changes for HiCache
+
+For the Host-staged HiCache path in this article, L3 fills a Host pool before KV moves to the GPU. A backend's zero-copy integration can fill that pool directly instead of filling a separate application buffer and copying it again. **Avoiding that extra Host copy does not remove Host staging.** Likewise, HiCache's `direct` I/O backend names standard CUDA memory copies between Host and GPU; it does not mean GPUDirect Storage. Its `kernel` backend uses GPU-assisted transfer kernels. [HiCache I/O backends](https://docs.sglang.io/docs/advanced_features/hicache_design)
+
+When comparing configurations, follow the actual bytes: which buffers hold them, which engine moves them, which links they cross, and which work can overlap. A faster network cannot fix a saturated Host–GPU link. A direct GPU path can remove Host traffic, but using it in a cache system also requires a compatible backend, data layout, and synchronization design.
 
 ## Moving KV back to compute
 

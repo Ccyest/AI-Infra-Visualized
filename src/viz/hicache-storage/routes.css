@@ -1,0 +1,30 @@
+.route-options strong { flex: 0 0 150px; margin: 0; font-size: .85rem; }
+.route-scope { padding: .7rem .9rem; border-left: 3px solid var(--series-2); background: color-mix(in srgb, var(--series-2) 6%, var(--surface)); font-size: .85rem; }
+.route-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 1.5rem; margin-top: 1.3rem; }
+.route-path { list-style: none; padding: 0 !important; margin: 0 !important; }
+.route-path li { padding: 0; margin: 0; }
+.route-memory { padding: .8rem 1rem; border: 1px dashed var(--grid); border-radius: .5rem; display: grid; grid-template-columns: minmax(0, 1fr) 38px; gap: .3rem; }
+.route-memory strong { font-size: .85rem; }
+.route-memory span { color: var(--muted); font-size: .75rem; }
+.route-memory b { grid-column: 2; grid-row: 1 / 3; align-self: center; text-align: center; color: var(--muted); }
+.route-memory.is-ready { border-style: solid; border-color: var(--series-1); background: color-mix(in srgb, var(--series-1) 9%, var(--surface)); }
+.route-memory.is-ready b { color: var(--series-1); }
+.route-hop { height: 70px; position: relative; --route-color: var(--series-1); }
+.route-hop[data-kind="cpu"] { --route-color: var(--series-2); }
+.route-hop[data-kind="rdma"], .route-hop[data-kind="gdr"] { --route-color: var(--series-3); }
+.route-hop[data-kind="nvme"], .route-hop[data-kind="gds"] { --route-color: var(--series-4); }
+.route-hop > span { position: absolute; top: 25px; left: 30%; right: 0; font-size: .75rem; color: var(--muted); }
+.route-wire { position: absolute; top: 6px; bottom: 6px; left: 18%; width: 3px; background: var(--route-color); }
+.route-wire > i { position: absolute; bottom: 0; left: -4px; width: 11px; height: 11px; transform: rotate(45deg); border-right: 2px solid var(--route-color); border-bottom: 2px solid var(--route-color); }
+.route-flight { position: absolute; left: 50%; transform: translate(-50%, -50%); background: var(--route-color); color: var(--surface); padding: 3px 6px; border-radius: 4px; font-size: .7rem; transition: top .35s linear; }
+.route-explanation section { border-top: 1px solid var(--grid); margin-top: 1rem; padding-top: 1rem; }
+.route-explanation p { margin: 0; font-size: .88rem; }
+.route-counts { display: grid; grid-template-columns: 1fr 1fr; gap: .8rem; }
+.route-counts > div { display: flex; flex-direction: column; gap: .6rem; padding: .7rem; background: color-mix(in srgb, var(--muted) 7%, var(--surface)); border-radius: .4rem; }
+.route-counts output { font-size: 1.7rem; font-weight: 650; }
+.route-status { display: block; margin-top: 1.3rem; font-size: .8rem; font-weight: 600; }
+@media (max-width: 600px) {
+  .route-options strong { flex-basis: 100%; }
+  .route-layout { grid-template-columns: minmax(0, 1fr); }
+}
+@media (prefers-reduced-motion: reduce) { .route-flight { transition: none; } }

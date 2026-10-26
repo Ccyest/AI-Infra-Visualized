@@ -27,6 +27,7 @@ references:
 import HardwareViz from "../../../viz/hicache-storage/HardwareViz";
 import TransferViz from "../../../viz/hicache-storage/TransferViz";
 import CostViz from "../../../viz/hicache-storage/CostViz";
+import RouteViz from "../../../viz/hicache-storage/RouteViz";
 
 ## 背景
 
@@ -117,6 +118,46 @@ NVMe 是许多 PCIe SSD 使用的命令接口，不是存储介质。很高的�
 | 本地或远端 SSD 中的 NAND | 大容量，可断电保存 | I/O 延迟、写放大与寿命限制 | L3 的另一种实现 |
 
 这种分层同时考虑复用价值与访问成本。同一段前缀可以在多层保留副本：向下备份不必立即删除 GPU 副本，从 L3 读取也不必删除存储中的副本。
+
+## 数据怎样到达 GPU
+
+存储介质回答字节放在哪里，传输路径回答字节经过哪些链路和缓冲区。**PCIe、NVLink 是硬件互连；DMA、RDMA 描述数据如何搬运。** 它们可以组合使用。一次远端 RDMA 传输可以先经过网络到达网卡，再通过 PCIe 进入 GPU 显存。
+
+### PCIe、NVLink 与 NVLink-C2C
+
+| 互连 | 连接什么 | 主要优势 | 主要限制 |
+| --- | --- | --- | --- |
+| PCIe | 通过 PCIe 拓扑连接 CPU、GPU、网卡与 NVMe 控制器 | 广泛可用，支持多种设备 | 协商出的 lane 数、代际、交换芯片和共享上行链路都会限制吞吐 |
+| GPU NVLink / NVSwitch | 支持的 NVLink 网络中的 GPU | 为 GPU 之间的通信提供高总带宽 | 需要兼容 GPU 与拓扑；GPU 之间的链路不会加速 CPU → GPU 的 PCIe 段 |
+| NVLink-C2C | Grace Hopper 等平台的 CPU 与 GPU 芯片 | CPU、GPU 内存之间支持高带宽一致性访问 | 依赖特定平台；访问 Host 内存仍消耗链路带宽，成本不同于本地 HBM |
+
+看链路名称时，还要看两端连接了什么。GPU 之间有 NVLink，Host 数据仍可能通过 PCIe 进入 GPU；Grace Hopper 的 CPU → GPU 连接则是 NVLink-C2C。一致的地址空间让数据可以被访问，但不会让所有内存都变成本地内存。[NVIDIA 拓扑说明](https://docs.nvidia.com/datacenter/dcgm/latest/learn/core-services/topology-and-links.html) · [Grace Hopper 架构](https://developer.nvidia.com/blog/nvidia-grace-hopper-superchip-architecture-in-depth/)
+
+### DMA、pinned memory 与 GPU kernel
+
+DMA 的做法是由软件提交传输，让硬件引擎搬运数据，CPU 核心不必逐字节执行读取和写入。DMA 仍然要读源内存、经过互连、写目标内存。在传统 CUDA 搬运路径中，如果源数据位于可分页的 Host 内存，运行时可能先把它复制到 pinned memory。提前分配或注册 pinned 缓冲区，可以省掉这次中转拷贝，并支持异步搬运。固定内存本身有成本，因此适合复用长期存在的内存池。GPU 使用数据前，仍需等待相应传输完成。[CUDA 搬运建议](https://docs.nvidia.com/cuda/cuda-c-best-practices-guide/index.html#data-transfer-between-host-and-device)
+
+HiCache 还提供 GPU-assisted transfer kernel。GPU 线程可以从许多页收集 KV、写入对应位置，并处理 Host 与 GPU 的不同布局，从而减少大量小拷贝的提交开销。代价是这些 kernel 会使用 GPU 执行资源，收益取决于布局、传输大小，以及同时进行的推理计算。CUDA 拷贝和 GPU kernel 改变的是链路的使用方式，都不会提高链路本身的物理带宽。[HiCache 数据搬运设计](https://www.lmsys.org/blog/2025-09-10-sglang-hicache/)
+
+### TCP 与 RDMA
+
+常规 TCP socket 路径使用操作系统网络协议栈，接收时通常还要把 socket 缓冲区中的数据复制到应用缓冲区。它的优势是兼容性广、部署工具成熟；高吞吐场景下，CPU 协议处理和内存拷贝可能成为开销。硬件卸载和优化后的 API 可以减少这些开销。
+
+RDMA 让兼容网卡直接把数据搬到已注册的内存，减少 CPU 数据路径处理和缓冲区拷贝。它可以使用 InfiniBand，也可以使用 RoCE 等基于以太网的技术。代价包括内存注册、队列管理，以及匹配的网络配置。软件仍需管理连接与完成事件，网卡和链路仍需传输全部数据。**如果 RDMA 的目标是 Host DRAM，后面的 Host → GPU 搬运仍然存在。** 使用 RDMA 不意味着目标天然就是 GPU 显存。[NVIDIA RDMA 编程指南](https://networking-docs.nvidia.com/doca/archive/3-4-0/rdma-aware-networks-programming-guide)
+
+### GPUDirect RDMA 与 GPUDirect Storage
+
+GPUDirect RDMA 允许兼容网卡访问 GPU 显存，从这条路径中省去 Host 中转缓冲区和后续的 Host–GPU 拷贝。它需要 GPU、网卡、驱动和 PCIe 拓扑共同支持。GPU kernel 读取接收数据之前，还必须正确处理传输完成与内存可见性。网络流量和 GPU 侧的 PCIe 流量仍然存在。[GPUDirect RDMA](https://docs.nvidia.com/cuda/gpudirect-rdma/index.html)
+
+GPUDirect Storage 通过 cuFile 面向存储 I/O。在受支持的直接路径上，数据可以在存储与 GPU 显存之间搬运，省去 CPU 内存中的中转缓冲。它能节省 Host 内存流量，但需要应用集成和兼容的存储栈；回退路径仍可能使用 Host 中转。它也不能消除 NAND 读取时间。如果 CPU 必须先解析或处理数据，绕过 Host 的收益就会受限。[GPUDirect Storage 设计](https://docs.nvidia.com/gpudirect-storage/design-guide/index.html)
+
+<RouteViz client:visible />
+
+### 与 HiCache 的关系
+
+本文讨论的 HiCache Host 中转路径，是由 L3 先填入 Host 池，再把 KV 搬到 GPU。后端的 zero-copy 集成可以直接填入这个池，省掉“先填另一个应用缓冲区，再复制到 Host 池”的额外拷贝。**省掉额外的 Host 拷贝，不等于省掉 Host 中转。** 同样，HiCache 的 `direct` I/O backend 指 Host 与 GPU 之间的标准 CUDA 内存拷贝，不是 GPUDirect Storage；`kernel` backend 才使用 GPU-assisted transfer kernel。[HiCache I/O backend 说明](https://docs.sglang.io/docs/advanced_features/hicache_design)
+
+比较配置时，应沿着实际数据检查：它存在哪些缓冲区、由什么引擎搬运、经过哪些链路、能与哪些计算重叠。更快的网络解决不了已经跑满的 Host–GPU 链路。直接进入 GPU 可以减少 Host 流量，但缓存系统还需要匹配的后端、数据布局和同步设计。
 
 ## 把 KV 搬回计算位置
 
