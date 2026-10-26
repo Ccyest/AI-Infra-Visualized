@@ -1,6 +1,6 @@
 ---
 title: "Storage hardware behind SGLang HiCache: HBM, DRAM, and SSDs"
-description: "SGLang HiCache keeps reusable prefixes beyond GPU memory, but extra capacity helps only when retrieving KV is worthwhile. Why does active KV live in HBM? Why keep a second copy in CPU memory? When should the next tier use remote DRAM or SSDs? This article follows the hardware from memory cells to GPU packages, PCIe links, and storage controllers, then connects those constraints to HiCache’s placement, transfer, and backup decisions."
+description: "SGLang HiCache keeps KV in CPU memory and external storage when it no longer fits on the GPU. The next request can load that KV instead of computing the same prefix again. But why use HBM on the GPU, DRAM on the CPU, and sometimes SSDs further down? This article follows one document’s KV through those devices, explains how the data moves between them, and works through when loading it actually saves time."
 publishedDate: "2026-10-26"
 order: 9
 concepts: []
@@ -31,83 +31,83 @@ import RouteViz from "../../../viz/hicache-storage/RouteViz";
 
 ## Background
 
-Suppose a user asks several questions about the same document. SGLang can reuse the document’s keys and values, or KV, when the requests have an identical token prefix and compatible model state. It computes the new question without repeating the document’s prefill. The cached data is a set of tensors used by attention, not a saved copy of the document’s text.
+Suppose we give a model a long document and ask it to write a summary. After reading the summary, we ask about one detail in the same document. The questions differ, but the document at the start of both requests is the same. If its KV is still cached, the model can reuse it and compute only the new question. It does not need to run prefill over the document again. KV here means the key and value tensors that attention uses to read earlier tokens.
 
-Those tensors compete for GPU memory with model weights, active requests, and execution buffers. Keeping every past conversation there would eventually leave too little room to serve new requests. HiCache preserves reusable history in other storage tiers and brings it back when needed. The [HiCache lesson](https://yichizhang.dev/AI-Infra-Visualized/en/lessons/hicache/) explains the software mechanisms. Here we examine why the hardware makes that design useful.
+Keeping that KV on the GPU would make the next request easy. The problem is that the GPU also needs memory for model weights and requests it is currently serving. As more users bring more documents, it cannot keep every old prefix. SGLang HiCache saves some of them in CPU memory or external storage. When the document is needed again, it loads the KV back onto the GPU. This works only for matching token prefixes and compatible model state; similar wording is not enough. The [HiCache lesson](https://yichizhang.dev/AI-Infra-Visualized/en/lessons/hicache/) explains the cache management. Here we look at the hardware that makes each storage tier useful, and the cost of moving between them.
 
-Two distinctions matter first. **HBM is itself DRAM.** The useful comparison is GPU-attached HBM versus CPU-attached DDR DRAM. Also, **HiCache L1/L2/L3 are software tiers.** HiCache L1 is GPU memory, usually HBM on the accelerators discussed here. It is not the GPU’s on-chip hardware L1 cache.
+HiCache calls GPU memory L1, CPU memory L2, and its storage backend L3. These names describe where HiCache keeps data; L1 does not mean the small hardware L1 cache inside a GPU core. On the accelerators discussed here, GPU memory is HBM. **HBM is also a kind of DRAM.** We will compare how HBM connects to the GPU with how ordinary server DRAM connects to the CPU.
 
 <HardwareViz client:visible lang="en" />
 
-## HBM: bandwidth beside the GPU
+## HBM: feeding the GPU
 
-### The memory cell
+### Why bandwidth matters
 
-A conventional DRAM cell stores a bit as charge in a capacitor. A transistor controls access to it. Charge leaks, so the memory must periodically refresh its contents. Reads involve sensing and restoring a small charge difference. DRAM organizes cells into rows and banks; accessing a new row requires activation, and switching rows within a bank can require precharge first. These operations take time even when the external interface has high bandwidth. See [Micron’s DRAM overview](https://www.micron.com/products/memory/dram-components/ddr5-sdram) and [HBM memory operation guide](https://assets.micron.com/adobe/assets/urn%3Aaaid%3Aaem%3A275edf31-79e3-4b6c-8bbd-a233babe9281/original/as/micron-hbm2e-memory-wp.pdf).
+Return to the document example. While generating an answer, full attention repeatedly reads the document’s KV. A longer document means more historical KV to read at each decode step. The GPU can do a great deal of arithmetic in parallel, but it needs the data to arrive fast enough. This is why active KV belongs in high-bandwidth GPU memory.
 
-HBM retains these DRAM properties. Its advantage comes largely from how many bits can move in parallel and how the memory connects to the processor. **Bandwidth measures sustained bytes per second; latency measures the time until an access completes.** A much wider interface does not make a dependent random read faster by the same factor.
+Bandwidth tells us how many bytes can move per second. Latency tells us how long one access takes. They are related, but they are not the same measurement. A memory system can serve many reads at once and deliver high total bandwidth, while a thread waiting for one particular read still has to wait for that read to finish. This distinction helps explain what HBM improves.
 
-### Stacks and a wide interface
+### How HBM moves more data
 
-HBM stacks DRAM dies vertically. Through-silicon vias, or TSVs, carry signals through the stack. The stacks sit beside the GPU die in the same advanced package, with dense wiring connecting them to the GPU. The memory is close to the GPU, but it is not inside the GPU’s compute die.
+HBM stacks several DRAM dies vertically and connects them with through-silicon vias, or TSVs. The stacks sit beside the GPU die in the same package. Dense wiring inside the package provides a wide interface between the GPU and memory. Short connections help reduce the energy spent moving each bit, and multiple memory channels let the GPU transfer more data at once. HBM sits close to the GPU’s compute die; it is not memory built inside that die. [Micron’s HBM3E overview](https://www.micron.com/about/blog/applications/ai/microns-hbm3e-powering-the-future-of-ai-with-high-bandwidth-memory)
 
-This packaging provides a wide data interface over short connections. Multiple channels and banks can serve independent requests concurrently. Large, parallel GPU workloads can use that aggregate bandwidth; a small stream of dependent accesses cannot. Short connections can also reduce the energy spent moving each bit. [Micron describes these packaging choices for HBM3E](https://www.micron.com/about/blog/applications/ai/microns-hbm3e-powering-the-future-of-ai-with-high-bandwidth-memory).
+Inside each die, a typical DRAM cell stores one bit as charge in a capacitor, with a transistor controlling access. Charge leaks away, so the memory must refresh it regularly. Cells are arranged in rows within banks, which are groups that can handle some operations independently. To read a row, the memory activates it and senses the stored charge; switching rows in the same bank may first require closing the old row, a step called precharge. HBM still does this work. Its wide interface helps move many bytes in parallel, but does not remove the time needed to access the cells. [Micron’s HBM memory architecture](https://assets.micron.com/adobe/assets/urn%3Aaaid%3Aaem%3A275edf31-79e3-4b6c-8bbd-a233babe9281/original/as/micron-hbm2e-memory-wp.pdf)
 
-The tradeoff is expensive packaging, limited space around the GPU, stack manufacturing complexity, and heat removal. Increasing capacity requires a different memory stack or accelerator design; it is not equivalent to adding a DIMM to a server. HBM is volatile too: it retains data only while powered.
+The cost of this design is in the package as well as the memory chips. There is limited space beside the GPU, stacking makes manufacturing and cooling harder, and the dense connections require advanced packaging. Adding HBM capacity usually means choosing a different accelerator design, rather than plugging in another memory module. HBM also loses its contents without power, just like other DRAM.
 
-### Why HiCache L1 uses it
+### What stays in L1
 
-Attention consumes previously computed KV as generation proceeds. For a full-attention model, a long context can require reading substantial historical KV on each decode step. HBM provides a local path with enough aggregate bandwidth for many GPU threads to read those tensors. On-chip caches and shared memory help the kernel reuse smaller pieces, while the larger KV pool remains in GPU memory.
+HBM is therefore a good place for KV that attention is using now. GPU kernels read chunks of that data into on-chip caches and shared memory as they work, while the full KV pool stays in GPU memory. If the GPU uses GDDR instead of HBM, its GPU memory still serves as HiCache L1; the software tier does not require one particular memory technology.
 
-This makes HBM valuable for the KV being used now. Keeping an inactive conversation there has an opportunity cost: those bytes could hold active requests. HiCache lets a reusable prefix leave GPU memory without necessarily losing its only copy. On GPUs that use GDDR instead, the same software role belongs to that GPU memory; HBM is a hardware choice, not the definition of L1.
+Once the answer is finished, the document’s KV may sit unused until the next question. Keeping it in HBM saves a future load, but also takes space away from new requests. HiCache can keep a copy in a lower tier and reclaim the GPU space when needed. That leads to the next question: where can we keep more KV without paying for more GPU memory?
 
-## Host DRAM: more capacity, another link
+## CPU memory: keeping more KV
 
-### DDR memory and capacity
+### Where the extra capacity comes from
 
-Server DDR memory puts DRAM chips on DIMMs connected to the CPU’s memory controller. Memory channels operate in parallel, and supported slots and DIMM capacities provide more ways to configure total capacity. Compared with HBM’s advanced package, this arrangement generally offers less expensive capacity and easier expansion, within the server’s limits.
+A server usually has DRAM chips on DIMM memory modules, connected to the CPU’s memory controller. We call this Host memory. The motherboard can provide several memory channels and slots, so capacity can be increased within the server’s supported configurations. Compared with HBM beside a GPU, this usually gives us more affordable capacity. The tradeoff is that this memory connects to the CPU, not directly to the GPU’s memory interface.
 
-DDR memory still has bank conflicts, refresh, and bandwidth limits. More capacity alone does not guarantee more bandwidth: channel population, DIMM configuration, and the CPU controller all matter. On platforms such as Grace, CPU memory can instead be LPDDR5X. The relevant property for HiCache is that it is host memory; the precise DRAM interface depends on the machine.
+Adding capacity does not necessarily add bandwidth. Filling another memory channel can increase parallel access, while putting more capacity on an already populated channel does not add another channel. The DIMMs and CPU controller also limit the supported speed. Most conventional servers use DDR memory; platforms such as Grace use LPDDR5X. For HiCache, both serve the Host-memory role.
 
-### The GPU cannot use the CPU’s bandwidth directly
+### The GPU still has to receive it
 
-In a conventional PCIe server, restoring KV from Host to GPU crosses the CPU memory subsystem and the PCIe path before reaching GPU memory. Even if the CPU can read its DRAM quickly, the GPU cannot receive data faster than the limiting part of that route. Multiple GPUs may also share memory channels or upstream links.
+Suppose the next question arrives after the document’s KV has left the GPU, but a copy remains in Host memory. In a conventional PCIe server, loading it means reading Host DRAM, sending the bytes over PCIe, and writing GPU memory. The transfer can only run as fast as the slowest part of that path. If several GPUs share memory channels or an upstream link, they also compete for that bandwidth.
 
-For a concrete scale comparison, NVIDIA specifies **3.35 TB/s** of HBM bandwidth for H100 SXM. Its Hopper architecture description lists PCIe Gen 5 x16 as **128 GB/s in both directions combined, or 64 GB/s per direction**. Dividing a decimal 1 GB by those rates gives roughly **0.30 ms** for an idealized HBM stream and **15.6 ms** for an idealized one-way PCIe transfer. These are bandwidth-only calculations, not measured KV restore times or directly equivalent operations. [H100 specifications](https://www.nvidia.com/en-us/data-center/h100/) · [PCIe directionality](https://developer.nvidia.com/blog/nvidia-hopper-architecture-in-depth/)
+The difference is large enough to matter. NVIDIA lists **3.35 TB/s** of HBM bandwidth for H100 SXM. PCIe Gen 5 x16 provides **64 GB/s in one direction**, or 128 GB/s when both directions are added together. Dividing a decimal 1 GB by those bandwidths gives about **0.30 ms** for an ideal HBM access and **15.6 ms** for an ideal one-way PCIe transfer. These are bandwidth-only calculations, not measured KV restore times. They illustrate why having enough CPU memory does not give the GPU the same access speed as HBM. [H100 specifications](https://www.nvidia.com/en-us/data-center/h100/) · [Hopper PCIe specifications](https://developer.nvidia.com/blog/nvidia-hopper-architecture-in-depth/)
 
-That is why replacing “80 GB of GPU memory” with “80 GB of CPU memory” does not preserve performance. The bytes may fit, but their access route changes. Coherent CPU–GPU systems change this tradeoff: Grace Hopper uses NVLink-C2C rather than the conventional PCIe path. Even there, an address space shared by CPU and GPU does not make local HBM and host memory equally fast. [Grace Hopper architecture](https://developer.nvidia.com/blog/nvidia-grace-hopper-superchip-architecture-in-depth/)
+The connection depends on the machine. Grace Hopper, for example, uses NVLink-C2C between its CPU and GPU. That changes the available bandwidth and supports coherent access to both memories. It still takes a link traversal to reach CPU memory, so sharing an address space does not make CPU memory as fast as local HBM. We will return to the different links below. [Grace Hopper architecture](https://developer.nvidia.com/blog/nvidia-grace-hopper-superchip-architecture-in-depth/)
 
-### Why HiCache keeps an L2 copy
+### Why L2 is still useful
 
-Host DRAM is useful for prefixes that are temporarily absent from GPU memory but likely to return. Recovering a prefix once can avoid its prefill, after which attention uses the restored GPU copy. This differs from fetching the full historical KV over PCIe on every decode step.
+HiCache does not need to read the document from CPU memory at every decode step. It loads the cached KV back onto the GPU, then attention uses that GPU copy. **The cost to compare is one restore against another prefill over the document.** If restoring is cheaper, L2 saves time even though its path to the GPU is much slower than HBM access.
 
-The Host pool also acts as an I/O buffer. Pinned host memory keeps its physical pages available for DMA transfers rather than allowing the OS to page them out. It does not change the DRAM chips’ speed, and pinning too much reduces memory available to the rest of the system. In a multi-socket server, allocating memory near the GPU’s CPU socket can avoid an extra inter-socket hop. These are transfer-path constraints behind the advice to pay attention to pinned memory and NUMA placement. [CUDA transfer guidance](https://docs.nvidia.com/cuda/cuda-c-best-practices-guide/index.html#data-transfer-between-host-and-device)
+Where the Host buffer is allocated also matters. On a server with several CPU sockets, allocating it near the GPU’s socket avoids an extra trip across the CPU-to-CPU link. This is NUMA locality. The buffer can also use pinned memory, whose pages stay fixed for device transfers. Pinning helps the transfer path; it does not make the DRAM cells faster, and pinning too much memory leaves less flexibility for the rest of the system. [CUDA Host–device transfer guidance](https://docs.nvidia.com/cuda/cuda-c-best-practices-guide/index.html#data-transfer-between-host-and-device)
 
-## L3: remote memory or flash
+## L3: keeping a larger history
 
-### Remote DRAM
+### Using memory on other machines
 
-L3 names the backend tier, not a particular storage medium. A service can pool DRAM across machines and expose it as a shared cache. The [HiCache multi-turn evaluation](https://www.lmsys.org/blog/2026-08-11-unified-radix-cache/) uses a 500 GiB Mooncake Store distributed memory tier. That L3 is memory, not an SSD simply because it is the third tier.
+CPU memory is larger, but it is not unlimited either. If users keep returning to many different documents, we may want to preserve more history than one inference instance can hold. One option is to pool DRAM from other machines into a cache service. For example, the [HiCache multi-turn benchmark](https://www.lmsys.org/blog/2026-08-11-unified-radix-cache/) uses a 500 GiB Mooncake Store memory tier. It is L3 because it is the storage backend, even though the data still lives in DRAM.
 
-Remote DRAM offers more aggregate capacity and can make a prefix available to multiple inference instances. Its cost includes backend lookup, network transfer, NIC and PCIe traffic, and contention. RDMA lets NICs access registered memory with less CPU involvement and fewer software copies. The payload still travels through hardware links; RDMA does not turn remote memory into local HBM.
+A shared service can also make the document’s KV available to another inference instance. That instance no longer has to compute the prefix just because it did not handle the earlier request. The cost is a network read: looking up the data, reading remote memory, and transferring it through the NICs and network. RDMA can reduce CPU processing and extra copies along this path, but the bytes still have to cross the network.
 
-Local L2 and remote DRAM L3 can therefore use the same kind of memory cells while delivering different end-to-end behavior. L2 belongs to an inference instance. Shared L3 reuse additionally depends on the backend’s namespace, configuration, and cache compatibility. A local file backend does not become shared merely by being called L3. [HiCache tier scopes](https://docs.sglang.io/docs/advanced_features/hicache_design#tier-sharing-scope)
+This is why local L2 and remote DRAM L3 can perform very differently despite using the same type of memory cell. It also matters whether a backend is actually shared. Compatible instances need access to the same cache namespace and data format; a local file backend does not provide that simply by being called L3. [HiCache tier sharing](https://docs.sglang.io/docs/advanced_features/hicache_design#tier-sharing-scope)
 
-### NAND flash and SSDs
+### Using SSDs
 
-An SSD combines NAND flash with a controller. Flash retains data without power. Dense cells and many stacked layers make it suitable for storing much larger histories at a generally lower cost per byte than DRAM.
+Another option is to use SSDs for documents that are worth keeping but are read less often. An SSD stores data in NAND flash, with a controller managing reads, writes, and physical locations. NAND retains data without power and usually costs less per byte than DRAM. The tradeoff is a slower access mechanism, especially for writes and updates.
 
-At the cell level, stored charge changes a transistor’s threshold voltage. The device reads data by distinguishing voltage ranges. TLC represents three bits with eight states; QLC represents four bits with sixteen states. More states increase capacity per cell but leave tighter margins between states. Programming, error correction, and endurance become more demanding. This is why SSDs with the same capacity and NVMe interface can still have different write characteristics. [KIOXIA’s cell-level explanation](https://www.kioxia.com/en-jp/rd/technology/multi-level-cell.html) · [NAND endurance](https://americas.kioxia.com/content/dam/kioxia/en-us/business/memory/asset/KIOXIA-SSD-NAND-Endurance-Tech-Brief.pdf)
+A NAND cell stores charge that changes the transistor’s threshold voltage. Reading the cell means identifying which voltage range it falls into. TLC distinguishes eight states to store three bits per cell; QLC distinguishes sixteen states to store four. More states give us more capacity per cell, but leave less room between adjacent states. Writing and distinguishing those states becomes more demanding, which affects speed, error correction, and endurance. [KIOXIA’s cell explanation](https://www.kioxia.com/en-jp/rd/technology/multi-level-cell.html) · [NAND endurance](https://americas.kioxia.com/content/dam/kioxia/en-us/business/memory/asset/KIOXIA-SSD-NAND-Endurance-Tech-Brief.pdf)
 
-The access mechanism is different. NAND reads and programs pages, but erases larger blocks. Updating a logical address usually writes a new physical location and invalidates the old one. Later, garbage collection copies still-valid data and erases blocks for reuse. These extra writes consume bandwidth and device endurance; background work can also increase tail latency. [KIOXIA explains garbage collection and write amplification](https://blog-us.kioxia.com/post/2025/06/20/how-fdp-can-reduce-garbage-collection-and-ultimately-waf-use-fdp-enabled-kioxia-xd8-series-data-center-ssds).
+Updating data creates another cost. NAND reads and programs pages, but erases larger blocks containing many pages. To update page A, the SSD usually writes the new A elsewhere and marks the old A invalid. Later, it reclaims the old block. If that block still holds a valid page B, the controller must copy B out before erasing the block. The application only changed A, but the SSD also wrote B. These extra writes are called **write amplification**. They use bandwidth and device endurance, and background garbage collection can make some requests take longer. The NAND animation above steps through this A/B example. [KIOXIA on garbage collection](https://blog-us.kioxia.com/post/2025/06/20/how-fdp-can-reduce-garbage-collection-and-ultimately-waf-use-fdp-enabled-kioxia-xd8-series-data-center-ssds)
 
-NVMe is the command interface used by many PCIe SSDs, not the storage medium itself. A high sequential throughput rating does not describe small random-read latency, behavior at low queue depth, or sustained mixed reads and writes. A distributed SSD backend adds network and service costs on top of device I/O.
+This is also why “NVMe SSD” is not enough to predict performance. NVMe describes the command interface, not the storage medium. A large sequential read, a small random read, and a sustained mix of reads and writes stress the same SSD differently. A remote SSD service adds network and service time on top of the device I/O.
 
-For HiCache, SSD capacity is attractive when a large history has enough reuse value to justify writing and later reading it. Selective backup avoids spending bandwidth and flash writes on prefixes that are unlikely to return. Flash being nonvolatile also does not by itself guarantee that a particular KV service supports recovery across restarts; that requires retained metadata and compatible model state.
+For HiCache, writing every discarded prefix to SSD would spend bandwidth and endurance on data that might never be used again. Selective backup is useful when likely reuse justifies that cost. Flash retaining bytes across power loss is a separate issue from a KV service recovering after restart: the service also needs its metadata and compatible model state.
 
-## Where each memory belongs
+## Choosing where to keep KV
 
-SRAM completes the picture. Conventional SRAM uses transistor circuits to retain a bit while powered, without DRAM-style refresh. It supports fast on-chip access but occupies much more silicon area per bit. That makes it useful for small hardware caches and shared memory, rather than a large repository of conversation history. In an attention kernel, blocks of KV may pass through SRAM-backed structures; HiCache does not manage SRAM as a fourth history tier. NVIDIA’s [CUDA memory-space comparison](https://docs.nvidia.com/cuda/cuda-c-best-practices-guide/index.html#device-memory-spaces) distinguishes these on-chip resources from device memory.
+One memory type is missing from the hierarchy so far: SRAM. GPUs use it for small on-chip caches and shared memory. A typical SRAM cell holds a bit in a transistor circuit while power is supplied, without DRAM’s periodic refresh. This makes it useful for fast on-chip access, but each bit takes much more silicon area. It can hold the small working blocks a kernel needs, not the entire history of many conversations. HiCache therefore does not treat it as another storage tier. [CUDA memory spaces](https://docs.nvidia.com/cuda/cuda-c-best-practices-guide/index.html#device-memory-spaces)
 
 | Medium and placement | Main advantage | Main limitation | Role in HiCache |
 | --- | --- | --- | --- |
@@ -117,13 +117,13 @@ SRAM completes the picture. Conventional SRAM uses transistor circuits to retain
 | DRAM behind a cache service | Pooled capacity and possible cross-instance reuse | Network and service overhead, volatile | One possible L3 implementation |
 | NAND in local or remote SSDs | Large, persistent capacity | I/O latency, write amplification, endurance | Another possible L3 implementation |
 
-This hierarchy balances reuse against access cost. The same prefix can have copies in several tiers. A backup need not immediately remove the GPU copy, and an L3 read need not delete the stored copy.
+These tiers can hold copies of the same KV at the same time. Backing up the document to L2 does not require deleting its GPU copy immediately. Loading it from L3 does not require deleting the L3 copy either. We choose which copies to retain based on the available space and how likely the document is to be used again.
 
-## How data reaches the GPU
+## Moving KV back to the GPU
 
-A memory technology tells us where bytes are stored. A transfer path tells us which links and buffers those bytes cross. **PCIe and NVLink are interconnects; DMA and RDMA describe ways to move data.** They can work together. A remote RDMA transfer can cross a network, reach a NIC, and then cross PCIe on its way to GPU memory.
+We have chosen where to keep the document’s KV. Now the next question arrives, and we need that KV on the GPU again. To understand the cost, we need to separate two things: **which hardware links the bytes cross, and how the transfer is carried out.** PCIe and NVLink are links. DMA and RDMA describe ways to move data over hardware links. A single RDMA transfer can cross a network and then PCIe.
 
-### PCIe, NVLink, and NVLink-C2C
+### Which devices does the link connect?
 
 | Interconnect | What it connects | Advantage | Constraint |
 | --- | --- | --- | --- |
@@ -131,61 +131,61 @@ A memory technology tells us where bytes are stored. A transfer path tells us wh
 | GPU NVLink / NVSwitch | GPUs within a supported NVLink fabric | High aggregate bandwidth for GPU peer traffic | Requires compatible GPUs and topology; a GPU–GPU link does not accelerate a CPU–GPU PCIe segment |
 | NVLink-C2C | CPU and GPU chips in platforms such as Grace Hopper | High-bandwidth coherent access across CPU and GPU memory | Platform-specific; accessing Host memory still consumes link bandwidth and has a different cost from local HBM |
 
-The endpoints matter as much as the link name. GPUs connected by NVLink may still receive Host data over PCIe. Conversely, Grace Hopper's CPU–GPU connection is NVLink-C2C. A coherent address space makes data accessible; it does not make all memory equally local. [NVIDIA topology guide](https://docs.nvidia.com/datacenter/dcgm/latest/learn/core-services/topology-and-links.html) · [Grace Hopper architecture](https://developer.nvidia.com/blog/nvidia-grace-hopper-superchip-architecture-in-depth/)
+A fast link only helps the bytes that actually cross it. If two GPUs have NVLink between them, a Host-to-GPU copy may still use PCIe. Adding GPU-to-GPU bandwidth does not speed up that copy. On Grace Hopper, the CPU–GPU connection itself is NVLink-C2C, so it changes this part of the transfer. Before comparing bandwidth numbers, check which devices each link connects. [NVIDIA topology guidance](https://docs.nvidia.com/datacenter/dcgm/latest/learn/core-services/topology-and-links.html) · [Grace Hopper architecture](https://developer.nvidia.com/blog/nvidia-grace-hopper-superchip-architecture-in-depth/)
 
-### DMA, pinned memory, and GPU kernels
+### DMA: letting hardware do the copy
 
-With DMA, software submits a transfer and a hardware engine moves the payload without making CPU cores load and store every byte. DMA still reads the source memory, crosses the interconnect, and writes the destination. For a conventional CUDA transfer from pageable Host memory, the runtime may first stage data in pinned memory. Allocating or registering a pinned buffer ahead of time avoids that staging step and enables asynchronous transfers. Pinning itself has a cost, so long-lived pools are useful. The GPU must still wait for the required transfer to complete. [CUDA transfer guidance](https://docs.nvidia.com/cuda/cuda-c-best-practices-guide/index.html#data-transfer-between-host-and-device)
+To copy KV from CPU memory to GPU memory, the CPU does not need to load and store every byte itself. Software can submit a transfer and let a DMA engine do the copying. The bytes still cross the memory interfaces and interconnect, but CPU cores are free to do other work. If the source is ordinary pageable Host memory, the CUDA runtime may first copy it into a pinned buffer whose physical pages stay fixed during the transfer. Keeping KV in a reusable pinned pool can avoid that staging copy and support asynchronous transfers. Pinning has a cost, which is why a long-lived pool is preferable to repeatedly pinning small buffers. The GPU must still wait for the relevant transfer to finish before reading its result. [CUDA transfer guidance](https://docs.nvidia.com/cuda/cuda-c-best-practices-guide/index.html#data-transfer-between-host-and-device)
 
-HiCache also provides GPU-assisted transfer kernels. GPU threads can gather and scatter KV across many pages and handle the differing Host and GPU layouts. This can reduce the overhead of many small copy submissions. The tradeoff is that those kernels use GPU execution resources, so their benefit depends on the layout, transfer size, and concurrent inference work. CUDA copies and GPU kernels change how the link is used; neither increases its physical bandwidth. [HiCache data-plane design](https://www.lmsys.org/blog/2025-09-10-sglang-hicache/)
+There is another cost when KV is scattered across many pages: submitting many small copies. HiCache also provides GPU-assisted transfer kernels. GPU threads gather the required KV and write it to the destination layout, handling the difference between Host and GPU layouts in the process. This can reduce the overhead of submitting individual copies, but it uses GPU execution resources that inference also needs. Whether it wins depends on the amount of data, the layout, and the concurrent compute workload. Neither a DMA copy nor a GPU kernel increases the link’s physical bandwidth. [HiCache transfer design](https://www.lmsys.org/blog/2025-09-10-sglang-hicache/)
 
-### TCP and RDMA
+### TCP and RDMA: receiving remote KV
 
-A conventional TCP socket path uses the operating system's networking stack and usually copies received data from socket buffers into application buffers. Its strengths are broad compatibility and familiar deployment tools. CPU protocol work and buffer copies can become expensive at high data rates; offloads and optimized APIs can reduce that overhead.
+If the document’s KV lives on another machine, we first need to receive it over the network. A conventional TCP socket path uses the operating system’s network stack and typically copies received data from socket buffers into the application buffer. TCP is widely supported and has mature deployment tools. At high throughput, however, protocol processing and those memory copies can consume substantial CPU time and memory bandwidth. Offloads and optimized APIs can reduce this work.
 
-RDMA lets compatible NICs move data into registered memory with less CPU data-path work and fewer copies. It is available over InfiniBand and Ethernet technologies such as RoCE. Registration, queue management, and appropriate network configuration add deployment work. Software still manages connections and completion, while the NIC and links still carry the payload. **RDMA into Host DRAM leaves the Host → GPU transfer in place.** RDMA does not inherently mean GPU memory is the destination. [NVIDIA RDMA programming guide](https://networking-docs.nvidia.com/doca/archive/3-4-0/rdma-aware-networks-programming-guide)
+With RDMA, software registers a memory region with a compatible NIC, making it available for authorized device access. The NIC can then place incoming data into that region with less CPU involvement and fewer intermediate copies. This requires compatible hardware and network setup, such as InfiniBand or Ethernet with RoCE. Software still manages connections, transfer queues, and completion events. Most importantly for this example, **if RDMA puts the KV in Host memory, we still need the Host-to-GPU transfer.** RDMA alone does not tell us where the received bytes end up. [NVIDIA RDMA programming guide](https://networking-docs.nvidia.com/doca/archive/3-4-0/rdma-aware-networks-programming-guide)
 
-### GPUDirect RDMA and GPUDirect Storage
+### GPUDirect: skipping the Host buffer
 
-GPUDirect RDMA allows a compatible NIC to access GPU memory, removing a Host staging buffer and the following Host–GPU copy from that route. This requires support across the GPU, NIC, drivers, and PCIe topology. Completion and memory ordering must also be correct before a GPU kernel consumes the received data. The network and GPU-side PCIe traffic remain. [GPUDirect RDMA](https://docs.nvidia.com/cuda/gpudirect-rdma/index.html)
+If the GPU is going to consume the data, can the NIC put it straight into GPU memory? GPUDirect RDMA enables this on supported systems. It removes the Host staging buffer and the subsequent Host-to-GPU copy from that path. The network transfer and GPU-side PCIe traffic remain. It also requires a compatible GPU, NIC, driver, and PCIe topology, and the application must ensure that reception is complete and visible before a GPU kernel reads the data. [GPUDirect RDMA](https://docs.nvidia.com/cuda/gpudirect-rdma/index.html)
 
-GPUDirect Storage targets storage I/O through cuFile. On a supported direct path, it moves data between storage and GPU memory without a CPU-memory bounce buffer. This saves Host memory traffic, but requires application integration and a compatible storage stack. Fallback paths may still use Host staging. It also cannot remove time spent reading NAND, or help CPU processing that needs to inspect the payload first. [GPUDirect Storage design](https://docs.nvidia.com/gpudirect-storage/design-guide/index.html)
+GPUDirect Storage addresses a similar problem for storage reads and writes. Applications integrate cuFile so that supported storage paths can transfer data between storage and GPU memory without a CPU-memory staging buffer. This saves Host memory traffic, but requires a compatible storage stack; fallback paths may still stage through Host memory. NAND still takes time to read, and if the CPU must first parse or transform the data, bypassing it may offer less benefit. [GPUDirect Storage design](https://docs.nvidia.com/gpudirect-storage/design-guide/index.html)
 
 <RouteViz client:visible lang="en" />
 
-### What this changes for HiCache
+### What HiCache actually skips
 
-For the Host-staged HiCache path in this article, L3 fills a Host pool before KV moves to the GPU. A backend's zero-copy integration can fill that pool directly instead of filling a separate application buffer and copying it again. **Avoiding that extra Host copy does not remove Host staging.** Likewise, HiCache's `direct` I/O backend names standard CUDA memory copies between Host and GPU; it does not mean GPUDirect Storage. Its `kernel` backend uses GPU-assisted transfer kernels. [HiCache I/O backends](https://docs.sglang.io/docs/advanced_features/hicache_design)
+In the Host-staged HiCache path discussed here, L3 first fills the Host KV pool, then HiCache copies the data to the GPU. A zero-copy backend integration lets the storage client fill this pool directly, instead of filling a separate application buffer and copying it into the pool. It removes that extra Host copy; the Host-to-GPU transfer remains. The `direct` I/O backend name can also be misleading: it means standard CUDA copies between Host and GPU, not GPUDirect Storage. The `kernel` backend uses the GPU-assisted transfer kernels described above. [HiCache I/O backends](https://docs.sglang.io/docs/advanced_features/hicache_design)
 
-When comparing configurations, follow the actual bytes: which buffers hold them, which engine moves them, which links they cross, and which work can overlap. A faster network cannot fix a saturated Host–GPU link. A direct GPU path can remove Host traffic, but using it in a cache system also requires a compatible backend, data layout, and synchronization design.
+These distinctions make it easier to choose an optimization. If the extra Host copy is expensive, writing directly into the KV pool can help. If Host-to-GPU bandwidth is already full, a faster network alone cannot fix it. Sending data directly to GPU memory can remove Host traffic, but the cache backend must support that path and supply the layout and synchronization the GPU needs.
 
-## Moving KV back to compute
+## Following one restore
 
-Consider a document prefix retained only in L3. On the Host-staged HiCache path, the backend first places the needed KV into Host memory. HiCache then transfers it to the GPU KV pool. Attention can use the data once its required KV has arrived. The figure shows a single payload’s copies; real transfers can be split into pages and model layers.
+Now suppose only L3 still holds the document’s KV. In the Host-staged path, HiCache first reads it into the Host pool, then copies it into the GPU KV pool. Attention can use each required part only after it arrives. The animation divides the document’s KV into four pages so that we can follow when each copy appears. Switching the hit location to L1 or L2 removes the transfers that are no longer needed.
 
 <TransferViz client:visible lang="en" />
 
-The storage route makes the layout choices in HiCache easier to understand. GPU computation visits model layers, so a layer-oriented layout fits its accesses. A backend fetches a cached token page, so grouping that page’s payload into contiguous Host memory reduces scattered I/O. **A HiCache page is a group of tokens; it is not the same object as an OS page or a NAND page.**
+This also explains why HiCache uses different layouts on the two sides. The GPU runs the model one layer at a time, so grouping KV by model layer helps it read the data for that layer. A storage request, however, fetches the cached data for a page of tokens across layers. Putting that page together in Host memory lets the backend read or write a larger contiguous block instead of many scattered pieces.
 
-Bulk transfers amortize request and submission overhead. They do not remove the bytes that must cross the link. Similarly, zero-copy integration avoids an extra software buffer copy; it does not mean zero physical data movement. These distinctions explain why faster transfer kernels and page-oriented Host layouts can improve utilization without changing PCIe or SSD peak bandwidth. [HiCache data-plane design](https://www.lmsys.org/blog/2025-09-10-sglang-hicache/)
+A HiCache page here means a group of tokens. It is different from an operating-system memory page or a physical NAND page. Combining transfers reduces the number of I/O submissions and spreads their fixed cost over more bytes. The amount of KV to move stays the same. [HiCache layout and transfer design](https://www.lmsys.org/blog/2025-09-10-sglang-hicache/)
 
-Once Host data is ready, loading later model layers can overlap computation on an earlier layer whose KV has arrived. L3 prefetch can instead run while the request waits for GPU scheduling. Both reduce exposed waiting time. Neither guarantees that I/O disappears: a slow layer transfer can still stall the GPU, and many concurrent restores can saturate a shared link.
+We can also start useful work before the entire restore finishes. Once the first model layer’s KV reaches the GPU, the GPU can compute that layer while later layers’ KV is still moving. Earlier still, L3 prefetch can read data while a request waits to be scheduled. Both reduce how long the request waits for I/O. They cannot hide every transfer: if a layer’s KV arrives after the GPU needs it, computation still pauses.
 
-## When restoring is worthwhile
+## Is restoring faster than recomputing?
 
-The useful comparison is the **extra wait to recover the missing prefix versus the work avoided by reusing it**. An L3 hit is not automatically a latency win. Nor does a slower medium automatically make caching pointless: even a relatively slow read can beat an expensive long-prefix prefill.
+Finding the document in L3 is only the first step. We still need to compare the wait for its KV with the prefill work that reuse would save. An SSD read can be worthwhile if recomputing a long prefix takes even longer. A cache hit can also be slower than recomputation when the transfer is expensive and the prefix is cheap to compute.
 
-In the calculator below, a decimal 1 GB payload takes 20 ms over an assumed effective 50 GB/s Host–GPU path. An assumed effective 10 GB/s L3–Host path adds 100 ms. With two serial stages, recovery takes 120 ms. If prefetch completes 80 ms of the L3 read before scheduling, the exposed wait falls to 40 ms. These inputs are teaching assumptions, not device specifications or HiCache benchmarks.
+Consider a simplified example with decimal 1 GB of KV. At an effective L3-to-Host bandwidth of 10 GB/s, the first transfer takes 100 ms. At an effective Host-to-GPU bandwidth of 50 GB/s, the second takes 20 ms. If they run one after the other, restoring takes 120 ms. If prefill would take 150 ms, reuse saves 30 ms. But if prefill only takes 50 ms, waiting 120 ms would be worse. Prefetch changes the comparison: completing 80 ms of the L3 read before scheduling leaves 40 ms to wait. These numbers are teaching assumptions, not hardware specifications or HiCache benchmark results.
 
 <CostViz client:visible lang="en" />
 
-The calculator holds KV size and recomputation cost independently so you can inspect the decision. In a real workload they depend on the model, prefix length, KV precision, parallelism, and batching. The figure excludes lookup, launch, queueing, and layer overlap. Use measured effective transfer rates and request latency for a deployment decision; a device’s peak bandwidth cannot supply those values by itself.
+Try reducing the recomputation time in the calculator, or increasing the amount of KV to restore. The comparison can reverse without changing the storage device. A real deployment also needs to account for lookup time, queueing, transfer startup, and overlap with computation. KV size and prefill time depend on the model and workload, so they should be measured together rather than inferred from peak device bandwidth.
 
-The hardware consequences lead to a few practical choices:
+For our document example, the useful storage choice depends on what happens after this request:
 
-- **Frequent local reuse:** a larger Host cache can reduce repeated L3 reads, provided host capacity and CPU–GPU bandwidth are available.
-- **Reuse across instances:** a shared backend can retain one accessible history beyond an instance’s private L2, subject to backend replication and routing.
-- **Large, less frequent histories:** SSD-backed storage can make retention economical when recovery still saves useful prefill work. Backup rate and write endurance matter alongside capacity.
-- **Limited Host capacity:** the buffer-only mode described in the HiCache lesson retains Host slots only for transfers. It reduces resident Host copies but gives up later L2 hits; it does not eliminate the Host transfer path.
+- **The same instance reads it repeatedly:** keeping an L2 copy can avoid repeated L3 reads, provided Host capacity and Host-to-GPU bandwidth are sufficient.
+- **Several instances need it:** a shared L3 can make the cached prefix available across instances. This requires a backend and configuration that support sharing.
+- **It is part of a large, less frequently read history:** SSD capacity can be useful if restoring still saves enough prefill work to justify the backup and read costs.
+- **Host memory is scarce:** buffer-only mode releases Host slots after staging instead of retaining an L2 copy. It saves Host capacity, but the next request cannot hit that L2 copy and may need L3 again. The Host staging step still exists.
 
-The original HiCache benchmarks measure the benefit of preserving reusable history, not an intrinsic speedup from replacing HBM with a slower medium. HBM supplies the KV used by GPU computation. Host DRAM and L3 keep more prefixes available so that the engine can choose recovery when it is cheaper than rebuilding them.
+After the restore, the GPU uses the document’s KV from its own memory and computes the new question. The time saved comes from avoiding the document’s prefill. Keeping more history gives HiCache more opportunities to do that; choosing which copies to keep and when to load them determines whether those opportunities actually save time.
