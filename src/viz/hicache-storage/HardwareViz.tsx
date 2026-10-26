@@ -9,10 +9,13 @@ function Backend({ lang, isRemote, onInspect, detailId }: {
 }) {
   return <>
     <div className="storage-link">↕ {isRemote ? TEXT.network[lang] : "PCIe / NVMe"}</div>
-    <button type="button" className="storage-backend storage-inspect" onClick={onInspect} aria-controls={detailId}>
+    {isRemote ? <div className="storage-backend">
+      <strong>HiCache L3</strong>
+      <div className="storage-media">{TEXT.service[lang]}</div>
+    </div> : <button type="button" className="storage-backend storage-inspect" onClick={onInspect} aria-controls={detailId}>
       <strong>HiCache L3 <span aria-hidden="true">↘</span></strong>
-      <div className="storage-media">{isRemote ? TEXT.service[lang] : TEXT.ssd[lang]}</div>
-    </button>
+      <div className="storage-media">{TEXT.ssd[lang]}</div>
+    </button>}
   </>;
 }
 
@@ -20,7 +23,7 @@ export default function HardwareViz({ lang = "zh" }: { lang?: Locale }) {
   const [isRemote, setIsRemote] = useState(true);
   const [part, setPart] = useState<HardwarePart>("hbm");
   const detailId = useId();
-  const backendProps = { lang, isRemote, detailId, onInspect: () => setPart(isRemote ? "dram" : "nand") };
+  const backendProps = { lang, isRemote, detailId, onInspect: () => setPart("nand") };
   return (
     <figure className="viz-stage storage-viz" aria-label={TEXT.hardware[lang]}>
       <div className="viz-head"><span className="viz-title">{TEXT.hardware[lang]}</span>
@@ -29,7 +32,7 @@ export default function HardwareViz({ lang = "zh" }: { lang?: Locale }) {
         <div className="storage-switch" role="group" aria-label={TEXT.backend[lang]}>
           <strong>{TEXT.backend[lang]}</strong>
           {[true, false].map(remote => <button type="button" className="viz-btn" key={String(remote)}
-            aria-pressed={isRemote === remote} onClick={() => { setIsRemote(remote); setPart(remote ? "dram" : "nand"); }}>
+            aria-pressed={isRemote === remote} onClick={() => { setIsRemote(remote); setPart(remote ? "hbm" : "nand"); }}>
             {remote ? TEXT.remote[lang] : TEXT.local[lang]}</button>)}
         </div>
         <section className="storage-node">
@@ -46,15 +49,14 @@ export default function HardwareViz({ lang = "zh" }: { lang?: Locale }) {
             <div className="storage-link">↔ {TEXT.interposer[lang]}</div>
           </div>
           <div className="storage-link">↕ PCIe</div>
-          <button type="button" className="storage-host storage-inspect" aria-pressed={part === "dram"}
-            aria-controls={detailId} onClick={() => setPart("dram")}>
-            <strong>CPU / {TEXT.host[lang]} ↘</strong><span>{TEXT.dimm[lang]}</span></button>
+          <div className="storage-host">
+            <strong>CPU / {TEXT.host[lang]}</strong><span>{TEXT.dimm[lang]}</span></div>
           {!isRemote && <Backend {...backendProps} />}
         </section>
         {isRemote && <Backend {...backendProps} />}
         <div id={detailId} className="storage-detail-panel">
           <div className="storage-detail-tabs" role="group" aria-label={DETAIL.inspect[lang]}>
-            {(["hbm", "dram", "nand"] as const).map(key => <button key={key} type="button" className="viz-btn"
+            {(["hbm", "nand"] as const).map(key => <button key={key} type="button" className="viz-btn"
               aria-pressed={part === key} onClick={() => { setPart(key); if (key === "nand") setIsRemote(false); }}>
               {DETAIL[key][lang]}</button>)}
           </div>

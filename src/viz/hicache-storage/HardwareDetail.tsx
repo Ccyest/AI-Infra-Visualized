@@ -5,7 +5,7 @@ import type { Locale } from "../../lib/i18n";
 import { DETAIL } from "./strings";
 import "./details.css";
 
-export type HardwarePart = "hbm" | "dram" | "nand";
+export type HardwarePart = "hbm" | "nand";
 
 function HbmDetail({ lang }: { lang: Locale }) {
   const [isExpanded, setIsExpanded] = useState(false);
@@ -38,35 +38,6 @@ function HbmDetail({ lang }: { lang: Locale }) {
   </section>;
 }
 
-function DramDetail({ lang }: { lang: Locale }) {
-  const [charge, setCharge] = useState(100);
-  const isLost = charge < 40;
-  return <section className="storage-detail" aria-label={DETAIL.dram[lang]}>
-    <div className="storage-detail-head"><h4>{DETAIL.dram[lang]}</h4>
-      <output className={isLost ? "storage-loss" : ""} aria-live="polite">{isLost ? DETAIL.lost[lang] : DETAIL.stored[lang]}</output></div>
-    <div className="storage-diagram-scroll">
-      <svg className="storage-anatomy" viewBox="0 0 650 225" role="img" aria-label={DETAIL.dram[lang]}>
-        <path d="M75 95 H225 M270 95 H400 V133 M245 40 V70 M225 80 V110 M270 80 V110 M225 95 H270" className="detail-circuit" />
-        <path d="M230 72 H265 M400 191 V210 H450" className="detail-circuit" />
-        <text x="70" y="75">{DETAIL.bitLine[lang]}</text>
-        <text x="260" y="40">{DETAIL.wordLine[lang]}</text>
-        <text x="180" y="150">{DETAIL.transistor[lang]}</text>
-        <rect x="350" y="133" width="100" height="58" rx="5" className="detail-empty" />
-        <rect x="354" y={187 - charge / 2} width="92" height={charge / 2} className="detail-charge" />
-        <text x="475" y="170">{DETAIL.capacitor[lang]}</text>
-        <text x="375" y="122">{charge}%</text>
-      </svg>
-    </div>
-    <div className="storage-switch">
-      <span>{DETAIL.charge[lang]}</span>
-      <button type="button" className="viz-btn" disabled={isLost} onClick={() => setCharge(charge - 20)}>{DETAIL.leak[lang]}</button>
-      <button type="button" className="viz-btn" disabled={isLost || charge === 100} onClick={() => setCharge(100)}>{DETAIL.refresh[lang]}</button>
-      {isLost && <button type="button" className="viz-btn primary" onClick={() => setCharge(100)}>{DETAIL.write[lang]}</button>}
-    </div>
-    <small>{DETAIL.dramNote[lang]}</small>
-  </section>;
-}
-
 function NandDetail({ lang }: { lang: Locale }) {
   const player = useSimPlayer(4, 0.7);
   const pages = [
@@ -90,6 +61,5 @@ function NandDetail({ lang }: { lang: Locale }) {
 
 export default function HardwareDetail({ part, lang }: { part: HardwarePart; lang: Locale }) {
   if (part === "hbm") return <HbmDetail lang={lang} />;
-  if (part === "dram") return <DramDetail lang={lang} />;
   return <NandDetail lang={lang} />;
 }

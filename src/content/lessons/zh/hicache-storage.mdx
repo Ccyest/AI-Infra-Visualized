@@ -67,7 +67,7 @@ HiCache 把 GPU 显存叫作 L1，CPU 内存叫作 L2，存储后端叫作 L3。
 
 HBM 把多层 DRAM 芯片垂直堆起来，用穿硅通孔，也就是 TSV，把各层连起来。然后把这些堆栈放在 GPU 芯片旁边，一起封装。封装内部可以布置密集的连线，让 GPU 和内存之间同时传输更多 bit。连线短，也有利于降低每 bit 的传输能耗。多个内存通道一起工作，就能提供很高的总带宽。HBM 离 GPU 的计算芯片很近，但没有做进那块计算芯片内部。[Micron 的 HBM3E 介绍](https://www.micron.com/about/blog/applications/ai/microns-hbm3e-powering-the-future-of-ai-with-high-bandwidth-memory)
 
-再往里看，一个典型的 DRAM 单元用电容中的电荷保存一个 bit，用晶体管控制访问。电荷会慢慢泄漏，所以内存要定期刷新。许多单元排列成行，再组成可以独立处理部分操作的 bank。读取一行时，要先激活这一行，再检测其中的电荷；同一个 bank 换到另一行时，还可能要先关闭原来的行，这一步叫预充电。HBM 也要做这些操作。宽接口让它能同时搬更多数据，但没有消除访问存储单元本身的等待。[Micron 的 HBM 存储结构说明](https://assets.micron.com/adobe/assets/urn%3Aaaid%3Aaem%3A275edf31-79e3-4b6c-8bbd-a233babe9281/original/as/micron-hbm2e-memory-wp.pdf)
+HBM 和普通 DRAM 都需要定期刷新来保持数据；高带宽意味着能同时搬更多数据，并不代表每次访问都没有等待。[Micron 的 HBM 存储结构说明](https://assets.micron.com/adobe/assets/urn%3Aaaid%3Aaem%3A275edf31-79e3-4b6c-8bbd-a233babe9281/original/as/micron-hbm2e-memory-wp.pdf)
 
 这样的设计也有代价。GPU 周围能放堆栈的位置有限，多层堆叠增加了制造和散热难度，密集的连线又需要昂贵的先进封装。想增加 HBM 容量，通常要换用另一种加速卡设计，不能像服务器内存那样再插一根内存条。它和其他 DRAM 一样，断电后也会丢失数据。
 

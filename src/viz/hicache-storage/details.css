@@ -7,8 +7,6 @@
 .storage-detail { padding: .9rem; background: var(--surface); border-radius: .6rem; }
 .storage-detail-head { display: flex; align-items: center; justify-content: space-between; gap: .6rem; flex-wrap: wrap; }
 .storage-detail-head h4 { margin: 0; }
-.storage-detail-head output { font-size: .9rem; }
-.storage-loss { color: var(--series-2); }
 .storage-diagram-scroll { overflow-x: auto; overscroll-behavior-x: contain; }
 .storage-anatomy, .storage-flow-diagram { width: 100%; min-width: 520px; display: block; }
 .storage-anatomy text, .storage-flow-diagram text, .cost-timeline text { fill: var(--ink); font: 14px system-ui, sans-serif; }
@@ -18,9 +16,6 @@
 .detail-wire { stroke: var(--series-2); stroke-width: 2; fill: none; }
 .detail-tsv { stroke: var(--series-3); stroke-width: 3; stroke-dasharray: 4 2; transition: y1 .45s ease; }
 .detail-pointer { stroke: var(--muted); stroke-width: 1.5; fill: none; }
-.detail-circuit { stroke: var(--ink); stroke-width: 3; fill: none; }
-.detail-empty { fill: var(--surface); stroke: var(--series-1); stroke-width: 2; }
-.detail-charge { fill: var(--series-1); opacity: .6; transition: height .3s ease, y .3s ease; }
 .storage-nand-detail { width: 100%; margin: 0 !important; box-shadow: none; }
 .storage-flash-blocks { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
 .storage-flash-block { border: 2px solid var(--grid); border-radius: .5rem; padding: .8rem; transition: border-color .3s; }
@@ -61,5 +56,5 @@
   .cost-metrics output { font-size: 1.1rem; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .detail-die, .detail-charge, .detail-tsv, .storage-bar-track i { transition: none; }
+  .detail-die, .detail-tsv, .storage-bar-track i { transition: none; }
 }
