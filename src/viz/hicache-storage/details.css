@@ -1,0 +1,66 @@
+.storage-inspect { cursor: pointer; font: inherit; color: var(--ink); width: 100%; background: var(--surface); }
+.storage-inspect:hover, .storage-inspect[aria-pressed="true"] { outline: 2px solid var(--series-1); outline-offset: 2px; }
+.storage-inspect:focus-visible, .storage-detail-tabs button:focus-visible { outline: 3px solid var(--series-2); outline-offset: 3px; }
+.storage-detail-panel { margin-top: 1.2rem; padding-top: 1.2rem; border-top: 1px solid var(--grid); }
+.storage-detail-tabs { display: flex; gap: .5rem; flex-wrap: wrap; margin-bottom: 1rem; }
+.storage-detail-tabs [aria-pressed="true"] { border-color: var(--series-1); color: var(--series-1); }
+.storage-detail { padding: .9rem; background: var(--surface); border-radius: .6rem; }
+.storage-detail-head { display: flex; align-items: center; justify-content: space-between; gap: .6rem; flex-wrap: wrap; }
+.storage-detail-head h4 { margin: 0; }
+.storage-detail-head output { font-size: .9rem; }
+.storage-loss { color: var(--series-2); }
+.storage-diagram-scroll { overflow-x: auto; overscroll-behavior-x: contain; }
+.storage-anatomy, .storage-flow-diagram { width: 100%; min-width: 520px; display: block; }
+.storage-anatomy text, .storage-flow-diagram text, .cost-timeline text { fill: var(--ink); font: 14px system-ui, sans-serif; }
+.detail-base { fill: color-mix(in srgb, var(--muted) 20%, var(--surface)); stroke: var(--muted); }
+.detail-gpu, .detail-memory { fill: color-mix(in srgb, var(--series-1) 15%, var(--surface)); stroke: var(--series-1); stroke-width: 1.5; }
+.detail-die { transition: transform .45s ease; }
+.detail-wire { stroke: var(--series-2); stroke-width: 2; fill: none; }
+.detail-tsv { stroke: var(--series-3); stroke-width: 3; stroke-dasharray: 4 2; transition: y1 .45s ease; }
+.detail-pointer { stroke: var(--muted); stroke-width: 1.5; fill: none; }
+.detail-circuit { stroke: var(--ink); stroke-width: 3; fill: none; }
+.detail-empty { fill: var(--surface); stroke: var(--series-1); stroke-width: 2; }
+.detail-charge { fill: var(--series-1); opacity: .6; transition: height .3s ease, y .3s ease; }
+.storage-nand-detail { width: 100%; margin: 0 !important; box-shadow: none; }
+.storage-flash-blocks { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+.storage-flash-block { border: 2px solid var(--grid); border-radius: .5rem; padding: .8rem; transition: border-color .3s; }
+.storage-flash-block.is-erasing { border-color: var(--series-2); border-style: dashed; background: color-mix(in srgb, var(--series-2) 10%, var(--surface)); }
+.storage-flash-page { display: flex; align-items: center; justify-content: space-between; gap: .5rem; padding: .55rem; margin-top: .4rem; border: 1px solid var(--grid); border-radius: .3rem; font-size: .85rem; min-height: 38px; }
+.storage-flash-page.oldA, .storage-flash-page.newA, .storage-flash-page.B { background: color-mix(in srgb, var(--series-1) 15%, var(--surface)); border-color: var(--series-1); }
+.storage-flash-page.invalidA, .storage-flash-page.invalidB { background: repeating-linear-gradient(135deg, transparent 0 6px, color-mix(in srgb, var(--muted) 16%, transparent) 6px 8px); }
+.storage-flash-page.invalidA strong, .storage-flash-page.invalidB strong { color: var(--muted); text-decoration: line-through; }
+.storage-flash-page.empty { border-style: dashed; color: var(--muted); }
+.storage-mini-metrics { display: flex; flex-wrap: wrap; gap: .7rem 1.2rem; font-size: .8rem; margin-top: .9rem; }
+.flow-tier { fill: var(--surface); stroke: var(--grid); }
+.storage-flow-diagram { min-width: 600px; }
+.storage-flow-diagram .flow-title { font-size: 16px; font-weight: 600; }
+.storage-flow-diagram .flow-counter { fill: var(--muted); font-size: 13px; }
+.storage-flow-diagram .flow-computing { fill: var(--series-3); font-weight: 700; }
+.flow-flight { transition: transform .18s linear; }
+.storage-flow-diagram .flow-flight-label { fill: var(--surface); font-weight: 700; }
+.storage-focus { margin-bottom: 0; font-size: .8rem; }
+.cost-metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: .8rem; margin: 1rem 0; }
+.cost-metrics > div { border: 1px solid var(--grid); border-radius: .5rem; padding: .8rem; display: flex; flex-direction: column; gap: .4rem; }
+.cost-metrics output { font-size: 1.4rem; font-weight: 650; font-variant-numeric: tabular-nums; }
+.cost-metrics .cost-restore-wins { border-color: var(--series-1); background: color-mix(in srgb, var(--series-1) 7%, var(--surface)); }
+.cost-metrics .cost-recompute-wins { border-color: var(--series-3); background: color-mix(in srgb, var(--series-3) 7%, var(--surface)); }
+.cost-timeline svg { display: block; width: 100%; min-width: 550px; }
+.cost-before { fill: color-mix(in srgb, var(--muted) 7%, var(--surface)); }
+.cost-grid { stroke: var(--grid); stroke-width: 1; }
+.cost-zero { stroke: var(--ink); stroke-dasharray: 4 3; stroke-width: 1; }
+.cost-timeline .cost-segment-label { fill: var(--surface); font-size: 12px; font-weight: 600; }
+.cost-equation { display: flex; flex-wrap: wrap; gap: .4rem 1rem; padding: .8rem; margin-top: 1rem; border-radius: .4rem; background: color-mix(in srgb, var(--muted) 7%, var(--surface)); font-size: .8rem; }
+.cost-equation output { font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.storage-bar-track i { transition: width .25s ease; }
+@media (max-width: 560px) {
+  .storage-detail { padding: .4rem; }
+  .storage-flash-blocks { gap: .5rem; }
+  .storage-flash-block { padding: .5rem; }
+  .storage-flash-page { flex-direction: column; align-items: flex-start; }
+  .cost-metrics { gap: .4rem; }
+  .cost-metrics > div { padding: .6rem .4rem; }
+  .cost-metrics output { font-size: 1.1rem; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .detail-die, .detail-charge, .detail-tsv, .flow-flight, .storage-bar-track i { transition: none; }
+}
