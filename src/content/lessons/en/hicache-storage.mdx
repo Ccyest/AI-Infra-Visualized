@@ -43,13 +43,13 @@ Before looking inside the hardware, it helps to separate four properties. **Capa
 
 <div className="storage-glossary" tabIndex={0} role="region" aria-label="Storage terminology comparison">
 
-| Term and meaning | Main advantages | Main limitations | Use in HiCache |
+| Term (what it is) | Advantages | Limitations | HiCache tier |
 | --- | --- | --- | --- |
-| **SRAM** (Static Random-Access Memory): small memories inside the GPU chip | Low latency and high on-chip bandwidth | Large silicon area per bit, so capacity is small and costly | Hardware caches and kernel working data; not a separate HiCache tier |
-| **HBM** (High Bandwidth Memory): stacked DRAM beside the GPU chip | High aggregate bandwidth for reading large amounts of KV | Expensive packaging and limited room for capacity; cannot expand by adding DIMMs | **L1**: KV being used by the GPU and prefixes retained in GPU memory |
-| **CPU DRAM**: DRAM means Dynamic Random-Access Memory; CPU memory commonly uses DDR or LPDDR | Usually offers more capacity at a lower cost per byte than HBM | GPU reads or copies must cross the CPU–GPU link; CPU memory bandwidth is not the same as transfer bandwidth to the GPU | **L2**: reusable local KV copies and transfer buffers |
-| **Remote DRAM**: memory on other machines, accessed through a cache service | Pools capacity and can share KV across inference instances | Adds network and service latency; limited by NICs and network bandwidth | One option for **L3**, such as a distributed memory cache |
-| **SSD / NAND flash**: an SSD is a solid-state drive; NAND flash is the medium it uses to store data | Large capacity, usually cheaper per byte than DRAM, and retains data without power | Higher access latency than memory, plus extra work during updates and finite write endurance | Another option for **L3**, for retaining a larger history |
+| **SRAM** (GPU on-chip memory) | Low latency | Small capacity, costly per byte | No separate tier |
+| **HBM** (high-bandwidth GPU memory) | High bandwidth | Limited capacity, expensive | **L1** |
+| **CPU DRAM** (host memory) | Larger, cheaper than HBM | Must copy KV to the GPU | **L2** |
+| **Remote DRAM** (other machines’ memory) | Pooled capacity, shared access | Network bandwidth and latency | **L3** |
+| **SSD** (stores data in NAND flash) | Large, cheap per byte, persistent | Slower I/O, finite write endurance | **L3** |
 
 </div>
 
