@@ -18,7 +18,7 @@ export default function TransferDiagram({ frame, focus, isBufferOnly, lang }: {
         <rect x={column.x} y="10" width="190" height="290" rx="10" className="flow-tier" />
         <text x={column.x + 95} y="38" textAnchor="middle" className="flow-title">{column.name}</text>
         {frame[column.key].map((hasCopy, page) => {
-          const isReleased = column.key === "host" && isBufferOnly && frame.gpu[page];
+          const isReleased = column.key === "host" && isBufferOnly && frame.l3[page] && frame.gpu[page];
           return <g key={page} style={{ opacity: focus === null || focus === page ? 1 : 0.25 }}>
             <rect x={column.x + 22} y={58 + page * 51} width="146" height="38" rx="5"
               fill={hasCopy ? `var(--series-${page + 1})` : "var(--surface)"}
