@@ -1,7 +1,8 @@
 import { useId, useRef, useState } from "react";
 import type { Locale } from "../../lib/i18n";
 import HardwareIcon, { type HardwareNodeId } from "./HardwareIcon";
-import { CLUSTER as C } from "./strings";
+import ClusterScene from "./ClusterScene";
+import { CLUSTER as C, SCENE_UI } from "./strings";
 import "./styles.css";
 import "./hierarchy.css";
 import "./cluster.css";
@@ -106,10 +107,11 @@ function SystemCard({ platform, view, lang, onZoom }: {
 }
 
 export default function ClusterArchitectureViz({ lang = "zh" }: { lang?: Locale }) {
-  const [view, setView] = useState<View>("overview");
+  const [view, setView] = useState<View | "spatial">("spatial");
+  const [platform, setPlatform] = useState<Platform>("h200");
   const connectionButton = useRef<HTMLButtonElement>(null);
   const panelId = useId();
-  const views: [View, Localized][] = [["overview", C.overview], ["connection", C.connection]];
+  const views: [View | "spatial", Localized][] = [["spatial", SCENE_UI.spatial], ["overview", C.overview], ["connection", C.connection]];
   const showConnection = () => {
     setView("connection");
     connectionButton.current?.focus();
@@ -117,13 +119,19 @@ export default function ClusterArchitectureViz({ lang = "zh" }: { lang?: Locale 
   return <figure className="viz-stage storage-viz cluster-viz" aria-label={C.title[lang]}>
     <div className="viz-head"><span className="viz-title">{C.title[lang]}</span><span className="viz-subtitle">{C.scope[lang]}</span></div>
     <div className="storage-body">
+      <div className="storage-switch cluster-platforms" role="group" aria-label={SCENE_UI.platform[lang]}>
+        {(["h200", "rubin"] as const).map(value => <button type="button" className="viz-btn" key={value}
+          aria-pressed={platform === value} aria-controls={panelId} onClick={() => setPlatform(value)}>
+          {value === "h200" ? "H200" : "Vera Rubin"}</button>)}
+      </div>
       <div className="storage-switch">{views.map(([key, label]) => <button type="button" className="viz-btn" key={key}
         ref={key === "connection" ? connectionButton : undefined}
         aria-pressed={view === key} aria-controls={panelId} onClick={() => setView(key)}>{label[lang]}</button>)}
         <div className="cluster-legend"><span><i />{C.legendGpu[lang]}</span><span><i />{C.legendCpu[lang]}</span></div>
       </div>
-      <div id={panelId} className="cluster-comparison">{(["h200", "rubin"] as const).map(platform =>
-        <SystemCard key={platform} platform={platform} view={view} lang={lang} onZoom={showConnection} />)}</div>
+      <div id={panelId} className="cluster-comparison">{view === "spatial"
+        ? <ClusterScene key={platform} platform={platform} lang={lang} />
+        : <SystemCard platform={platform} view={view} lang={lang} onZoom={showConnection} />}</div>
       <small className="cluster-footnote">{(view === "overview" ? C.capacityNote : C.linkNote)[lang]}</small>
       <details className="cluster-explanation"><summary>{C.insight[lang]}</summary><p>{C.insightText[lang]}</p></details>
       <div className="cluster-sources"><span>{C.sources[lang]}</span>

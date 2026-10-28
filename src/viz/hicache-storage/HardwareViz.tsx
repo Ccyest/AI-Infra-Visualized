@@ -1,16 +1,17 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useId, useState } from "react";
 import type { Locale } from "../../lib/i18n";
 import HardwareIcon, { type HardwareNodeId } from "./HardwareIcon";
-import { HIERARCHY } from "./strings";
+import Scene3D, { type ScenePart } from "./Scene3D";
+import { HIERARCHY, SCENE_UI } from "./strings";
 import "./styles.css";
 import "./hierarchy.css";
 
-function StorageNode({ kind, lang, dialogId, onSelect }: {
-  kind: HardwareNodeId; lang: Locale; dialogId: string; onSelect: (kind: HardwareNodeId) => void;
+function StorageNode({ kind, lang, panelId, selected, onSelect }: {
+  kind: HardwareNodeId; lang: Locale; panelId: string; selected: HardwareNodeId | null; onSelect: (kind: HardwareNodeId) => void;
 }) {
   const node = HIERARCHY.nodes[kind];
-  return <button type="button" className={`hierarchy-node hierarchy-${kind}`} aria-haspopup="dialog"
-    aria-controls={dialogId} onClick={() => onSelect(kind)}>
+  return <button type="button" className={`hierarchy-node hierarchy-${kind}`} aria-expanded={selected === kind}
+    aria-controls={panelId} onClick={() => onSelect(kind)}>
     <span className="hierarchy-info" aria-hidden="true">ⓘ</span>
     <HardwareIcon kind={kind} />
     <span className="hierarchy-node-name">{node.label[lang]} {node.tier && <b>{node.tier}</b>}</span>
@@ -18,36 +19,51 @@ function StorageNode({ kind, lang, dialogId, onSelect }: {
   </button>;
 }
 
-function StoragePopup({ selected, lang, id, onClose }: {
-  selected: HardwareNodeId | null; lang: Locale; id: string; onClose: () => void;
+function StorageDetails({ selected, lang, id, onClose }: {
+  selected: HardwareNodeId; lang: Locale; id: string; onClose: () => void;
 }) {
-  const dialog = useRef<HTMLDialogElement>(null);
-  useEffect(() => {
-    if (selected) dialog.current?.showModal();
-  }, [selected]);
-  const node = selected ? HIERARCHY.nodes[selected] : null;
-  return <dialog ref={dialog} id={id} className="hierarchy-popup" aria-labelledby={`${id}-title`}
-    aria-describedby={`${id}-description`} onClose={onClose}
-    onClick={event => { if (event.target === event.currentTarget) dialog.current?.close(); }}>
-    {node && selected && <div className={`hierarchy-popup-body hierarchy-${selected}`}>
-      <button type="button" className="viz-btn hierarchy-close" aria-label={HIERARCHY.close[lang]}
-        autoFocus onClick={() => dialog.current?.close()}>×</button>
-      <HardwareIcon kind={selected} />
-      <h3 id={`${id}-title`}>{node.label[lang]} {node.tier && <span>{node.tier}</span>}</h3>
-      <p id={`${id}-description`}>{node.description[lang]}</p>
-      <div className="hierarchy-tradeoff">{node.tradeoff[lang]}</div>
-    </div>}
-  </dialog>;
+  const node = HIERARCHY.nodes[selected];
+  return <aside id={id} className={`hardware-inspector hierarchy-${selected}`} aria-labelledby={`${id}-title`}
+    onKeyDown={event => { if (event.key === "Escape") onClose(); }}>
+    <button type="button" className="viz-btn hierarchy-close" aria-label={HIERARCHY.close[lang]} onClick={onClose}>×</button>
+    <HardwareIcon kind={selected} />
+    <h3 id={`${id}-title`}>{node.label[lang]} {node.tier}</h3>
+    <p>{node.description[lang]}</p>
+    <div className="hierarchy-tradeoff">{node.tradeoff[lang]}</div>
+  </aside>;
+}
+
+function storageParts(lang: Locale): ScenePart[] {
+  const positions: [HardwareNodeId, number, number, number][] = [
+    ["gpu", -140, -105, 24], ["hbm", 80, -105, 44],
+    ["cpu", -140, 15, 24], ["host", 80, 15, 34],
+    ["ssd", -140, 125, 16], ["remote", 80, 125, 60],
+  ];
+  return positions.map(([kind, x, y, height]) => ({ id: kind, kind,
+    label: `${HIERARCHY.nodes[kind].label[lang]} ${HIERARCHY.nodes[kind].tier}`.trim(),
+    detail: HIERARCHY.nodes[kind].caption[lang], position: [x, y, height / 2], size: [105, 60, height],
+  }));
 }
 
 export default function HardwareViz({ lang = "zh" }: { lang?: Locale }) {
   const [selected, setSelected] = useState<HardwareNodeId | null>(null);
-  const dialogId = useId();
-  const nodeProps = { lang, dialogId, onSelect: setSelected };
+  const panelId = useId();
+  const [spatial, setSpatial] = useState(true);
+  const nodeProps = { lang, panelId, selected, onSelect: setSelected };
   return <figure className="viz-stage storage-viz hierarchy-viz" aria-label={HIERARCHY.title[lang]}>
     <div className="viz-head"><span className="viz-title">{HIERARCHY.title[lang]}</span>
       <span className="viz-subtitle">{HIERARCHY.note[lang]}</span></div>
-    <div className="hierarchy-diagram">
+    <div className="storage-switch" role="group" aria-label={SCENE_UI.view[lang]}>
+      {[true, false].map(value => <button key={String(value)} type="button" className="viz-btn"
+        aria-pressed={spatial === value} onClick={() => setSpatial(value)}>{(value ? SCENE_UI.spatial : SCENE_UI.flat)[lang]}</button>)}
+    </div>
+    <div className={`hardware-workspace${selected ? " has-selection" : ""}`}>
+    {spatial ? <Scene3D parts={storageParts(lang)} selected={selected} onSelect={id => setSelected(id as HardwareNodeId)} lang={lang}
+      links={[
+        { from: "gpu", to: "hbm", label: "" }, { from: "cpu", to: "gpu", label: "PCIe" },
+        { from: "cpu", to: "host", label: "" }, { from: "cpu", to: "ssd", label: "PCIe / NVMe" },
+        { from: "host", to: "remote", label: HIERARCHY.network[lang] },
+      ]} /> : <div className="hierarchy-diagram">
       <section className="hierarchy-package" aria-label={HIERARCHY.package[lang]}>
         <div className="hierarchy-group-label">{HIERARCHY.package[lang]}</div>
         <div className="hierarchy-pair">
@@ -73,6 +89,8 @@ export default function HardwareViz({ lang = "zh" }: { lang?: Locale }) {
         <div><div className="hierarchy-path-label">{HIERARCHY.network[lang]}</div><StorageNode kind="remote" {...nodeProps} /></div>
       </div>
     </div>
-    <StoragePopup selected={selected} lang={lang} id={dialogId} onClose={() => setSelected(null)} />
+    }
+    {selected && <StorageDetails selected={selected} lang={lang} id={panelId} onClose={() => setSelected(null)} />}
+    </div>
   </figure>;
 }

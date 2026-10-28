@@ -1,6 +1,6 @@
 .cluster-viz { line-height: 1.45; }
 .cluster-viz > .storage-body { padding: .6rem 0 0; }
-.cluster-comparison { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+.cluster-comparison { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1rem; }
 .cluster-legend { display: flex; flex-wrap: wrap; gap: .7rem; margin-left: auto; font-size: .72rem; color: var(--ink-2); }
 .cluster-legend i { display: inline-block; width: .65rem; height: .65rem; border-radius: .15rem; margin-right: .35rem; background: var(--series-1); }
 .cluster-legend span + span i { background: var(--series-2); }
@@ -71,3 +71,7 @@
   .cluster-overview { min-height: 0; }
   .cluster-superchips { gap: .5rem; }
 }
+
+.cluster-platforms { padding-bottom: .75rem; border-bottom: 1px solid var(--grid); }
+.cluster-platforms .viz-btn { font-size: 1rem; font-weight: 650; padding: .5rem 1.15rem; }
+.cluster-scene { padding: .8rem; }

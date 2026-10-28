@@ -25,13 +25,6 @@
 .hierarchy-fork path { fill: none; stroke: var(--axis); stroke-width: 2; vector-effect: non-scaling-stroke; }
 .hierarchy-backends { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 1.4rem; }
 .hierarchy-path-label { font-size: .78rem; color: var(--muted); text-align: center; margin: -.1rem 0 .5rem; }
-.hierarchy-popup { width: min(420px, calc(100vw - 2rem)); max-height: calc(100dvh - 2rem); padding: 0; border: 1px solid var(--grid); border-radius: 1rem; background: var(--surface); color: var(--ink); box-shadow: var(--shadow-md); }
-.hierarchy-popup::backdrop { background: color-mix(in srgb, var(--ink) 35%, transparent); backdrop-filter: blur(3px); }
-.hierarchy-popup-body { position: relative; padding: 1.6rem; }
-.hierarchy-popup .hierarchy-close { position: absolute; top: .8rem; right: .8rem; padding: 0; width: 2rem; font-size: 1.5rem; }
-.hierarchy-popup h3 { margin: .75rem 0 .6rem; font-size: 1.25rem; }
-.hierarchy-popup h3 span { color: var(--node-color); font-size: .9rem; margin-left: .35rem; }
-.hierarchy-popup p { margin: 0; font-size: .95rem; line-height: 1.75; }
 .hierarchy-tradeoff { margin-top: 1rem; padding-top: .8rem; border-top: 1px solid var(--grid); font-size: .8rem; color: var(--muted); }
 @media (max-width: 560px) {
   .hierarchy-package, .hierarchy-host-group { padding: .5rem; }

@@ -267,3 +267,15 @@ export const CLUSTER = {
   insightText: { zh: "HBM 承担 L1，CPU 连接的 DRAM 可划出一部分作为 L2。操作系统、模型权重和运行时也要占内存，多个实例还会分配各自的 KV 池。54 TB 是整架汇总，单个实例能用多少，要看进程位置、并行方式和内存配置。NVLink-C2C 改变 CPU–GPU 访问路径，不会自动把整架内存变成一个 HiCache 池。", en: "HBM serves as L1, while part of CPU-attached DRAM can form L2. The OS, model weights, and runtime also consume memory, and instances allocate their own KV pools. The 54 TB figure is a rack total; an instance’s usable capacity depends on process placement, parallelism, and memory configuration. NVLink-C2C changes the CPU–GPU access path; it does not automatically create a rack-wide HiCache pool." },
   sources: { zh: "NVIDIA 规格 · 核对于 2026-10-28", en: "NVIDIA specifications · checked 2026-10-28" },
 } as const;
+
+export const SCENE_UI = {
+  spatial: { zh: "3D 示意", en: "3D model" },
+  flat: { zh: "平面图", en: "Diagram" },
+  hint: { zh: "拖动旋转 · 点击部件 · 按方向键旋转", en: "Drag to orbit · select a part · arrow keys to orbit" },
+  schematic: { zh: "逻辑连接示意，位置与尺寸不代表实物布局", en: "Logical connections; positions and sizes are schematic" },
+  zoom: { zh: "缩放", en: "Zoom" },
+  reset: { zh: "重置视角", en: "Reset view" },
+  select: { zh: "选择部件查看详情", en: "Select a part to inspect" },
+  platform: { zh: "硬件平台", en: "Hardware platform" },
+  view: { zh: "查看方式", en: "View" },
+} as const;
