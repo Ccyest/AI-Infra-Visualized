@@ -1,12 +1,3 @@
-.storage-inspect { cursor: pointer; font: inherit; color: var(--ink); width: 100%; background: var(--surface); }
-.storage-inspect:hover, .storage-inspect[aria-pressed="true"] { outline: 2px solid var(--series-1); outline-offset: 2px; }
-.storage-inspect:focus-visible, .storage-detail-tabs button:focus-visible { outline: 3px solid var(--series-2); outline-offset: 3px; }
-.storage-detail-panel { margin-top: 1.2rem; padding-top: 1.2rem; border-top: 1px solid var(--grid); }
-.storage-detail-tabs { display: flex; gap: .5rem; flex-wrap: wrap; margin-bottom: 1rem; }
-.storage-detail-tabs [aria-pressed="true"] { border-color: var(--series-1); color: var(--series-1); }
-.storage-detail { padding: .9rem; background: var(--surface); border-radius: .6rem; }
-.storage-detail-head { display: flex; align-items: center; justify-content: space-between; gap: .6rem; flex-wrap: wrap; }
-.storage-detail-head h4 { margin: 0; }
 .storage-diagram-scroll { overflow-x: auto; overscroll-behavior-x: contain; }
 .storage-anatomy, .storage-flow-diagram { width: 100%; min-width: 520px; display: block; }
 .storage-anatomy text, .storage-flow-diagram text, .cost-timeline text { fill: var(--ink); font: 14px system-ui, sans-serif; }
@@ -16,7 +7,6 @@
 .detail-wire { stroke: var(--series-2); stroke-width: 2; fill: none; }
 .detail-tsv { stroke: var(--series-3); stroke-width: 3; stroke-dasharray: 4 2; transition: y1 .45s ease; }
 .detail-pointer { stroke: var(--muted); stroke-width: 1.5; fill: none; }
-.storage-nand-detail { width: 100%; margin: 0 !important; box-shadow: none; }
 .storage-flash-blocks { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
 .storage-flash-block { border: 2px solid var(--grid); border-radius: .5rem; padding: .8rem; transition: border-color .3s; }
 .storage-flash-block.is-erasing { border-color: var(--series-2); border-style: dashed; background: color-mix(in srgb, var(--series-2) 10%, var(--surface)); }
@@ -47,7 +37,6 @@
 .cost-equation output { font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .storage-bar-track i { transition: width .25s ease; }
 @media (max-width: 560px) {
-  .storage-detail { padding: .4rem; }
   .storage-flash-blocks { gap: .5rem; }
   .storage-flash-block { padding: .5rem; }
   .storage-flash-page { flex-direction: column; align-items: flex-start; }

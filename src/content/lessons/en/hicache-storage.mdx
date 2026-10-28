@@ -25,6 +25,8 @@ references:
 ---
 
 import HardwareViz from "../../../viz/hicache-storage/HardwareViz";
+import HbmStackViz from "../../../viz/hicache-storage/HbmStackViz";
+import NandFlashViz from "../../../viz/hicache-storage/NandFlashViz";
 import TransferViz from "../../../viz/hicache-storage/TransferViz";
 import CostViz from "../../../viz/hicache-storage/CostViz";
 import RouteViz from "../../../viz/hicache-storage/RouteViz";
@@ -66,6 +68,8 @@ Bandwidth tells us how many bytes can move per second. Latency tells us how long
 ### How HBM moves more data
 
 HBM stacks several DRAM dies vertically and connects them with through-silicon vias, or TSVs. The stacks sit beside the GPU die in the same package. Dense wiring inside the package provides a wide interface between the GPU and memory. Short connections help reduce the energy spent moving each bit, and multiple memory channels let the GPU transfer more data at once. HBM sits close to the GPU’s compute die; it is not memory built inside that die. [Micron’s HBM3E overview](https://www.micron.com/about/blog/applications/ai/microns-hbm3e-powering-the-future-of-ai-with-high-bandwidth-memory)
+
+<HbmStackViz client:visible lang="en" />
 
 Like ordinary DRAM, HBM needs periodic refresh to retain data; its wide interface increases aggregate bandwidth without eliminating the wait for each access. [Micron’s HBM memory architecture](https://assets.micron.com/adobe/assets/urn%3Aaaid%3Aaem%3A275edf31-79e3-4b6c-8bbd-a233babe9281/original/as/micron-hbm2e-memory-wp.pdf)
 
@@ -117,7 +121,9 @@ Another option is to use SSDs for documents that are worth keeping but are read 
 
 A NAND cell stores charge that changes the transistor’s threshold voltage. Reading the cell means identifying which voltage range it falls into. TLC distinguishes eight states to store three bits per cell; QLC distinguishes sixteen states to store four. More states give us more capacity per cell, but leave less room between adjacent states. Writing and distinguishing those states becomes more demanding, which affects speed, error correction, and endurance. [KIOXIA’s cell explanation](https://www.kioxia.com/en-jp/rd/technology/multi-level-cell.html) · [NAND endurance](https://americas.kioxia.com/content/dam/kioxia/en-us/business/memory/asset/KIOXIA-SSD-NAND-Endurance-Tech-Brief.pdf)
 
-Updating data creates another cost. NAND reads and programs pages, but erases larger blocks containing many pages. To update page A, the SSD usually writes the new A elsewhere and marks the old A invalid. Later, it reclaims the old block. If that block still holds a valid page B, the controller must copy B out before erasing the block. The application only changed A, but the SSD also wrote B. These extra writes are called **write amplification**. They use bandwidth and device endurance, and background garbage collection can make some requests take longer. The NAND animation above steps through this A/B example. [KIOXIA on garbage collection](https://blog-us.kioxia.com/post/2025/06/20/how-fdp-can-reduce-garbage-collection-and-ultimately-waf-use-fdp-enabled-kioxia-xd8-series-data-center-ssds)
+Updating data creates another cost. NAND reads and programs pages, but erases larger blocks containing many pages. To update page A, the SSD usually writes the new A elsewhere and marks the old A invalid. Later, it reclaims the old block. If that block still holds a valid page B, the controller must copy B out before erasing the block. The application only changed A, but the SSD also wrote B. These extra writes are called **write amplification**. They use bandwidth and device endurance, and background garbage collection can make some requests take longer. The NAND animation below steps through this A/B example. [KIOXIA on garbage collection](https://blog-us.kioxia.com/post/2025/06/20/how-fdp-can-reduce-garbage-collection-and-ultimately-waf-use-fdp-enabled-kioxia-xd8-series-data-center-ssds)
+
+<NandFlashViz client:visible lang="en" />
 
 This is also why “NVMe SSD” is not enough to predict performance. NVMe describes the command interface, not the storage medium. A large sequential read, a small random read, and a sustained mix of reads and writes stress the same SSD differently. A remote SSD service adds network and service time on top of the device I/O.
 

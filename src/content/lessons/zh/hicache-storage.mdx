@@ -25,6 +25,8 @@ references:
 ---
 
 import HardwareViz from "../../../viz/hicache-storage/HardwareViz";
+import HbmStackViz from "../../../viz/hicache-storage/HbmStackViz";
+import NandFlashViz from "../../../viz/hicache-storage/NandFlashViz";
 import TransferViz from "../../../viz/hicache-storage/TransferViz";
 import CostViz from "../../../viz/hicache-storage/CostViz";
 import RouteViz from "../../../viz/hicache-storage/RouteViz";
@@ -66,6 +68,8 @@ HiCache 把 GPU 显存叫作 L1，CPU 内存叫作 L2，存储后端叫作 L3。
 ### HBM 怎样提高带宽
 
 HBM 把多层 DRAM 芯片垂直堆起来，用穿硅通孔，也就是 TSV，把各层连起来。然后把这些堆栈放在 GPU 芯片旁边，一起封装。封装内部可以布置密集的连线，让 GPU 和内存之间同时传输更多 bit。连线短，也有利于降低每 bit 的传输能耗。多个内存通道一起工作，就能提供很高的总带宽。HBM 离 GPU 的计算芯片很近，但没有做进那块计算芯片内部。[Micron 的 HBM3E 介绍](https://www.micron.com/about/blog/applications/ai/microns-hbm3e-powering-the-future-of-ai-with-high-bandwidth-memory)
+
+<HbmStackViz client:visible />
 
 HBM 和普通 DRAM 都需要定期刷新来保持数据；高带宽意味着能同时搬更多数据，并不代表每次访问都没有等待。[Micron 的 HBM 存储结构说明](https://assets.micron.com/adobe/assets/urn%3Aaaid%3Aaem%3A275edf31-79e3-4b6c-8bbd-a233babe9281/original/as/micron-hbm2e-memory-wp.pdf)
 
@@ -117,7 +121,9 @@ CPU 内存更大，但也不是无限的。如果用户会反复访问很多份�
 
 NAND 单元保存的电荷会改变晶体管的阈值电压。读取时，器件判断电压落在哪个范围，从而读出数据。TLC 区分八种状态，一个单元存三个 bit；QLC 区分十六种状态，一个单元存四个 bit。状态越多，同样数量的单元就能存更多数据，但相邻状态之间的间隔也更小。要把电荷写准、读准就更困难，这会影响速度、纠错和写入寿命。[KIOXIA 的单元原理](https://www.kioxia.com/en-jp/rd/technology/multi-level-cell.html) · [NAND 寿命说明](https://americas.kioxia.com/content/dam/kioxia/en-us/business/memory/asset/KIOXIA-SSD-NAND-Endurance-Tech-Brief.pdf)
 
-更新数据时，还有另一笔开销。NAND 按页读取和写入，却要按包含许多页的块来擦除。比如要更新 A 页，SSD 通常先把新 A 写到其他位置，再把旧 A 标成无效。之后回收旧块时，如果里面还有有效的 B 页，就得先把 B 复制出去，才能擦除整个块。应用只改了 A，SSD 却额外写了一次 B，这就是**写放大**。额外写入会消耗带宽和寿命，后台垃圾回收也可能让某些请求等得更久。前面的 NAND 动画演示了这个 A、B 两页的例子。[KIOXIA 对垃圾回收的解释](https://blog-us.kioxia.com/post/2025/06/20/how-fdp-can-reduce-garbage-collection-and-ultimately-waf-use-fdp-enabled-kioxia-xd8-series-data-center-ssds)
+更新数据时，还有另一笔开销。NAND 按页读取和写入，却要按包含许多页的块来擦除。比如要更新 A 页，SSD 通常先把新 A 写到其他位置，再把旧 A 标成无效。之后回收旧块时，如果里面还有有效的 B 页，就得先把 B 复制出去，才能擦除整个块。应用只改了 A，SSD 却额外写了一次 B，这就是**写放大**。额外写入会消耗带宽和寿命，后台垃圾回收也可能让某些请求等得更久。下面的 NAND 动画演示了这个 A、B 两页的例子。[KIOXIA 对垃圾回收的解释](https://blog-us.kioxia.com/post/2025/06/20/how-fdp-can-reduce-garbage-collection-and-ultimately-waf-use-fdp-enabled-kioxia-xd8-series-data-center-ssds)
+
+<NandFlashViz client:visible />
 
 所以，只看“NVMe SSD”这个名字还不能判断性能。NVMe 是命令接口，真正存数据的是里面的 NAND。连续读取一个大文件、随机读取一小块数据、持续混合读写，对同一块 SSD 来说也是不同的负载。如果使用远端 SSD 服务，还要加上网络和服务处理时间。
 

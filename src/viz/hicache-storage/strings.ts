@@ -1,20 +1,4 @@
 export const TEXT = {
-  hardware: { zh: "HiCache 的物理位置", en: "Physical placement of HiCache" },
-  hardwareNote: { zh: "传统 PCIe 服务器示意；不按物理尺寸绘制", en: "Conventional PCIe server; not to physical scale" },
-  node: { zh: "推理节点", en: "Inference node" },
-  package: { zh: "GPU 封装", en: "GPU package" },
-  die: { zh: "GPU 裸片", en: "GPU die" },
-  sram: { zh: "片上 SRAM：硬件 cache / shared memory", en: "On-chip SRAM: hardware caches / shared memory" },
-  stacks: { zh: "堆叠 DRAM · TSV 垂直连接", en: "Stacked DRAM · vertical TSVs" },
-  interposer: { zh: "封装内宽接口 · 中介层连线", en: "Wide in-package interface · interposer wiring" },
-  host: { zh: "本实例 Host KV 池 · L2", en: "Instance-local Host KV pool · L2" },
-  dimm: { zh: "DDR DRAM · DIMM 内存条", en: "DDR DRAM · DIMMs" },
-  local: { zh: "本地 SSD", en: "Local SSD" },
-  remote: { zh: "远端 DRAM", en: "Remote DRAM" },
-  backend: { zh: "L3 后端示例", en: "Example L3 backends" },
-  ssd: { zh: "SSD 控制器 → NAND flash", en: "SSD controller → NAND flash" },
-  service: { zh: "远端缓存服务 → DRAM", en: "Remote cache service → DRAM" },
-  network: { zh: "网卡 → 网络 → 远端网卡", en: "NIC → network → remote NIC" },
   transfer: { zh: "一份 KV 的恢复路径", en: "Restoring one KV payload" },
   transferNote: { zh: "示意步骤；采用保留 Host 副本的模式", en: "Schematic steps; Host retains a cached copy" },
   payload: { zh: "文档 P 的 KV", en: "KV for document P" },
@@ -45,7 +29,6 @@ export const TEXT = {
 } as const;
 
 export const DETAIL = {
-  inspect: { zh: "内部结构", en: "Inside the hardware" },
   hbm: { zh: "HBM 堆叠", en: "HBM stack" },
   nand: { zh: "NAND 更新与擦除", en: "NAND update and erase" },
   expand: { zh: "展开堆栈", en: "Explode the stack" },
@@ -189,4 +172,58 @@ export const ROUTE_TEXT = {
   empty: { zh: "尚未到达", en: "Not arrived" },
   waiting: { zh: "GPU 等待数据", en: "GPU waiting for data" },
   ready: { zh: "GPU 数据到齐；完成同步后可使用", en: "GPU data arrived; usable after completion synchronization" },
+} as const;
+
+
+export const HIERARCHY = {
+  title: { zh: "HiCache 分级存储", en: "HiCache storage hierarchy" },
+  note: { zh: "传统 PCIe 服务器 · 两种 L3 后端示例", en: "Conventional PCIe server · two L3 backend options" },
+  package: { zh: "GPU 封装", en: "GPU package" },
+  host: { zh: "本机 CPU 与内存", en: "Local CPU and memory" },
+  network: { zh: "网卡 · 网络", en: "NIC · network" },
+  close: { zh: "关闭", en: "Close" },
+  nodes: {
+    gpu: {
+      tier: "",
+      label: { zh: "GPU", en: "GPU" },
+      caption: { zh: "执行模型计算", en: "Model compute" },
+      description: { zh: "执行模型计算。Attention 从旁边的 HBM 读取 KV；HiCache 的 L1 指这块显存，不是 GPU 内部的硬件 cache。", en: "Runs the model. Attention reads KV from the adjacent HBM. HiCache L1 refers to that GPU memory, not the small hardware caches inside the GPU." },
+      tradeoff: { zh: "计算需要等待所需的 KV 到达", en: "Compute waits until the required KV is available" },
+    },
+    hbm: {
+      tier: "L1",
+      label: { zh: "HBM", en: "HBM" },
+      caption: { zh: "高带宽显存", en: "GPU memory" },
+      description: { zh: "GPU 旁边的高带宽显存，保存 attention 要用的 KV。空间紧张时，HiCache 可以在下层保留副本，再回收显存。", en: "High-bandwidth memory beside the GPU holds the KV used by attention. HiCache can keep copies in lower tiers and reclaim GPU space when needed." },
+      tradeoff: { zh: "带宽高 · 容量有限 · 单位容量贵", en: "High bandwidth · limited capacity · expensive per byte" },
+    },
+    cpu: {
+      tier: "",
+      label: { zh: "CPU", en: "CPU" },
+      caption: { zh: "调度与 I/O", en: "Scheduling and I/O" },
+      description: { zh: "负责调度和提交 I/O。L2 的 KV 放在 CPU 连接的 DRAM 中，不在 CPU 芯片内部。", en: "Handles scheduling and I/O submission. L2 KV lives in DRAM attached to the CPU, rather than inside the CPU chip." },
+      tradeoff: { zh: "CPU 内存与 GPU 显存之间通过 PCIe 搬运", en: "Host–GPU transfers use PCIe in this example" },
+    },
+    host: {
+      tier: "L2",
+      label: { zh: "Host KV 池", en: "Host KV pool" },
+      caption: { zh: "CPU DRAM", en: "CPU DRAM" },
+      description: { zh: "本机 DRAM 中的 KV 池，容量通常比 HBM 大。命中后先经 PCIe 搬回 GPU，再供 attention 使用。", en: "A KV pool in local DRAM, usually larger than HBM. On a hit, KV is copied over PCIe to GPU memory before attention uses it." },
+      tradeoff: { zh: "容量更大 · 成本较低 · 恢复仍需搬运", en: "More capacity · lower cost · a GPU copy is still required" },
+    },
+    ssd: {
+      tier: "L3",
+      label: { zh: "本地 SSD", en: "Local SSD" },
+      caption: { zh: "本机 · NAND flash", en: "Local · NAND flash" },
+      description: { zh: "本机 SSD 可以作为 L3，提供更大的缓存容量。恢复时先读入 Host KV 池，再搬到 GPU。", en: "A local SSD can provide a larger L3 cache. Restoring KV reads it into the Host pool first, then copies it to the GPU." },
+      tradeoff: { zh: "容量大 · 每 GB 便宜 · 读写慢于内存", en: "Large capacity · cheap per GB · slower than memory" },
+    },
+    remote: {
+      tier: "L3",
+      label: { zh: "远端存储", en: "Remote storage" },
+      caption: { zh: "其他机器 · DRAM / SSD", en: "Other machines · DRAM / SSD" },
+      description: { zh: "通过网络访问的 L3 缓存服务，底层可用 DRAM 或 SSD。配置兼容的实例可以共享 KV，恢复时先读入本机 Host 池。", en: "An L3 cache service reached over the network, backed by DRAM or SSDs. Compatible instances can share KV; restoration first reads it into the local Host pool." },
+      tradeoff: { zh: "可共享容量 · 受网络带宽与延迟限制", en: "Shared capacity · network bandwidth and latency matter" },
+    },
+  },
 } as const;
