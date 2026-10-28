@@ -85,19 +85,23 @@ GPU 的片上 cache 和 shared memory 使用 SRAM。典型 SRAM 用晶体管电�
 
 ## CPU 内存：保存更多 KV
 
+import ClusterArchitectureViz from "../../../viz/hicache-storage/ClusterArchitectureViz";
+
 ### 容量从哪里来
 
-普通服务器把 DRAM 芯片放在 DIMM 内存条上，连接 CPU 的内存控制器。这就是本文说的 Host 内存。主板可以提供多个内存通道和插槽，在服务器支持的配置内，通过选择内存条容量和数量来扩容。相比 GPU 旁边的 HBM，这种方式通常能以更低的单位容量成本保存更多 KV。但这些内存连着 CPU，GPU 要用里面的数据，还得再搬一趟。
+普通服务器把 DRAM 芯片放在 DIMM 内存条上，连接 CPU 的内存控制器。这就是本文说的 Host 内存。相比 GPU 旁边的 HBM，这种方式通常能以更低的单位容量成本保存更多 KV。但这些内存连着 CPU，GPU 要用里面的数据，还得再搬一趟。
 
-内存装得更多，也不一定读得更快。多用一个内存通道，可以增加并行访问的机会；如果只是在已有通道上增加容量，并没有多出一个通道。内存条和 CPU 控制器还会限制运行速度。常规服务器多用 DDR 内存，Grace 等平台则使用 LPDDR5X。对 HiCache 来说，它们都承担 Host 内存的角色。
+H200 时代的 DGX 服务器使用 DDR5 DIMM；Vera Rubin 则把 LPDDR5X 放在可更换的 SOCAMM 内存模块上，并用 NVLink-C2C 连接 CPU 和 GPU。变的是内存模块和连接方式，Host 内存仍然在 CPU 这一侧。下面分别画出一台 DGX H200 和一个 Vera Rubin NVL72 机架，展开后可以看到局部连接。[DGX H200 架构](https://docs.nvidia.com/dgx/dgxh100-user-guide/introduction-to-dgxh100.html) · [Vera 内存设计](https://www.nvidia.com/en-us/data-center/vera-cpu/) · [Vera Rubin 规格](https://www.nvidia.com/en-us/data-center/vera-rubin-nvl72/)
+
+<ClusterArchitectureViz client:visible />
 
 ### GPU 还要等数据搬过来
 
 假设新问题来了，文档的 KV 已经不在 GPU 上，但 CPU 内存里还有一份。在传统 PCIe 服务器中，恢复它需要先读 Host DRAM，再经过 PCIe，最后写入 GPU 显存。整趟搬运能有多快，取决于最慢的那一段。多张 GPU 如果共用内存通道或上游链路，还会争用同一份带宽。
 
-这个差距有多大？NVIDIA 给 H100 SXM 标注的 HBM 带宽是 **3.35 TB/s**，PCIe Gen 5 x16 则是**单向 64 GB/s**，双向加起来才是 128 GB/s。用十进制 1 GB 除以带宽，理想的 HBM 访问约需 **0.30 ms**，单向 PCIe 传输约需 **15.6 ms**。这只是按带宽算出的时间，不是 KV 恢复实测。它说明了一个实际问题：CPU 内存即使装得下同样多的 KV，也不能让 GPU 以 HBM 的速度读到它们。[H100 规格](https://www.nvidia.com/en-us/data-center/h100/) · [Hopper 的 PCIe 规格](https://developer.nvidia.com/blog/nvidia-hopper-architecture-in-depth/)
+这个差距有多大？H200 的 HBM 带宽是 **4.8 TB/s**，PCIe Gen 5 x16 则是**单向 64 GB/s**，双向加起来是 128 GB/s。用十进制 1 GB 除以带宽，理想的 HBM 访问约需 **0.21 ms**，单向 PCIe 传输约需 **15.6 ms**。这只是按带宽算出的时间，不是 KV 恢复实测。CPU 内存即使装得下同样多的 KV，也不能让 GPU 以 HBM 的速度读到它们。[H200 规格](https://www.nvidia.com/en-us/data-center/h200/) · [Hopper 的 PCIe 规格](https://developer.nvidia.com/blog/nvidia-hopper-architecture-in-depth/)
 
-不同机器的连接方式也不同。例如 Grace Hopper 在 CPU 和 GPU 之间使用 NVLink-C2C，带宽和访问方式都与传统 PCIe 服务器不同，双方还支持一致性内存访问。但访问 CPU 内存仍然要经过芯片之间的链路，共享地址空间并不会让它和本地 HBM 一样快。后面会继续比较这些传输方式。[Grace Hopper 架构](https://developer.nvidia.com/blog/nvidia-grace-hopper-superchip-architecture-in-depth/)
+Vera Rubin 的 NVLink-C2C 提供更宽的 CPU–GPU 连接，并支持一致性内存访问。但访问 CPU 内存仍要经过这段链路，共享地址空间不会让它和本地 HBM 一样快。HiCache 使用多少 Host 内存、何时把 KV 搬回 GPU，仍由软件决定。[NVLink-C2C](https://www.nvidia.com/en-us/data-center/nvlink-c2c/)
 
 ### 为什么 L2 仍然有用
 

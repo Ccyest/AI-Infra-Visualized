@@ -85,19 +85,23 @@ Once the answer is finished, the document’s KV may sit unused until the next q
 
 ## CPU memory: keeping more KV
 
+import ClusterArchitectureViz from "../../../viz/hicache-storage/ClusterArchitectureViz";
+
 ### Where the extra capacity comes from
 
-A server usually has DRAM chips on DIMM memory modules, connected to the CPU’s memory controller. We call this Host memory. The motherboard can provide several memory channels and slots, so capacity can be increased within the server’s supported configurations. Compared with HBM beside a GPU, this usually gives us more affordable capacity. The tradeoff is that this memory connects to the CPU, not directly to the GPU’s memory interface.
+A conventional server puts DRAM chips on DIMM modules connected to the CPU’s memory controller. This is Host memory. Compared with HBM beside a GPU, it usually provides more affordable capacity for KV. The memory is attached to the CPU, so the GPU still needs the data transferred to it.
 
-Adding capacity does not necessarily add bandwidth. Filling another memory channel can increase parallel access, while putting more capacity on an already populated channel does not add another channel. The DIMMs and CPU controller also limit the supported speed. Most conventional servers use DDR memory; platforms such as Grace use LPDDR5X. For HiCache, both serve the Host-memory role.
+DGX H200 uses DDR5 DIMMs. Vera Rubin uses LPDDR5X on replaceable SOCAMM modules, with NVLink-C2C connecting its CPUs and GPUs. The modules and links change, but Host memory still sits on the CPU side. The diagram compares one DGX H200 server with one Vera Rubin NVL72 rack; the expanded view shows their local connections. [DGX H200 architecture](https://docs.nvidia.com/dgx/dgxh100-user-guide/introduction-to-dgxh100.html) · [Vera memory design](https://www.nvidia.com/en-us/data-center/vera-cpu/) · [Vera Rubin specifications](https://www.nvidia.com/en-us/data-center/vera-rubin-nvl72/)
+
+<ClusterArchitectureViz client:visible lang="en" />
 
 ### The GPU still has to receive it
 
 Suppose the next question arrives after the document’s KV has left the GPU, but a copy remains in Host memory. In a conventional PCIe server, loading it means reading Host DRAM, sending the bytes over PCIe, and writing GPU memory. The transfer can only run as fast as the slowest part of that path. If several GPUs share memory channels or an upstream link, they also compete for that bandwidth.
 
-The difference is large enough to matter. NVIDIA lists **3.35 TB/s** of HBM bandwidth for H100 SXM. PCIe Gen 5 x16 provides **64 GB/s in one direction**, or 128 GB/s when both directions are added together. Dividing a decimal 1 GB by those bandwidths gives about **0.30 ms** for an ideal HBM access and **15.6 ms** for an ideal one-way PCIe transfer. These are bandwidth-only calculations, not measured KV restore times. They illustrate why having enough CPU memory does not give the GPU the same access speed as HBM. [H100 specifications](https://www.nvidia.com/en-us/data-center/h100/) · [Hopper PCIe specifications](https://developer.nvidia.com/blog/nvidia-hopper-architecture-in-depth/)
+The difference is large enough to matter. H200 has **4.8 TB/s** of HBM bandwidth. PCIe Gen 5 x16 provides **64 GB/s in one direction**, or 128 GB/s with both directions added together. Dividing a decimal 1 GB by those bandwidths gives about **0.21 ms** for an ideal HBM access and **15.6 ms** for an ideal one-way PCIe transfer. These are bandwidth-only calculations, not measured KV restore times. CPU memory can hold the same KV without letting the GPU access it at HBM speed. [H200 specifications](https://www.nvidia.com/en-us/data-center/h200/) · [Hopper PCIe specifications](https://developer.nvidia.com/blog/nvidia-hopper-architecture-in-depth/)
 
-The connection depends on the machine. Grace Hopper, for example, uses NVLink-C2C between its CPU and GPU. That changes the available bandwidth and supports coherent access to both memories. It still takes a link traversal to reach CPU memory, so sharing an address space does not make CPU memory as fast as local HBM. We will return to the different links below. [Grace Hopper architecture](https://developer.nvidia.com/blog/nvidia-grace-hopper-superchip-architecture-in-depth/)
+Vera Rubin’s NVLink-C2C provides a wider CPU–GPU connection and supports coherent memory access. Accessing CPU memory still traverses that link; a shared address space does not make it as fast as local HBM. Software still determines how much Host memory HiCache uses and when KV moves back to the GPU. [NVLink-C2C](https://www.nvidia.com/en-us/data-center/nvlink-c2c/)
 
 ### Why L2 is still useful
 

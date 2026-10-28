@@ -1,0 +1,73 @@
+.cluster-viz { line-height: 1.45; }
+.cluster-viz > .storage-body { padding: .6rem 0 0; }
+.cluster-comparison { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+.cluster-legend { display: flex; flex-wrap: wrap; gap: .7rem; margin-left: auto; font-size: .72rem; color: var(--ink-2); }
+.cluster-legend i { display: inline-block; width: .65rem; height: .65rem; border-radius: .15rem; margin-right: .35rem; background: var(--series-1); }
+.cluster-legend span + span i { background: var(--series-2); }
+.cluster-system { border: 1px solid var(--grid); border-radius: .8rem; overflow: hidden; min-width: 0; }
+.cluster-system header { padding: .85rem 1rem; background: var(--page-2); }
+.cluster-viz .cluster-system h4 { margin: 0 0 .15rem; font-size: 1rem; line-height: 1.4; }
+.cluster-system header > span { font-size: .8rem; color: var(--ink-2); }
+.cluster-capacities { display: grid; grid-template-columns: 1fr 1fr; padding: 1rem .8rem; gap: .65rem; border-bottom: 1px solid var(--grid); }
+.cluster-capacities > div { display: flex; flex-direction: column; gap: .2rem; }
+.cluster-capacities span { font-size: .73rem; color: var(--ink-2); }
+.cluster-capacities strong { font-size: 1.3rem; color: var(--series-1); line-height: 1.25; font-variant-numeric: tabular-nums; }
+.cluster-capacities > div + div strong { color: var(--series-2); }
+.cluster-overview, .cluster-local { padding: .8rem; }
+.cluster-overview { display: flex; flex-direction: column; min-height: 350px; }
+.cluster-cpu-row { --node-color: var(--series-2); display: flex; align-items: center; justify-content: center; gap: .6rem; font-size: .8rem; }
+.cluster-cpu-row .hardware-icon { width: 42px; height: 34px; }
+.cluster-short-link { display: flex; align-items: center; gap: .5rem; justify-content: center; font-size: .7rem; margin: .35rem 0; color: var(--ink-2); }
+.cluster-short-link::before, .cluster-short-link::after { content: ""; width: 2px; height: 16px; background: var(--axis); }
+.cluster-compute { display: block; width: 100%; border: 1px solid var(--grid); border-radius: .5rem; color: var(--ink); background: var(--surface); padding: .65rem; font: inherit; cursor: pointer; }
+.cluster-compute:hover { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 3%, var(--surface)); }
+.cluster-compute:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.cluster-compute-heading { display: block; font-size: .8rem; font-weight: 600; margin-bottom: .55rem; }
+.cluster-gpus { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .4rem; }
+.cluster-mini-gpu { --node-color: var(--series-1); position: relative; display: grid; place-items: center; }
+.cluster-mini-gpu .hardware-icon { width: 48px; height: 40px; }
+.cluster-mini-gpu > span { position: absolute; right: 0; bottom: 0; font-size: .6rem; color: var(--muted); }
+.cluster-superchips { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: .38rem; padding: .25rem 0; }
+.cluster-superchip { display: flex; justify-content: center; gap: 3px; padding: .35rem .15rem; border: 1px solid var(--grid); border-radius: .2rem; }
+.cluster-superchip i, .cluster-superchip b { width: 6px; height: 10px; display: block; background: var(--series-1); border-radius: 1px; }
+.cluster-superchip i { background: var(--series-2); }
+.cluster-compute-foot { display: flex; justify-content: space-between; gap: .5rem; margin-top: .6rem; color: var(--ink-2); font-size: .65rem; }
+.cluster-compute-foot > span:last-child { color: var(--accent); margin-left: auto; }
+.cluster-fabric { position: relative; display: flex; flex-direction: column; align-items: center; gap: .3rem; padding: .6rem .3rem; margin-top: 1rem; border: 1px solid var(--series-3); border-radius: .4rem; background: color-mix(in srgb, var(--series-3) 5%, var(--surface)); font-size: .78rem; }
+.cluster-fabric::before { content: ""; position: absolute; height: 1rem; top: -1rem; border-left: 2px solid var(--series-3); }
+.cluster-fabric small { font-size: .66rem; }
+.cluster-network { display: flex; flex-direction: column; align-items: center; gap: .3rem; text-align: center; padding-top: 1rem; margin-top: auto; font-size: .72rem; color: var(--ink-2); }
+.cluster-network > span:first-child { padding-top: .7rem; border-top: 1px dashed var(--axis); width: 100%; }
+.cluster-network > span:nth-child(2) { line-height: 1; color: var(--series-4); }
+.cluster-part { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: .2rem; min-width: 0; }
+.cluster-part .hardware-icon { width: 62px; height: 50px; }
+.cluster-part strong { font-size: .8rem; }
+.cluster-part small { font-size: .66rem; }
+.cluster-host-memory, .cluster-gpu-memory { display: grid; grid-template-columns: minmax(0, 1fr) 22px minmax(0, 1fr); gap: .2rem; align-items: center; padding: .6rem .3rem; border: 1px solid color-mix(in srgb, var(--series-1) 35%, var(--grid)); border-radius: .5rem; }
+.cluster-host-memory { border-color: color-mix(in srgb, var(--series-2) 35%, var(--grid)); }
+.cluster-memory-bus { text-align: center; color: var(--muted); }
+.cluster-link { position: relative; display: flex; justify-content: center; padding: .7rem 0; text-align: center; }
+.cluster-link::before { content: ""; position: absolute; top: 0; bottom: 0; border-left: 2px solid var(--axis); }
+.cluster-link > div { position: relative; background: var(--surface); padding: .2rem; display: flex; flex-direction: column; gap: .2rem; font-size: .75rem; }
+.cluster-link strong { color: var(--series-2); font-size: .85rem; }
+.cluster-link small { font-size: .65rem; }
+.cluster-gpu-pairs { display: grid; gap: .5rem; }
+.cluster-gpu-pairs.is-paired { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.cluster-gpu-pairs.is-paired .cluster-gpu-memory { grid-template-columns: 1fr; }
+.cluster-gpu-pairs.is-paired .cluster-memory-bus { transform: rotate(90deg); line-height: 1; }
+.cluster-pair-fork { display: block; width: 100%; height: 20px; }
+.cluster-pair-fork path { fill: none; stroke: var(--axis); stroke-width: 2; vector-effect: non-scaling-stroke; }
+.cluster-scope-note { display: block; text-align: center; margin-top: .7rem; font-size: .7rem; }
+.cluster-footnote { display: block; margin: .9rem 0; line-height: 1.6; }
+.cluster-explanation { border-top: 1px solid var(--grid); border-bottom: 1px solid var(--grid); padding: .75rem 0; font-size: .85rem; }
+.cluster-explanation summary { cursor: pointer; font-weight: 600; }
+.cluster-explanation p { margin: .65rem 0 0; line-height: 1.8; }
+.cluster-sources { display: flex; flex-wrap: wrap; gap: .35rem .8rem; margin-top: .8rem; font-size: .7rem; }
+.cluster-sources > span { color: var(--muted); width: 100%; }
+@media (max-width: 680px) {
+  .cluster-comparison { grid-template-columns: 1fr; }
+  .cluster-legend { width: 100%; margin: .3rem 0 0; }
+  .cluster-capacities strong { font-size: 1.4rem; }
+  .cluster-overview { min-height: 0; }
+  .cluster-superchips { gap: .5rem; }
+}
