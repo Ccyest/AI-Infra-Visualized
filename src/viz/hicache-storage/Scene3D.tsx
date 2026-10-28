@@ -83,7 +83,7 @@ export default function Scene3D({ parts, links, selected, onSelect, lang }: {
           <text x={(a.x + b.x) / 2} y={(a.y + b.y) / 2 - 7}>{link.label}</text>
         </g>;
       })}
-      {polygons.map(face => <polygon key={`${face.part.id}-${face.index}`} data-part={face.part.id}
+      {polygons.map(face => <polygon key={`${face.part.id}-${face.index}`} data-part={face.part.id} aria-hidden="true"
         className={`scene-face face-${face.index} hierarchy-${face.part.kind}${selected === face.part.id ? " is-selected" : ""}`}
         points={face.points} onClick={() => select(face.part.id)} />)}
       {parts.map(part => {

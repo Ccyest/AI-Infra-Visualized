@@ -275,7 +275,6 @@ export const SCENE_UI = {
   schematic: { zh: "逻辑连接示意，位置与尺寸不代表实物布局", en: "Logical connections; positions and sizes are schematic" },
   zoom: { zh: "缩放", en: "Zoom" },
   reset: { zh: "重置视角", en: "Reset view" },
-  select: { zh: "选择部件查看详情", en: "Select a part to inspect" },
   platform: { zh: "硬件平台", en: "Hardware platform" },
   view: { zh: "查看方式", en: "View" },
 } as const;

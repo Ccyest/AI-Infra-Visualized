@@ -11,7 +11,7 @@
     "build": "astro build",
     "preview": "astro preview",
     "check": "astro check",
-    "test:hicache": "node --experimental-strip-types --test src/viz/hicache/layout-transfer.test.ts tests/hicache-layout-interactions.test.mjs"
+    "test:hicache": "node --experimental-strip-types --test src/viz/hicache/layout-transfer.test.ts tests/hicache-layout-interactions.test.mjs tests/hicache-storage-hardware.test.mjs"
   },
   "dependencies": {
     "@astrojs/mdx": "^4.2.0",
