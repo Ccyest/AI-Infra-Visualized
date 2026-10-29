@@ -28,7 +28,6 @@ import HardwareViz from "../../../viz/hicache-storage/HardwareViz";
 import HbmStackViz from "../../../viz/hicache-storage/HbmStackViz";
 import TransferViz from "../../../viz/hicache-storage/TransferViz";
 import CostViz from "../../../viz/hicache-storage/CostViz";
-import RouteViz from "../../../viz/hicache-storage/RouteViz";
 import ClusterArchitectureViz from "../../../viz/hicache-storage/ClusterArchitectureViz";
 
 ## 背景
@@ -133,45 +132,21 @@ H200 时代的 DGX 服务器使用 DDR5 DIMM；Vera Rubin 则把 LPDDR5X 放在�
 
 ## KV 怎样搬回 GPU
 
-命中缓存以后，GPU 不一定马上就能用上这份 KV：数据可能还在 CPU 内存里，也可能在另一台机器上。软件要先把它搬回来，请求可能就等在这一步。下面这些技术，分别在减少不同的开销。
+KV 存在哪里，决定了它要走哪条路。硬件连接和传输方式可以配合使用：例如先经网络读回远端 KV，再通过 PCIe 搬到 GPU。
 
-### 先看数据要走哪段链路
+<div className="storage-glossary" tabIndex={0} role="region" aria-label="传输方式对照表">
 
-| 要搬的数据 | 常见连接 | 解决什么问题 |
-| --- | --- | --- |
-| Host 内存 → GPU | PCIe；Grace Hopper 等平台使用 NVLink-C2C | 把 CPU 一侧的数据送到 GPU |
-| GPU → GPU | 支持的机器上使用 NVLink / NVSwitch | 让 GPU 之间交换数据 |
-| 另一台机器 → 本机 | 网卡与网络 | 把远端 KV 读回来；之后可能还要再搬到 GPU |
+| 连接或传输方式 | 主要优势 | 主要局限 | 使用场景 |
+| --- | --- | --- | --- |
+| **[PCIe](https://docs.nvidia.com/cuda/cuda-c-best-practices-guide/index.html#data-transfer-between-host-and-device)**：常见的 Host 与 GPU 连接 | 服务器和 GPU 普遍支持 | 搬运需要时间，大量 KV 可能受带宽限制 | 把本机 CPU 内存中的 KV 搬回 GPU |
+| **[NVLink-C2C](https://www.nvidia.com/en-us/data-center/nvlink-c2c/)**：CPU 与 GPU 芯片之间的连接 | 带宽高，适合大量搬运 CPU 一侧的数据 | 需要机器本身支持；Host 内存仍不是 GPU 显存 | Grace Hopper、Vera Rubin 等平台上的 Host 与 GPU 传输 |
+| **[GPU NVLink / NVSwitch](https://www.nvidia.com/en-us/data-center/nvlink/)**：GPU 之间的连接 | GPU 之间传输带宽高 | 需要兼容的 GPU 和连接；不能加速 Host → GPU 的 PCIe 搬运 | 在相连的 GPU 之间交换 KV 或其他数据 |
+| **TCP**：常规网络传输 | 普遍可用，开发和部署方便 | 网络收发和数据复制可能占用较多 CPU 时间 | 从远端读取 KV，优先考虑兼容性和部署方便时 |
+| **[RDMA](https://networking-docs.nvidia.com/doca/archive/3-4-0/rdma-aware-networks-programming-guide)**：减少 CPU 参与的网络传输 | 减少 CPU 处理和中间复制 | 需要配套网卡、网络和后端支持；读进 Host 的 KV 仍要再搬到 GPU | 大量读取远端 KV，CPU 忙于网络收发时 |
+| **[GPUDirect RDMA](https://docs.nvidia.com/cuda/gpudirect-rdma/index.html)**：网络数据直接进入 GPU 显存 | 省掉 Host 内存中转和后续的 Host → GPU 拷贝 | 需要硬件、连接和软件支持；仍要花时间经过网络 | 后端支持时，把远端 KV 直接送到 GPU |
+| **[GPUDirect Storage](https://docs.nvidia.com/gpudirect-storage/overview-guide/index.html)**：存储数据直接进入 GPU 显存 | 省掉经过 Host 内存的中转复制 | 需要存储路径和软件支持；没有让 SSD 本身变快 | 后端支持时，把存储中的 KV 直接读到 GPU |
 
-先看路径，是为了避免优化错地方。如果慢的是 Host → GPU 的 PCIe 搬运，就算 GPU 之间的 NVLink 更快，也帮不上这一段。NVLink-C2C 则直接改善 CPU 与 GPU 之间的连接，但需要机器本身支持。软件可以少搬一些数据、把现有带宽用得更充分，却不能突破链路的物理上限。[NVIDIA 拓扑说明](https://docs.nvidia.com/datacenter/dcgm/latest/learn/core-services/topology-and-links.html)
-
-### 让 CPU 少做搬运：DMA 与 pinned memory
-
-CPU 还要调度请求、处理其他任务。如果每个字节都靠 CPU 核心来复制，就会占用它做这些工作的时间。DMA 让软件把搬运任务交给硬件引擎执行，CPU 可以继续做别的事。它减少的是 CPU 的参与，不是把传输时间变成零：数据仍要经过链路，GPU 也要等搬完以后才能使用。
-
-不过，DMA 开始前还可能多一次复制。如果 KV 放在普通 Host 内存里，CUDA 可能先把它复制到一块固定好的内存中，再交给设备搬运。这块固定好的内存就是 pinned memory。软件提前准备一个可复用的 pinned 内存池，让数据直接放进池里，就能省掉这次中转复制，也方便异步提交搬运任务。固定内存会占用系统资源，所以通常只准备需要的容量并反复使用。[CUDA 搬运建议](https://docs.nvidia.com/cuda/cuda-c-best-practices-guide/index.html#data-transfer-between-host-and-device)
-
-如果 KV 分散成很多小块，逐块提交搬运任务也会花时间。HiCache 还提供了另一种方式：让 GPU 执行搬运 kernel，一次处理多块 KV，并整理成目标需要的排列方式。这样可以减少逐次提交小拷贝的开销，但搬运 kernel 也会占用 GPU 的计算资源。软件要比较的是：省下的提交开销，是否值得占用这些本来可以做推理的资源。[HiCache 数据搬运设计](https://www.lmsys.org/blog/2025-09-10-sglang-hicache/)
-
-### 减少网络收发开销：TCP 与 RDMA
-
-KV 在另一台机器上时，常见的做法是用 TCP socket 接收。它的优点是普遍可用，开发和部署都比较成熟。在常规接收路径中，操作系统处理网络数据，再把接收缓冲区里的内容复制到应用自己的缓冲区。请求很多、KV 很大时，这些处理和复制就会消耗不少 CPU 时间与内存带宽。
-
-RDMA 就是为了减少这类开销。软件先向支持 RDMA 的网卡注册目标缓冲区，告诉网卡数据可以写到哪里；之后网卡可以直接把收到的数据放进去，减少 CPU 处理和中间复制。代价是需要配套的网卡、网络配置和后端支持，软件也仍要确认传输完成。尤其要注意：如果目标缓冲区在 Host 内存里，KV 到达以后，仍然要再搬一次才能进入 GPU。[NVIDIA RDMA 编程指南](https://networking-docs.nvidia.com/doca/archive/3-4-0/rdma-aware-networks-programming-guide)
-
-### 少经过一次 Host 内存：GPUDirect
-
-如果收到的数据只需要交给 GPU 使用，先放到 Host 内存、再搬到 GPU，就多了一次中转。在支持的系统上，GPUDirect RDMA 可以让网卡直接写入 GPU 显存，省掉 Host 缓冲区和后续的 Host → GPU 拷贝。网络传输仍然要花时间，而且 GPU、网卡、驱动和连接方式都要支持这条路径。软件也必须确认数据已经到齐，才能让 GPU 读取。[GPUDirect RDMA](https://docs.nvidia.com/cuda/gpudirect-rdma/index.html)
-
-GPUDirect Storage 用类似的思路处理存储读取：避免先把数据读进 Host 内存，再复制到 GPU。软件接入 cuFile 接口，并使用兼容的存储路径后，可以直接把数据读进 GPU 显存。它省的是 Host 中转开销，没有让 SSD 本身变快。不支持直接传输时，仍可能经过 Host；如果数据需要先由 CPU 处理，也不能简单省掉这一步。[GPUDirect Storage 设计](https://docs.nvidia.com/gpudirect-storage/design-guide/index.html)
-
-<RouteViz client:visible />
-
-### HiCache 怎么使用这些方式
-
-本文讨论的 HiCache 路径，仍然是先从 L3 读进 Host KV 池，再搬到 GPU。如果后端支持 zero-copy 集成，就可以直接把数据写进这个池，不必先放进另一个应用缓冲区，再复制进来。这里省掉的是 Host 内存里的额外复制，Host → GPU 的搬运仍然存在，也不等于使用了 GPUDirect。[HiCache 数据路径](https://docs.sglang.io/docs/advanced_features/hicache_design)
-
-软件层选择方案时，先看请求到底等在哪里：CPU 忙于网络收发，就检查 RDMA 能否减少这部分工作；数据在缓冲区之间反复复制，就检查 pinned 内存池或直接写入 KV 池能否省掉中转；Host → GPU 带宽已经用满，只减少 CPU 工作还不够，还要考虑少搬数据或使用更快的连接。最终比较的是整次 KV 恢复花多久，以及是否比重算更快。
+</div>
 
 ## 走一遍文档 KV 的恢复过程
 

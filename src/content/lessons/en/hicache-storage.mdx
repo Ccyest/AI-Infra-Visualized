@@ -28,7 +28,6 @@ import HardwareViz from "../../../viz/hicache-storage/HardwareViz";
 import HbmStackViz from "../../../viz/hicache-storage/HbmStackViz";
 import TransferViz from "../../../viz/hicache-storage/TransferViz";
 import CostViz from "../../../viz/hicache-storage/CostViz";
-import RouteViz from "../../../viz/hicache-storage/RouteViz";
 import ClusterArchitectureViz from "../../../viz/hicache-storage/ClusterArchitectureViz";
 
 ## Background
@@ -126,45 +125,21 @@ These tiers can hold copies of the same KV at the same time. Backing up the docu
 
 ## Moving KV back to the GPU
 
-Finding cached KV does not mean the GPU can use it immediately. The data may still be in CPU memory or on another machine. Software has to bring it back, and the request may wait while that happens. To reduce the wait, we need to know what takes the time: the transfer itself, CPU work involved in moving the data, or extra copies between buffers. The techniques below target different parts of this cost.
+Where the KV lives determines its route back. Hardware connections and transfer methods can work together: for example, fetch remote KV over the network, then copy it to the GPU over PCIe.
 
-### Start with the path the data takes
+<div className="storage-glossary" tabIndex={0} role="region" aria-label="Transfer methods comparison">
 
-| Transfer | Common connection | What it helps with |
-| --- | --- | --- |
-| Host memory → GPU | PCIe; NVLink-C2C on platforms such as Grace Hopper | Moving CPU-side data to the GPU |
-| GPU → GPU | NVLink / NVSwitch on supported systems | Exchanging data between GPUs |
-| Another machine → this machine | NICs and a network | Fetching remote KV; a Host-to-GPU transfer may still follow |
+| Connection or method | Main advantages | Main limitations | When to use it |
+| --- | --- | --- | --- |
+| **[PCIe](https://docs.nvidia.com/cuda/cuda-c-best-practices-guide/index.html#data-transfer-between-host-and-device)**: a common Host–GPU connection | Widely supported by servers and GPUs | Moving KV takes time; bandwidth can limit large transfers | Restoring KV from local CPU memory to the GPU |
+| **[NVLink-C2C](https://www.nvidia.com/en-us/data-center/nvlink-c2c/)**: a CPU–GPU chip connection | High bandwidth for moving CPU-side data to the GPU | Requires a platform that provides it; Host memory is still separate from GPU memory | Host–GPU transfers on systems such as Grace Hopper or Vera Rubin |
+| **[GPU NVLink / NVSwitch](https://www.nvidia.com/en-us/data-center/nvlink/)**: connections between GPUs | High bandwidth for GPU-to-GPU transfers | Requires compatible GPUs and connections; does not speed up a Host–GPU PCIe transfer | Exchanging KV or other data between connected GPUs |
+| **TCP**: conventional network transfers | Widely available, with familiar development and deployment tools | Network processing and copies can consume CPU time | Fetching remote KV when broad compatibility and easy deployment matter |
+| **[RDMA](https://networking-docs.nvidia.com/doca/archive/3-4-0/rdma-aware-networks-programming-guide)**: network transfers with less CPU involvement | Reduces CPU work and intermediate copies | Requires suitable NICs, network setup, and backend support; KV received into Host memory still needs to reach the GPU | Fetching large amounts of remote KV when CPU receive processing is costly |
+| **[GPUDirect RDMA](https://docs.nvidia.com/cuda/gpudirect-rdma/index.html)**: network data goes directly into GPU memory | Avoids Host-memory staging and the later Host-to-GPU copy | Requires compatible hardware, connections, and software; network transfer time remains | Receiving remote KV directly on the GPU when the backend supports it |
+| **[GPUDirect Storage](https://docs.nvidia.com/gpudirect-storage/overview-guide/index.html)**: storage data goes directly into GPU memory | Avoids copying data through Host memory | Requires a compatible storage path and software; does not make the SSD itself faster | Reading stored KV directly into GPU memory when the backend supports it |
 
-This matters because a faster connection only helps transfers that use it. If restoring KV is limited by Host-to-GPU PCIe bandwidth, faster GPU-to-GPU NVLink will not fix it. NVLink-C2C changes the CPU-to-GPU connection itself, but requires a platform that provides it. Software can avoid unnecessary transfers and use bandwidth more efficiently; it cannot raise the link’s physical limit. [NVIDIA topology guidance](https://docs.nvidia.com/datacenter/dcgm/latest/learn/core-services/topology-and-links.html)
-
-### Freeing the CPU: DMA and pinned memory
-
-The CPU also has requests to schedule and other work to do. Making its cores copy every byte would consume time that could be spent on that work. With DMA, software submits a transfer task and a hardware engine moves the data. The CPU can do other work while the transfer runs. DMA reduces CPU involvement; the bytes still have to cross the link, and the GPU must wait for the transfer to finish before using them.
-
-There can still be an extra copy before DMA starts. With ordinary Host memory, CUDA may first copy the data into a pinned buffer: memory whose pages are kept fixed for device access. Keeping a reusable pinned pool avoids repeatedly preparing that buffer and, when the data is already in it, avoids the staging copy. It also supports asynchronous transfer submission. Pinning consumes system resources, so software normally reuses a limited pool rather than pinning all memory. [CUDA transfer guidance](https://docs.nvidia.com/cuda/cuda-c-best-practices-guide/index.html#data-transfer-between-host-and-device)
-
-Scattered KV introduces another cost: submitting a separate transfer for every small piece. HiCache can instead use GPU transfer kernels to gather those pieces and put them into the layout needed at the destination. This reduces individual copy submissions, but the kernels use GPU resources that inference also needs. Software must compare that saving with the effect on concurrent computation. [HiCache transfer design](https://www.lmsys.org/blog/2025-09-10-sglang-hicache/)
-
-### Reducing network processing: TCP and RDMA
-
-For remote KV, TCP sockets are a common starting point: widely supported and familiar to deploy. In a conventional receive path, the operating system handles network processing and the data is copied from its receive buffer into the application’s buffer. When many requests fetch KV at once, this processing and copying can consume substantial CPU time and memory bandwidth.
-
-RDMA is useful when that CPU work and copying become expensive. Software registers a destination buffer with a compatible NIC, allowing the NIC to place incoming data directly into it. This reduces CPU processing and intermediate copies, but requires suitable NICs, network configuration, and backend support. Software still checks when the transfer has completed. If the destination is Host memory, the KV still needs a separate transfer to the GPU. [NVIDIA RDMA programming guide](https://networking-docs.nvidia.com/doca/archive/3-4-0/rdma-aware-networks-programming-guide)
-
-### Skipping a Host-memory stop: GPUDirect
-
-If only the GPU needs the incoming data, staging it in Host memory creates an extra step. On supported systems, GPUDirect RDMA lets the NIC write directly into GPU memory. This removes the Host buffer and the later Host-to-GPU copy. The network transfer still takes time, and the GPU, NIC, drivers, and their connections must support the path. Software must also ensure the data is ready before a GPU kernel reads it. [GPUDirect RDMA](https://docs.nvidia.com/cuda/gpudirect-rdma/index.html)
-
-GPUDirect Storage applies the same idea to storage: avoid reading data into Host memory only to copy it to the GPU. Software integrates the cuFile interface and uses a compatible storage path to transfer data directly into GPU memory. This can reduce Host memory traffic, but does not make the SSD itself faster. Unsupported paths may still use Host staging, and data that first needs CPU processing may still need to go through Host memory. [GPUDirect Storage design](https://docs.nvidia.com/gpudirect-storage/design-guide/index.html)
-
-<RouteViz client:visible lang="en" />
-
-### Applying this to HiCache
-
-The HiCache path discussed here restores KV from L3 into the Host KV pool, then copies it to the GPU. A backend with zero-copy integration can write straight into that pool instead of first filling another application buffer and then copying into the pool. This removes one extra copy inside Host memory. It does not remove the Host-to-GPU transfer or turn the path into GPUDirect. [HiCache data paths](https://docs.sglang.io/docs/advanced_features/hicache_design)
-
-Choose an optimization based on where the request is waiting. If CPU receive processing is costly, investigate RDMA. If extra buffer copies dominate, investigate pinned pools or direct writes into the KV pool. If Host-to-GPU bandwidth is already saturated, removing CPU work alone will not solve it: reducing the bytes transferred or using a faster connection matters more. Compare the end-to-end restore time with recomputation, rather than choosing a technique by name.
+</div>
 
 ## Following one restore
 
