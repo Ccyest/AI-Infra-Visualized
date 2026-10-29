@@ -125,21 +125,30 @@ These tiers can hold copies of the same KV at the same time. Backing up the docu
 
 ## Moving KV back to the GPU
 
-Where the KV lives determines its route back. Hardware connections and transfer methods can work together: for example, fetch remote KV over the network, then copy it to the GPU over PCIe.
+KV in local CPU memory needs a Host-to-GPU transfer. Remote KV first needs a network transfer as well. Compare the two stages separately.
 
-<div className="storage-glossary" tabIndex={0} role="region" aria-label="Transfer methods comparison">
+### Local memory → GPU
 
-| Connection or method | Main advantages | Main limitations | When to use it |
-| --- | --- | --- | --- |
-| **[PCIe](https://docs.nvidia.com/cuda/cuda-c-best-practices-guide/index.html#data-transfer-between-host-and-device)**: a common Host–GPU connection | Widely supported by servers and GPUs | Moving KV takes time; bandwidth can limit large transfers | Restoring KV from local CPU memory to the GPU |
-| **[NVLink-C2C](https://www.nvidia.com/en-us/data-center/nvlink-c2c/)**: a CPU–GPU chip connection | High bandwidth for moving CPU-side data to the GPU | Requires a platform that provides it; Host memory is still separate from GPU memory | Host–GPU transfers on systems such as Grace Hopper or Vera Rubin |
-| **[GPU NVLink / NVSwitch](https://www.nvidia.com/en-us/data-center/nvlink/)**: connections between GPUs | High bandwidth for GPU-to-GPU transfers | Requires compatible GPUs and connections; does not speed up a Host–GPU PCIe transfer | Exchanging KV or other data between connected GPUs |
-| **TCP**: conventional network transfers | Widely available, with familiar development and deployment tools | Network processing and copies can consume CPU time | Fetching remote KV when broad compatibility and easy deployment matter |
-| **[RDMA](https://networking-docs.nvidia.com/doca/archive/3-4-0/rdma-aware-networks-programming-guide)**: network transfers with less CPU involvement | Reduces CPU work and intermediate copies | Requires suitable NICs, network setup, and backend support; KV received into Host memory still needs to reach the GPU | Fetching large amounts of remote KV when CPU receive processing is costly |
-| **[GPUDirect RDMA](https://docs.nvidia.com/cuda/gpudirect-rdma/index.html)**: network data goes directly into GPU memory | Avoids Host-memory staging and the later Host-to-GPU copy | Requires compatible hardware, connections, and software; network transfer time remains | Receiving remote KV directly on the GPU when the backend supports it |
-| **[GPUDirect Storage](https://docs.nvidia.com/gpudirect-storage/overview-guide/index.html)**: storage data goes directly into GPU memory | Avoids copying data through Host memory | Requires a compatible storage path and software; does not make the SSD itself faster | Reading stored KV directly into GPU memory when the backend supports it |
+| | [PCIe](https://docs.nvidia.com/cuda/cuda-c-best-practices-guide/index.html#data-transfer-between-host-and-device) | [NVLink-C2C](https://www.nvidia.com/en-us/data-center/nvlink-c2c/) |
+| --- | --- | --- |
+| Benefit | Widely supported | High CPU–GPU bandwidth |
+| Tradeoff | Large KV transfers can be limited by bandwidth | Requires a platform such as Grace Hopper or Vera Rubin |
 
-</div>
+### Remote machine → this machine
+
+| | TCP | [RDMA](https://networking-docs.nvidia.com/doca/archive/3-4-0/rdma-aware-networks-programming-guide) |
+| --- | --- | --- |
+| Benefit | Broad compatibility; easy to deploy | Less CPU work and fewer copies |
+| Tradeoff | Heavy traffic can consume substantial CPU time | Requires suitable NICs, network setup, and backend support |
+
+<details className="lesson-details">
+<summary>Optional: can data skip Host memory?</summary>
+
+[GPUDirect RDMA](https://docs.nvidia.com/cuda/gpudirect-rdma/index.html) sends network data directly into GPU memory. [GPUDirect Storage](https://docs.nvidia.com/gpudirect-storage/overview-guide/index.html) does the same for storage reads. Both can avoid Host-memory staging, but require hardware and software support; the network or storage read still takes time.
+
+The HiCache example below uses L3 → Host → GPU. Receiving KV into Host memory over RDMA still leaves the Host-to-GPU step.
+
+</details>
 
 ## Following one restore
 

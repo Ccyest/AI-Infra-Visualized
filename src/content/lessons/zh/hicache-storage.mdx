@@ -132,21 +132,30 @@ H200 时代的 DGX 服务器使用 DDR5 DIMM；Vera Rubin 则把 LPDDR5X 放在�
 
 ## KV 怎样搬回 GPU
 
-KV 存在哪里，决定了它要走哪条路。硬件连接和传输方式可以配合使用：例如先经网络读回远端 KV，再通过 PCIe 搬到 GPU。
+KV 在本机内存里，只需要从 Host 搬到 GPU；KV 在远端，还要先经过网络。这两段分开比较。
 
-<div className="storage-glossary" tabIndex={0} role="region" aria-label="传输方式对照表">
+### 本机内存 → GPU
 
-| 连接或传输方式 | 主要优势 | 主要局限 | 使用场景 |
-| --- | --- | --- | --- |
-| **[PCIe](https://docs.nvidia.com/cuda/cuda-c-best-practices-guide/index.html#data-transfer-between-host-and-device)**：常见的 Host 与 GPU 连接 | 服务器和 GPU 普遍支持 | 搬运需要时间，大量 KV 可能受带宽限制 | 把本机 CPU 内存中的 KV 搬回 GPU |
-| **[NVLink-C2C](https://www.nvidia.com/en-us/data-center/nvlink-c2c/)**：CPU 与 GPU 芯片之间的连接 | 带宽高，适合大量搬运 CPU 一侧的数据 | 需要机器本身支持；Host 内存仍不是 GPU 显存 | Grace Hopper、Vera Rubin 等平台上的 Host 与 GPU 传输 |
-| **[GPU NVLink / NVSwitch](https://www.nvidia.com/en-us/data-center/nvlink/)**：GPU 之间的连接 | GPU 之间传输带宽高 | 需要兼容的 GPU 和连接；不能加速 Host → GPU 的 PCIe 搬运 | 在相连的 GPU 之间交换 KV 或其他数据 |
-| **TCP**：常规网络传输 | 普遍可用，开发和部署方便 | 网络收发和数据复制可能占用较多 CPU 时间 | 从远端读取 KV，优先考虑兼容性和部署方便时 |
-| **[RDMA](https://networking-docs.nvidia.com/doca/archive/3-4-0/rdma-aware-networks-programming-guide)**：减少 CPU 参与的网络传输 | 减少 CPU 处理和中间复制 | 需要配套网卡、网络和后端支持；读进 Host 的 KV 仍要再搬到 GPU | 大量读取远端 KV，CPU 忙于网络收发时 |
-| **[GPUDirect RDMA](https://docs.nvidia.com/cuda/gpudirect-rdma/index.html)**：网络数据直接进入 GPU 显存 | 省掉 Host 内存中转和后续的 Host → GPU 拷贝 | 需要硬件、连接和软件支持；仍要花时间经过网络 | 后端支持时，把远端 KV 直接送到 GPU |
-| **[GPUDirect Storage](https://docs.nvidia.com/gpudirect-storage/overview-guide/index.html)**：存储数据直接进入 GPU 显存 | 省掉经过 Host 内存的中转复制 | 需要存储路径和软件支持；没有让 SSD 本身变快 | 后端支持时，把存储中的 KV 直接读到 GPU |
+| | [PCIe](https://docs.nvidia.com/cuda/cuda-c-best-practices-guide/index.html#data-transfer-between-host-and-device) | [NVLink-C2C](https://www.nvidia.com/en-us/data-center/nvlink-c2c/) |
+| --- | --- | --- |
+| 优势 | 普遍支持 | CPU 与 GPU 之间带宽高 |
+| 局限 | 搬大量 KV 时，带宽可能不够 | 需要 Grace Hopper、Vera Rubin 等特定平台 |
 
-</div>
+### 远端机器 → 本机
+
+| | TCP | [RDMA](https://networking-docs.nvidia.com/doca/archive/3-4-0/rdma-aware-networks-programming-guide) |
+| --- | --- | --- |
+| 优势 | 兼容广，部署方便 | CPU 少做收发和复制工作 |
+| 局限 | 大量收发可能占用较多 CPU 时间 | 需要配套网卡、网络和后端支持 |
+
+<details className="lesson-details">
+<summary>补充：能跳过 Host 内存吗？</summary>
+
+[GPUDirect RDMA](https://docs.nvidia.com/cuda/gpudirect-rdma/index.html) 让网络数据直接进入 GPU 显存；[GPUDirect Storage](https://docs.nvidia.com/gpudirect-storage/overview-guide/index.html) 则用于存储读取。它们都能省掉 Host 内存中转，但需要硬件和软件支持，网络或存储读取本身仍要花时间。
+
+下文的 HiCache 示例采用 L3 → Host → GPU。即使用 RDMA 把 KV 读进 Host，后面也仍要再搬到 GPU。
+
+</details>
 
 ## 走一遍文档 KV 的恢复过程
 
