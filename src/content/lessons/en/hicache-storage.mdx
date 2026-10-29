@@ -158,19 +158,10 @@ If the document’s KV is only in L3, the restore path is **L3 → Host memory �
 
 ## Is restoring faster than recomputing?
 
-Finding the document in L3 is only the first step. We still need to compare the wait for its KV with the prefill work that reuse would save. An SSD read can be worthwhile if recomputing a long prefix takes even longer. A cache hit can also be slower than recomputation when the transfer is expensive and the prefix is cheap to compute.
+Reuse saves time when **waiting for the KV to return is faster than recomputing the document’s prefix.**
 
-Consider a simplified example with decimal 1 GB of KV. At an effective L3-to-Host bandwidth of 10 GB/s, the first transfer takes 100 ms. At an effective Host-to-GPU bandwidth of 50 GB/s, the second takes 20 ms. If they run one after the other, restoring takes 120 ms. If prefill would take 150 ms, reuse saves 30 ms. But if prefill only takes 50 ms, waiting 120 ms would be worse. Prefetch changes the comparison: completing 80 ms of the L3 read before scheduling leaves 40 ms to wait. These numbers are teaching assumptions, not hardware specifications or HiCache benchmark results.
+In a teaching example, reading from L3 into Host memory takes 100 ms, then copying to the GPU takes 20 ms. Running these steps one after the other means a 120 ms wait. If recomputation takes 150 ms, reuse saves 30 ms. If it takes only 50 ms, waiting for the cache is slower.
 
 <CostViz client:visible lang="en" />
 
-Try reducing the recomputation time in the calculator, or increasing the amount of KV to restore. The comparison can reverse without changing the storage device. A real deployment also needs to account for lookup time, queueing, transfer startup, and overlap with computation. KV size and prefill time depend on the model and workload, so they should be measured together rather than inferred from peak device bandwidth.
-
-For our document example, the useful storage choice depends on what happens after this request:
-
-- **The same instance reads it repeatedly:** keeping an L2 copy can avoid repeated L3 reads, provided Host capacity and Host-to-GPU bandwidth are sufficient.
-- **Several instances need it:** a shared L3 can make the cached prefix available across instances. This requires a backend and configuration that support sharing.
-- **It is part of a large, less frequently read history:** SSD capacity can be useful if restoring still saves enough prefill work to justify the backup and read costs.
-- **Host memory is scarce:** buffer-only mode releases Host slots after staging instead of retaining an L2 copy. It saves Host capacity, but the next request cannot hit that L2 copy and may need L3 again. The Host staging step still exists.
-
-After the restore, the GPU uses the document’s KV from its own memory and computes the new question. The time saved comes from avoiding the document’s prefill. Keeping more history gives HiCache more opportunities to do that; choosing which copies to keep and when to load them determines whether those opportunities actually save time.
+Adjust the inputs to see when reuse becomes faster. Prefetching moves some data before the request needs it, reducing the wait that remains. For a real deployment, compare times measured on actual requests.
