@@ -102,7 +102,7 @@ H200 时代的 DGX 服务器使用 DDR5 DIMM；Vera Rubin 则把 LPDDR5X 放在�
 那么按单向 64 GB/s 计算，仅这一步搬运就需要 1 ÷ 64 秒 ≈ 15.6 毫秒。
 规格中的 128 GB/s 是两个方向相加，不能用来计算这次单向搬运。
 这些估算假设带宽完全跑满，并忽略其他开销，不是 KV 恢复的实测时间。CPU 内存可以装下更多 KV，
-但把这些数据搬回 GPU，仍然需要时间。【refer：H100 规格 · Hopper 的 PCIe 规格】
+但把这些数据搬回 GPU，仍然需要时间。[H100 规格](https://www.nvidia.com/en-us/data-center/h100/) · [Hopper 的 PCIe 规格](https://developer.nvidia.com/blog/nvidia-hopper-architecture-in-depth/)
 
 ### 为什么 L2 仍然有用
 
