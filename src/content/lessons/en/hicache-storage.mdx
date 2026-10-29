@@ -152,15 +152,9 @@ The HiCache example below uses L3 → Host → GPU. Receiving KV into Host memor
 
 ## Following one restore
 
-Now suppose only L3 still holds the document’s KV. In the Host-staged path, HiCache first reads it into the Host pool, then copies it into the GPU KV pool. Attention can use each required part only after it arrives. The animation divides the document’s KV into four pages so that we can follow when each copy appears. Switching the hit location to L1 or L2 removes the transfers that are no longer needed.
+If the document’s KV is only in L3, the restore path is **L3 → Host memory → GPU memory**. The GPU can use each part once it arrives. An L2 hit skips the L3-to-Host step; an L1 hit needs no restore transfer. Switch the hit location in the animation to compare the paths.
 
 <TransferViz client:visible lang="en" />
-
-This also explains why HiCache uses different layouts on the two sides. The GPU runs the model one layer at a time, so grouping KV by model layer helps it read the data for that layer. A storage request, however, fetches the cached data for a page of tokens across layers. Putting that page together in Host memory lets the backend read or write a larger contiguous block instead of many scattered pieces.
-
-A HiCache page here means a group of tokens. It is different from an operating-system memory page or a physical NAND page. Combining transfers reduces the number of I/O submissions and spreads their fixed cost over more bytes. The amount of KV to move stays the same. [HiCache layout and transfer design](https://www.lmsys.org/blog/2025-09-10-sglang-hicache/)
-
-We can also start useful work before the entire restore finishes. Once the first model layer’s KV reaches the GPU, the GPU can compute that layer while later layers’ KV is still moving. Earlier still, L3 prefetch can read data while a request waits to be scheduled. Both reduce how long the request waits for I/O. They cannot hide every transfer: if a layer’s KV arrives after the GPU needs it, computation still pauses.
 
 ## Is restoring faster than recomputing?
 
