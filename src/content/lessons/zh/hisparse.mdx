@@ -1,0 +1,90 @@
+---
+title: "SGLang 里的 HiSparse：稀疏注意力在长上下文下吞吐最高 5 倍"
+description: "稀疏注意力让模型在每个解码步只读上下文的一小部分。但整段上下文的 KV cache 仍然要留在 GPU 显存里，所以显存限制了能同时解码的请求数。这篇文章讲清楚稀疏注意力的原理，以及 SGLang 的 HiSparse 怎样解除这个限制。HiSparse 把完整 KV cache 放在 CPU 内存，GPU 上只留一个小的 hot buffer。在 GLM-5.1 上，256 并发时吞吐超过 baseline 的 **3 倍**，长上下文下最高 **5 倍**。"
+publishedDate: "2026-11-24"
+order: 10
+concepts: []
+tryOnSglang: "https://github.com/sgl-project/sglang"
+references:
+  - label: "LMSYS Blog：HiSparse: Turbocharging Sparse Attention with Hierarchical Memory"
+    url: "https://www.lmsys.org/blog/2026-04-10-sglang-hisparse/"
+  - label: "LMSYS Blog：SGLang HiCache: Fast Hierarchical KV Caching with Your Favorite Storage Backends"
+    url: "https://www.lmsys.org/blog/2025-09-10-sglang-hicache/"
+  - label: "sglang#20343：HiSparse for Sparse Attention"
+    url: "https://github.com/sgl-project/sglang/pull/20343"
+  - label: "sglang#21591：[PD]: Add support for HiSparse to directly transfer the cache from Prefill to Decode DRAM."
+    url: "https://github.com/sgl-project/sglang/pull/21591"
+  - label: "SGLang HiSparse guide"
+    url: "https://docs.sglang.io/docs/advanced_features/hisparse_guide"
+---
+
+import SparseAttnViz from "../../../viz/hisparse/SparseAttnViz";
+import ConcurrencyBenchViz from "../../../viz/hisparse/ConcurrencyBenchViz";
+import HiSparseFlowViz from "../../../viz/hisparse/HiSparseFlowViz";
+import MissPolicyViz from "../../../viz/hisparse/MissPolicyViz";
+import SweepBenchViz from "../../../viz/hisparse/SweepBenchViz";
+
+本文改编自 [LMSYS 的 HiSparse 文章](https://www.lmsys.org/blog/2026-04-10-sglang-hisparse/)。
+
+## 背景
+
+### 稀疏注意力
+
+模型生成一个 token 时，注意力要回看上下文。它靠的是 KV cache，里面存着每一层、每个历史 token 的 key 和 value。Full attention 会把它们全部读一遍。上下文有 32K 个 token，每一步就要读 32K 条，所以每步的开销随上下文变长而增加。
+
+稀疏注意力只读上下文的一部分。DeepSeek-V3.2 和 GLM-5.1 用的设计叫 DeepSeek Sparse Attention（DSA）。它分两步。第一步，一个叫 indexer 的小模块给每个历史 token 打分，分数只对当前这一步有效。Indexer 有自己的一套精简 key，所以给整段上下文打分很便宜。第二步，模型留下分数最高的 k 个 token，只在这些 token 上做注意力。k 是固定的。本文涉及的配置里 k 是 2048，上下文多长都不变。
+
+<SparseAttnViz client:visible />
+
+每一步选中的 token 都在变。这一步被跳过的 token，过几步可能又被选中。
+
+### 显存限制
+
+稀疏注意力减少了每一步的计算量。它没有减少显存占用。任何一个 token 之后都可能被选中，所以整段上下文的 KV 都要留在 GPU 显存里。上下文 32K、k = 2048 时，一步只读 GPU 为这个请求保存的 KV 的大约 6%。
+
+于是 GPU 显存决定了能同时解码多少个请求。显存一满，再增加并发也不会提高吞吐。下面的 benchmark 里，baseline 在 32 并发时就不再增长。
+
+<ConcurrencyBenchViz client:visible />
+
+## HiSparse
+
+### 设计与机制
+
+SGLang 的 HiSparse 把 KV cache 存在两个地方。CPU 内存保存每个请求的完整 KV。GPU 显存为每个请求保留一个小缓冲区，叫 hot device buffer，槽位数固定。Indexer 的 key 也留在 GPU 上，因为 indexer 仍然要给整段上下文打分。
+
+每个解码步执行四个动作：
+
+1. Indexer 选出 top-k 个 token。
+2. Swap-in 检查其中哪些已经在 buffer 里。不在的从 CPU 内存拷进 buffer。
+3. 注意力从 buffer 里读 top-k 的 KV。
+4. 新 token 的 KV 拷回 CPU 内存。
+
+Buffer 的槽位数比 k 多，所以它还留着最近几步选中过的 token。相邻两步选中的 token 大部分相同。因此多数查找都能命中 buffer，每一步只需要搬少量 KV。
+
+<HiSparseFlowViz client:visible />
+
+现在一个请求在 GPU 上只占固定数量的 KV 槽位，上下文多长都一样。同一块 GPU 能容纳的请求多了很多，decode batch 也随之变大。
+
+### Swap-in kernel
+
+Swap-in 在每个解码步都要执行，所以它的延迟很关键。SGLang 把它实现成一个 CUDA kernel。这个 kernel 做三件事。它找出 top-k 里不在 buffer 中的 token。它按 LRU（最近最少使用）策略选出要腾出的槽位。它更新页表，并把缺失的 KV 从 CPU 内存拷到 GPU。
+
+每次缺失都要从 CPU 内存拷一次，所以缺失越少，swap-in 越快。有两个选择可以减少缺失：更大的 buffer 和更好的驱逐策略。下图在 DeepSeek-V3.2 上比较了它们。Buffer 从 2048 槽加到 4096 槽，缺失数少了一大截。同样是 4096 槽，LRU 的缺失数低于 FIFO 和随机驱逐。
+
+<MissPolicyViz client:visible />
+
+### Prefill-decode 分离
+
+SGLang 可以把 prefill 和 decode 放在不同的实例上。HiSparse 作用在 decode 实例。Prefill 实例把 KV 直接发进 decode 实例的 CPU 内存。Decode 侧的 GPU 从头到尾不用装下完整 KV，传输期间也不用。Prefill 实例不需要任何改动。
+
+## 结果
+
+第二组 benchmark 在 GLM-5.1-FP8 上遍历不同的输入和输出长度。六组配置下，HiSparse 的生成吞吐是 1,720 到 2,320 tokens/s。Baseline 是 352 到 752 tokens/s。上下文越长差距越大。最短的一组配置是 3.1 倍，输入 40K、输出 20K 时超过 5 倍。
+
+<SweepBenchViz client:visible />
+
+HiSparse 是为高并发设计的。低并发时它比 baseline 慢，因为多出来的拷贝开销超过了省下的显存带来的收益。上面的并发图里，32 并发及以下就是这种情况。HiSparse 目前仍是实验性功能。它最初支持的是 DSA 模型家族，即 DeepSeek-V3.2 和 GLM-5.1。当前支持的模型和参数见 [HiSparse guide](https://docs.sglang.io/docs/advanced_features/hisparse_guide)。
+
+## 致谢
+
+HiSparse 由 Zhiqiang Xie、Zhangheng Huang 和 Tingwei Huang 完成。原文感谢 Alibaba Cloud TairKVCache 团队和 Ant Group SCT Inference 团队的贡献，感谢 Alibaba Cloud 的 Shangming Cai、Teng Ma、Xingyu Ling 和 SGLang 社区的 Ziyi Xu 的支持，也感谢 Stanford 的 Christos Kozyrakis、Kristopher Geda 和 Baidu Baige AI Team 的反馈。

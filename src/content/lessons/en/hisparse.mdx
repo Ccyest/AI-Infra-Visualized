@@ -1,0 +1,138 @@
+---
+title: "HiSparse in SGLang: up to 5× throughput for sparse attention on long contexts"
+description: "Sparse attention lets a model read only a small part of its context at each decoding step. The KV cache of the whole context still has to stay in GPU memory, so memory limits how many requests can decode together. This article explains how sparse attention works and how SGLang's HiSparse removes that limit. HiSparse keeps the full KV cache in CPU memory and only a small hot buffer on the GPU. On GLM-5.1, throughput reaches over **3×** the baseline at 256 concurrent requests, and up to **5×** on long contexts."
+publishedDate: "2026-11-24"
+order: 10
+concepts: []
+tryOnSglang: "https://github.com/sgl-project/sglang"
+references:
+  - label: "LMSYS Blog: HiSparse: Turbocharging Sparse Attention with Hierarchical Memory"
+    url: "https://www.lmsys.org/blog/2026-04-10-sglang-hisparse/"
+  - label: "LMSYS Blog: SGLang HiCache: Fast Hierarchical KV Caching with Your Favorite Storage Backends"
+    url: "https://www.lmsys.org/blog/2025-09-10-sglang-hicache/"
+  - label: "sglang#20343: HiSparse for Sparse Attention"
+    url: "https://github.com/sgl-project/sglang/pull/20343"
+  - label: "sglang#21591: [PD]: Add support for HiSparse to directly transfer the cache from Prefill to Decode DRAM."
+    url: "https://github.com/sgl-project/sglang/pull/21591"
+  - label: "SGLang HiSparse guide"
+    url: "https://docs.sglang.io/docs/advanced_features/hisparse_guide"
+---
+
+import SparseAttnViz from "../../../viz/hisparse/SparseAttnViz";
+import ConcurrencyBenchViz from "../../../viz/hisparse/ConcurrencyBenchViz";
+import HiSparseFlowViz from "../../../viz/hisparse/HiSparseFlowViz";
+import MissPolicyViz from "../../../viz/hisparse/MissPolicyViz";
+import SweepBenchViz from "../../../viz/hisparse/SweepBenchViz";
+
+Adapted from the [LMSYS article on HiSparse](https://www.lmsys.org/blog/2026-04-10-sglang-hisparse/).
+
+## Background
+
+### Sparse attention
+
+When a model generates a token, attention looks back at the context. It does
+this through the KV cache, which stores keys and values for every earlier token
+at every layer. Full attention reads all of them. With a 32K-token context,
+every step reads 32K entries, so the cost of a step grows with the context.
+
+Sparse attention reads only part of the context. DeepSeek-V3.2 and GLM-5.1 use
+a design called DeepSeek Sparse Attention (DSA). It works in two stages. First,
+a small module called the indexer gives every earlier token a score for the
+current step. The indexer has its own compact keys, so scoring the whole
+context is cheap. Second, the model keeps the k tokens with the highest scores
+and runs attention on those tokens only. k is fixed. It is 2048 in the
+configurations used here, however long the context is.
+
+<SparseAttnViz client:visible lang="en" />
+
+The selection changes from step to step. A token that is skipped now may be
+selected a few steps later.
+
+### The memory limit
+
+Sparse attention cuts the work of each step. It does not cut the memory. Any
+token may be selected later, so the KV of the whole context stays in GPU
+memory. With a 32K-token context and k = 2048, a step reads about 6% of the KV
+that the GPU holds for that request.
+
+GPU memory then decides how many requests can decode together. Once it is
+full, sending more concurrent requests adds no throughput. In the benchmark
+below, the baseline stops scaling at 32 concurrent requests.
+
+<ConcurrencyBenchViz client:visible lang="en" />
+
+## HiSparse
+
+### Design and mechanism
+
+SGLang's HiSparse stores the KV cache in two places. CPU memory holds the full
+KV of every request. GPU memory holds a small buffer for each request, called
+the hot device buffer, with a fixed number of slots. The indexer's keys also
+stay on the GPU, because the indexer still scores the whole context.
+
+Each decoding step then runs four actions:
+
+1. The indexer selects the top-k tokens.
+2. A swap-in step checks which of them are already in the buffer. The missing
+   ones are copied from CPU memory into the buffer.
+3. Attention reads the top-k KV from the buffer.
+4. The KV of the new token is copied back to CPU memory.
+
+The buffer has more slots than k, so it also keeps tokens that were selected in
+recent steps. Consecutive steps select many of the same tokens. Most lookups
+therefore hit the buffer, and only a few entries move in each step.
+
+<HiSparseFlowViz client:visible lang="en" />
+
+A request now takes a fixed number of KV slots on the GPU, however long its
+context is. The same GPU holds many more requests, and the decode batch grows
+with it.
+
+### Swap-in kernel
+
+The swap-in step runs in every decoding step, so its latency matters. SGLang
+implements it as a single CUDA kernel. The kernel does three things. It finds
+the top-k tokens that are missing from the buffer. It picks the slots to free
+with a least-recently-used (LRU) policy. It updates the page table and copies
+the missing KV from CPU memory to the GPU.
+
+Every miss costs one copy from CPU memory, so fewer misses mean a faster
+swap-in. Two choices reduce the misses: a larger buffer and a better eviction
+policy. The figure compares them on DeepSeek-V3.2. Growing the buffer from 2048
+to 4096 slots removes a large share of the misses. With 4096 slots, LRU misses
+less than FIFO and random eviction.
+
+<MissPolicyViz client:visible lang="en" />
+
+### Prefill-decode disaggregation
+
+SGLang can run prefill and decode on separate instances. HiSparse works on the
+decode instance. The prefill instance sends its KV directly into the CPU memory
+of the decode instance. The decode GPU never holds the full KV, not even during
+the transfer. The prefill instance needs no change.
+
+## Results
+
+The second benchmark sweeps input and output lengths on GLM-5.1-FP8. HiSparse
+generates 1,720 to 2,320 tokens/s across the six configurations. The baseline
+generates 352 to 752 tokens/s. The gap widens as the context grows. It is 3.1×
+at the shortest configuration and more than 5× at 40K input with 20K output.
+
+<SweepBenchViz client:visible lang="en" />
+
+HiSparse is built for high concurrency. At low concurrency it is slower than
+the baseline, because the extra copies cost more than the memory they save.
+The concurrency chart above shows this at 32 concurrent requests and below.
+HiSparse is still an experimental feature. It first supported the DSA model families,
+DeepSeek-V3.2 and GLM-5.1. The
+[HiSparse guide](https://docs.sglang.io/docs/advanced_features/hisparse_guide)
+lists the models and flags supported today.
+
+## Acknowledgments
+
+HiSparse was built by Zhiqiang Xie, Zhangheng Huang, and Tingwei Huang. The
+original article thanks the Alibaba Cloud TairKVCache team and the Ant Group
+SCT Inference team for their contributions, Shangming Cai, Teng Ma, and Xingyu
+Ling from Alibaba Cloud and Ziyi Xu from the SGLang community for their
+support, and Christos Kozyrakis and Kristopher Geda from Stanford and the Baidu
+Baige AI Team for their feedback.

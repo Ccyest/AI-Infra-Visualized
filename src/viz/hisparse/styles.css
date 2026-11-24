@@ -1,0 +1,291 @@
+/* HiSparse 课程专用样式
+   (播放控件/图例/卡片等通用样式见 src/styles/global.css)
+   配色约定:indexer 选中/本步读取 = series-1,命中 = series-3,
+   缺失拷入 = series-2,写回 = series-7,baseline = muted */
+
+.hsp-viz {
+  --hsp-font-xs: 0.7rem;
+  --hsp-font-sm: 0.75rem;
+  --hsp-font-body: 0.82rem;
+}
+
+/* 走查图在窄屏上保持可读:横向滚动而不是把 SVG 压扁 */
+.hsp-scroll {
+  overflow-x: auto;
+}
+
+.hsp-scroll > svg {
+  display: block;
+  width: 100%;
+  min-width: 620px;
+  height: auto;
+}
+
+.hsp-chart > svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+.hsp-viz svg text {
+  font-family: inherit;
+}
+
+.hsp-label {
+  fill: var(--ink-2);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.hsp-count {
+  fill: var(--ink);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.hsp-tick {
+  fill: var(--muted);
+  font-size: 9.5px;
+}
+
+.hsp-axes line {
+  stroke: var(--grid);
+}
+
+.hsp-axes text {
+  fill: var(--muted);
+  font-size: 11px;
+}
+
+/* ---------------- token 格子 ---------------- */
+
+.hsp-cell {
+  fill: transparent;
+  stroke: var(--axis);
+  stroke-width: 1;
+  transition: fill 0.25s ease, stroke 0.25s ease;
+}
+
+.hsp-cell.kept {
+  fill: var(--grid);
+}
+
+.hsp-cell.read {
+  fill: var(--series-1);
+  stroke: var(--series-1);
+}
+
+.hsp-cell.future {
+  stroke: var(--grid);
+  stroke-dasharray: 2 2;
+}
+
+.hsp-cell.hit {
+  fill: var(--grid);
+  stroke: var(--series-3);
+  stroke-width: 2;
+}
+
+.hsp-cell.miss {
+  fill: var(--series-2);
+  stroke: var(--series-2);
+}
+
+.hsp-cell.write {
+  fill: var(--series-7);
+  stroke: var(--series-7);
+}
+
+.hsp-bar {
+  fill: var(--axis);
+  transition: height 0.25s ease, y 0.25s ease, fill 0.25s ease;
+}
+
+.hsp-bar.top {
+  fill: var(--series-1);
+}
+
+.hsp-token-id {
+  fill: var(--ink-2);
+  font-size: 9.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------------- hot device buffer ---------------- */
+
+.hsp-slot {
+  fill: transparent;
+  stroke: var(--axis);
+  stroke-width: 1.2;
+  transition: fill 0.25s ease, stroke 0.25s ease;
+}
+
+.hsp-slot.used {
+  fill: var(--grid);
+}
+
+.hsp-slot.hit {
+  fill: color-mix(in srgb, var(--series-3) 22%, transparent);
+  stroke: var(--series-3);
+  stroke-width: 2;
+}
+
+.hsp-slot.miss {
+  fill: color-mix(in srgb, var(--series-2) 24%, transparent);
+  stroke: var(--series-2);
+  stroke-width: 2;
+}
+
+.hsp-slot-token {
+  fill: var(--ink);
+  font-size: 13px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+.hsp-slot-token.empty {
+  fill: var(--muted);
+  font-weight: 400;
+  font-size: 10.5px;
+}
+
+.hsp-evicted {
+  fill: var(--muted);
+  font-size: 10px;
+  text-decoration: line-through;
+}
+
+.hsp-copy-line {
+  stroke: var(--series-2);
+  stroke-width: 1.4;
+  fill: none;
+  opacity: 0.85;
+}
+
+.hsp-stat {
+  font-size: 12px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+.hsp-step-desc {
+  margin-top: 0.7rem;
+  font-size: var(--hsp-font-body);
+  color: var(--ink);
+  border-left: 3px solid var(--accent);
+  padding: 0.25rem 0 0.25rem 0.7rem;
+  min-height: 2.6em;
+}
+
+/* ---------------- 折线图 ---------------- */
+
+.hsp-line {
+  fill: none;
+  stroke-width: 2.5;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.hsp-end-label {
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.hsp-point-label {
+  fill: var(--ink-2);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.hsp-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-bottom: 0.4rem;
+}
+
+.hsp-legend button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.2rem 0.45rem;
+  border: 1px solid var(--grid);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink-2);
+  font: inherit;
+  font-size: var(--hsp-font-xs);
+  cursor: pointer;
+}
+
+.hsp-legend button[aria-pressed="false"] {
+  opacity: 0.4;
+}
+
+.hsp-legend button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.hsp-legend svg {
+  width: 24px;
+  height: 8px;
+}
+
+/* ---------------- 序列长度 sweep ---------------- */
+
+.hsp-sweep {
+  display: grid;
+  gap: 0.55rem;
+  margin: 0.4rem 0 0.2rem;
+}
+
+.hsp-sweep-head,
+.hsp-sweep-row {
+  display: grid;
+  grid-template-columns: 5.2rem 1fr 3rem;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.hsp-sweep-head {
+  font-size: var(--hsp-font-xs);
+  color: var(--muted);
+}
+
+.hsp-sweep-row {
+  font-size: var(--hsp-font-sm);
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.hsp-sweep-bars {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.hsp-sweep-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.hsp-sweep-bar > span:first-child {
+  height: 12px;
+  border-radius: 3px;
+  min-width: 3px;
+  flex: none;
+}
+
+.hsp-sweep-bar output {
+  color: var(--ink-2);
+  font-size: var(--hsp-font-xs);
+}
+
+.hsp-sweep-ratio {
+  text-align: right;
+  font-weight: 650;
+  color: var(--ink);
+}
