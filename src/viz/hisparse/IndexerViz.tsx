@@ -5,7 +5,7 @@ import { INDEXER, INDEXER_PHASES, INDEXER_STEPS } from "./strings";
 import "./styles.css";
 
 /* indexer 打分的矩阵走查(示意:3 个 head、key 维度 4、8 个历史 token、top-k = 3)。
-   图上的灰色小字标出 DeepSeek-V3.2 的真实尺寸(config.json:index_n_heads = 64、
+   括号上的数字是 DeepSeek-V3.2 的真实尺寸(config.json:index_n_heads = 64、
    index_head_dim = 128、index_topk = 2048)。
      score = ReLU(K · Qᵀ) · w
    - K(8×4):每个历史 token 一行 index key,算一次后存下
@@ -33,6 +33,8 @@ const Q: readonly (readonly number[])[] = [
 const WEIGHTS = [0.5, 0.3, 0.2] as const;
 const TOPK = 3;
 const TOTAL = 7;
+/** DeepSeek-V3.2 的真实尺寸,标在括号上 */
+const REAL = { keyDim: 128, heads: 64, topk: 2048 } as const;
 
 const HEADS = Q.length;
 const DIM = 4;
@@ -113,7 +115,7 @@ function svgSubs(text: string) {
 /* ---------------- 版面 ---------------- */
 
 const W = 820;
-const H = 356;
+const H = 376;
 const ROW_Y = 124;
 const ROW_H = 24;
 const K_X = 64;
@@ -125,6 +127,8 @@ const Q_H = 20;
 const W_Y = ROW_Y + K.length * ROW_H + 10;
 const SCORE_X = 446;
 const SCORE_MAX = 220;
+const COMB_X = 776;
+const rowCenter = (token: number) => ROW_Y + token * ROW_H + ROW_H / 2;
 const TOKEN_BOX = { x: K_X, y: Q_Y + 22, w: 150, h: 30 };
 
 function tint(value: number): { fill: string; fillOpacity: number } {
@@ -157,6 +161,28 @@ function Cell({
       <rect x={x + 1} y={y + 1} width={w - 2} height={h - 2} rx={3} {...tint(value)} />
       <text x={x + w / 2} y={y + h / 2 + 3.5} textAnchor="middle">
         {num(value)}
+      </text>
+    </g>
+  );
+}
+
+function HBracket({ x0, x1, y, label }: { x0: number; x1: number; y: number; label: number }) {
+  return (
+    <g className="hsp-mx-dim">
+      <path d={`M${x0 + 1} ${y} v5 H${x1 - 1} v-5`} />
+      <text x={(x0 + x1) / 2} y={y + 17} textAnchor="middle">
+        {label}
+      </text>
+    </g>
+  );
+}
+
+function VBracket({ x, y0, y1, label }: { x: number; y0: number; y1: number; label: number }) {
+  return (
+    <g className="hsp-mx-dim">
+      <path d={`M${x} ${y0 + 1} h5 V${y1 - 1} h-5`} />
+      <text x={x + 10} y={(y0 + y1) / 2 + 4}>
+        {label}
       </text>
     </g>
   );
@@ -320,24 +346,10 @@ export default function IndexerViz({ lang = "zh" }: { lang?: Locale }) {
             <rect className="hsp-mx-focus" x={K_X} y={ROW_Y} width={DIM * K_W} height={ROW_H} rx={4} />
           )}
 
-          <text className="hsp-tick" x={K_X} y={ROW_Y + K.length * ROW_H + 14}>
-            {INDEXER.dimTokens[lang]}
-          </text>
-          <text className="hsp-tick" x={K_X} y={ROW_Y + K.length * ROW_H + 27}>
-            {INDEXER.dimKey[lang]}
-          </text>
-          <text className="hsp-tick" x={Q_X + HEADS * Q_W + 10} y={Q_Y + 34}>
-            {INDEXER.dimHeads[lang]}
-          </text>
-          <text className="hsp-tick" x={Q_X + HEADS * Q_W + 10} y={Q_Y + 48}>
-            {INDEXER.dimQuery[lang]}
-          </text>
-          <text className="hsp-tick" x={Q_X + HEADS * Q_W + 10} y={W_Y + 15}>
-            {INDEXER.dimWeights[lang]}
-          </text>
-          <text className="hsp-tick" x={SCORE_X + 48} y={ROW_Y - 8}>
-            {INDEXER.dimTopk[lang]}
-          </text>
+          {/* 尺寸括号:数字是 DeepSeek-V3.2 的真实大小 */}
+          <HBracket x0={K_X} x1={K_X + DIM * K_W} y={ROW_Y + K.length * ROW_H + 4} label={REAL.keyDim} />
+          <VBracket x={Q_X + HEADS * Q_W + 4} y0={Q_Y} y1={Q_Y + DIM * Q_H} label={REAL.keyDim} />
+          <HBracket x0={Q_X} x1={Q_X + HEADS * Q_W} y={W_Y + 26} label={REAL.heads} />
 
           {/* K · Qᵀ:每行一个 token,每列一个 head */}
           <text className="hsp-mx-op" x={(K_X + DIM * K_W + Q_X) / 2} y={ROW_Y + (K.length * ROW_H) / 2 + 5} textAnchor="middle">
@@ -452,6 +464,22 @@ export default function IndexerViz({ lang = "zh" }: { lang?: Locale }) {
               </g>
             );
           })}
+          {ranked && (
+            <g className="hsp-mx-dim top">
+              <path
+                d={
+                  TOP.map((token) => `M${COMB_X - 6} ${rowCenter(token)} H${COMB_X}`).join(" ") +
+                  ` M${COMB_X} ${rowCenter(Math.min(...TOP))} V${rowCenter(Math.max(...TOP))}`
+                }
+              />
+              <text
+                x={COMB_X + 6}
+                y={(rowCenter(Math.min(...TOP)) + rowCenter(Math.max(...TOP))) / 2 + 4}
+              >
+                {REAL.topk}
+              </text>
+            </g>
+          )}
         </svg>
       </div>
 

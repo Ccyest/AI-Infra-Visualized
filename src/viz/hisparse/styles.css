@@ -500,6 +500,28 @@
   font-weight: 700;
 }
 
+.hsp-mx-dim path {
+  fill: none;
+  stroke: var(--muted);
+  stroke-width: 1.2;
+  stroke-linejoin: round;
+}
+
+.hsp-mx-dim text {
+  fill: var(--ink-2);
+  font-size: 10.5px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+.hsp-mx-dim.top path {
+  stroke: var(--series-1);
+}
+
+.hsp-mx-dim.top text {
+  fill: var(--series-1);
+}
+
 .hsp-mx-op {
   fill: var(--muted);
   font-size: 16px;
