@@ -53,27 +53,26 @@ fixed and does not grow with the context.
 
 ### Indexer scoring
 
-Each attention layer has its own indexer. The indexer has three small weight
-matrices of its own: $W_K$ for keys, $W_Q$ for queries, and $W_w$ for head
-weights. When a layer first processes a token, it multiplies the token's hidden
-state at that layer by $W_K$. The result is a small vector called the index
-key. It is stored on the GPU.
+Each attention layer has an indexer. It keeps one small vector for every token,
+called an index key. Take DeepSeek-V3.2 as an example. A token's hidden state
+at a layer has 7,168 dimensions. Multiplying it by a matrix $W_K$ gives 128
+dimensions. Those 128 numbers are the token's index key. It is computed once
+and stored on the GPU.
 
-At each decoding step, the indexer builds its queries the way attention does.
-It multiplies the current token's hidden state by $W_Q$. The output is cut into
-equal parts, one per head, and each part is one query vector. $W_w$ turns the
-same hidden state into one weight per head. For every earlier token, the
-indexer takes the dot product of each query with that token's index key. Negative
-results are set to zero. The rest are multiplied by the head weights and added
-up. The sum is the token's score. The k tokens with the highest scores go to
-attention.
+At each decoding step, the indexer computes two things for the current token.
+The first is the query. A matrix $W_Q$ produces an 8,192-dimensional vector,
+which is cut into 64 parts of 128 dimensions, one part per head. The second is
+64 weights, one per head, produced by a matrix $W_w$.
 
-This starts the same way as attention: a query and a key are compared with a
-dot product. The rest is lighter. The indexer has no values and no softmax,
-because it only needs one score for each token. Its key is also small. $W_K$ is
-not a square matrix. In DeepSeek-V3.2 it takes a 7,168-dimensional hidden state
-and outputs a 128-dimensional key, and all heads share that one key. Each query
-part is also 128-dimensional, so the dot product lines up.
+To score an earlier token, the indexer takes the dot product of its
+128-dimensional key with each of the 64 query parts. That gives 64 numbers.
+Negative ones are set to zero. The rest are multiplied by their head weights
+and added up. The sum is the token's score. The 2,048 tokens with the highest
+scores go to attention.
+
+This starts the same way as attention, with a query and a key in a dot product.
+The indexer is much lighter, though. It has no values and no softmax, because
+it only needs one score per token. It also reads only 128 numbers per token.
 
 <IndexerViz client:visible lang="en" />
 
