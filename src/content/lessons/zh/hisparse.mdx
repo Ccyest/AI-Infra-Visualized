@@ -35,7 +35,7 @@ import SweepBenchViz from "../../../viz/hisparse/SweepBenchViz";
 
 <SparseAttnViz client:visible />
 
-图中就是稀疏注意力的演示，每一轮 indexer 都会打分，打分之后，选取得分最高的 top-k，只对 top-k 进行注意力计算。因此每一步开销固定，不会随着上下文增长而增长。
+图中就是稀疏注意力的演示，每一轮 indexer 都会打分，打分之后，选取得分最高的 top-k，只对 top-k 进行注意力计算。因此每一步注意力的开销固定，不会随着上下文增长而增长。
 
 ### Indexer 怎样打分
 
