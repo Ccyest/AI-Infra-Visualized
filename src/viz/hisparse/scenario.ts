@@ -1,4 +1,4 @@
-/* 两张走查图(SparseAttnViz / HiSparseFlowViz)共用的手工场景。
+/* SparseAttnViz / HiSparseFlowViz 共用的手工场景。
    prefill 32 个 token,之后解码 8 步;每步的 top-k(k = 4)是字面量,
    相邻两步的选择高度重叠,对应真实负载里 top-k 的时间局部性。
    全部确定性,无随机数。真实配置是 top-k = 2048、buffer 4096~6144 槽,
@@ -6,7 +6,6 @@
 
 export const K = 4;
 export const PREFILL_LEN = 32;
-export const BUFFER_SLOTS = 8;
 export const STEPS = 8;
 export const MAX_TOKENS = PREFILL_LEN + STEPS;
 
@@ -45,49 +44,20 @@ export function indexScore(step: number, token: number): number {
   return LOW_SCORES[(token * 7 + step * 3) % LOW_SCORES.length] ?? LOW_SCORES[0]!;
 }
 
-export interface LoadedSlot {
-  slot: number;
-  token: number;
-  /** 被 LRU 换出的 token;空槽为 null */
-  evicted: number | null;
-}
+/* ---------------- HiSparseFlowViz:只演示一个解码步 ---------------- */
 
-export interface BufferStep {
-  step: number;
-  topk: readonly number[];
-  hits: number[];
-  misses: number[];
-  before: (number | null)[];
-  after: (number | null)[];
-  loaded: LoadedSlot[];
-}
-
-/** 回放 hot device buffer:命中刷新 LRU,缺失先占空槽,没有空槽就换出最久未用的 */
-export function simulateBuffer(): BufferStep[] {
-  const tokens: (number | null)[] = Array.from({ length: BUFFER_SLOTS }, () => null);
-  const lastUsed: number[] = Array.from({ length: BUFFER_SLOTS }, () => 0);
-
-  return TOPK_BY_STEP.map((topk, i) => {
-    const step = i + 1;
-    const before = [...tokens];
-    const hits = topk.filter((token) => tokens.includes(token));
-    const misses = topk.filter((token) => !tokens.includes(token));
-    for (const token of hits) lastUsed[tokens.indexOf(token)] = step;
-
-    const loaded = misses.map((token) => {
-      let slot = tokens.indexOf(null);
-      if (slot < 0) {
-        slot = 0;
-        for (let s = 1; s < BUFFER_SLOTS; s++) {
-          if ((lastUsed[s] ?? 0) < (lastUsed[slot] ?? 0)) slot = s;
-        }
-      }
-      const evicted = tokens[slot] ?? null;
-      tokens[slot] = token;
-      lastUsed[slot] = step;
-      return { slot, token, evicted };
-    });
-
-    return { step, topk, hits, misses, before, after: [...tokens], loaded };
-  });
-}
+/** 取第 5 步:top-k = {5, 12, 21, 30},上下文 32 个 token,这一步生成 t33。
+    buffer 开始时已满(前几步留下的 8 个 token),t28 是最久没用的那个。 */
+export const FLOW_STEP = 5;
+export const FLOW_SCENE = {
+  contextLen: 32,
+  topk: [5, 12, 21, 30],
+  buffer: [3, 9, 17, 28, 30, 12, 5, 14],
+  /** buffer 里命中的 token */
+  hits: [5, 12, 30],
+  /** 不在 buffer 里、要从 CPU 内存拷入的 token */
+  miss: 21,
+  /** LRU 选出的槽位下标(里面是 t28) */
+  victimSlot: 3,
+  newToken: 33,
+} as const;

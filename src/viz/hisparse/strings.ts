@@ -4,7 +4,7 @@ import type { Localized } from "../../lib/i18n";
 
 /* 配色约定(全课一致):
    indexer 选中 / 本步读取 = --series-1,已在 buffer(命中) = --series-3,
-   缺失 → 从 CPU 内存拷入 = --series-2,新 token 写回 = --series-7,
+   缺失 → 从 CPU 内存拷入 = --series-2,新 token = --series-7,
    benchmark:baseline = --muted,HiSparse = --series-1 */
 
 /* ---------------- SparseAttnViz ---------------- */
@@ -38,53 +38,86 @@ export const CONC = {
   hisparse: { zh: "HiSparse", en: "HiSparse" },
 } satisfies Record<string, Localized>;
 
+/* ---------------- IndexerViz ---------------- */
+
+export const INDEXER = {
+  title: { zh: "Indexer 打分图示", en: "Indexer scoring diagram" },
+  subtitle: {
+    zh: "示意：3 个 head · 8 个历史 token · top-k = 3 · 点一行看它的算式",
+    en: "Schematic: 3 heads · 8 earlier tokens · top-k = 3 · select a row to see its sum",
+  },
+  current: { zh: "当前 token", en: "Current token" },
+  earlier: { zh: "历史 token", en: "Earlier tokens" },
+  fresh: {
+    zh: "每个 head 一个 query 和一个权重，每步现算",
+    en: "One query and one weight per head, computed at every step",
+  },
+  stored: {
+    zh: "每个 token 一个 index key，算一次后存下",
+    en: "One index key per token, computed once and stored",
+  },
+  colToken: { zh: "Token", en: "Token" },
+  colKey: { zh: "Index key", en: "Index key" },
+  colScore: { zh: "分数", en: "Score" },
+} satisfies Record<string, Localized>;
+
 /* ---------------- HiSparseFlowViz ---------------- */
 
 export const FLOW = {
-  title: { zh: "HiSparse 解码走查", en: "HiSparse decode walkthrough" },
+  title: { zh: "HiSparse 的一个解码步", en: "One HiSparse decoding step" },
   subtitle: {
-    zh: "示意：top-k = 4 · buffer 8 槽 · prefill 32 个 token",
-    en: "Schematic: top-k = 4 · 8-slot buffer · 32 prefill tokens",
+    zh: "示意：top-k = 4 · buffer 8 槽 · 上下文 32 个 token",
+    en: "Schematic: top-k = 4 · 8-slot buffer · 32-token context",
   },
-  host: { zh: "CPU 内存 · 完整 KV", en: "CPU memory · full KV" },
-  buffer: { zh: "GPU 显存 · hot device buffer", en: "GPU memory · hot device buffer" },
+  gpu: { zh: "GPU 显存", en: "GPU memory" },
+  cpu: { zh: "CPU 内存 · 每个 token 的完整 KV", en: "CPU memory · full KV of every token" },
+  indexKeys: { zh: "Index key · 每个 token 一份", en: "Index keys · one per token" },
+  buffer: { zh: "Hot device buffer · 8 个 token 的 KV", en: "Hot device buffer · KV of 8 tokens" },
+  newSlot: { zh: "新 token", en: "new token" },
   hit: { zh: "命中", en: "Hit" },
   miss: { zh: "缺失", en: "Miss" },
-  empty: { zh: "空", en: "empty" },
-  legendHit: { zh: "选中，已在 buffer", en: "Selected, already in the buffer" },
-  legendMiss: { zh: "选中，从 CPU 内存拷入", en: "Selected, copied from CPU memory" },
-  legendWrite: { zh: "新 token 的 KV 写回", en: "New token's KV written back" },
-  initial: {
-    zh: "Prefill 结束。完整 KV 在 CPU 内存里，GPU 上的 buffer 还是空的。",
-    en: "Prefill is done. The full KV sits in CPU memory. The GPU buffer is still empty.",
-  },
+  legendTopk: { zh: "indexer 选中", en: "Selected by the indexer" },
+  legendHit: { zh: "已在 buffer", en: "Already in the buffer" },
+  legendMiss: { zh: "从 CPU 内存拷入", en: "Copied from CPU memory" },
+  legendNew: { zh: "新 token", en: "New token" },
 } satisfies Record<string, Localized>;
 
-export const FLOW_DESC = {
-  lookup: {
-    zh: (step: number, hits: number, misses: number) =>
-      `第 ${step} 步：indexer 选出 4 个 token。${hits} 个已在 buffer，${misses} 个缺失。`,
-    en: (step: number, hits: number, misses: number) =>
-      `Step ${step}: the indexer selects 4 tokens. ${hits} are in the buffer, ${misses} ${misses === 1 ? "is" : "are"} missing.`,
+/** 时间轴 t = 1..5 对应的五个动作 */
+export const FLOW_PHASES: Localized[] = [
+  { zh: "打分", en: "Score" },
+  { zh: "查 buffer", en: "Look up" },
+  { zh: "拷入", en: "Swap in" },
+  { zh: "注意力", en: "Attention" },
+  { zh: "追加", en: "Append" },
+];
+
+/** t = 0..5 的说明 */
+export const FLOW_STEPS: Localized[] = [
+  {
+    zh: "一个解码步开始。GPU 上有每个 token 的 index key，但只有 8 个 token 的 KV。CPU 内存里是全部 32 个 token 的 KV。",
+    en: "A decoding step begins. The GPU holds an index key for every token, but KV for only 8 tokens. CPU memory holds the KV of all 32 tokens.",
   },
-  noMiss: {
-    zh: () => "没有缺失，不需要拷贝。注意力直接读 buffer，新 token 的 KV 写回 CPU 内存。",
-    en: () =>
-      "Nothing is missing, so nothing is copied. Attention reads the buffer. The new token's KV goes back to CPU memory.",
+  {
+    zh: "打分。Indexer 用当前 token 给 32 个 index key 打分，留下分数最高的 4 个。",
+    en: "Score. The indexer scores all 32 index keys against the current token and keeps the top 4.",
   },
-  fill: {
-    zh: (misses: number) =>
-      `${misses} 个缺失的 KV 从 CPU 内存拷入空槽。注意力读 buffer，新 token 的 KV 写回 CPU 内存。`,
-    en: (misses: number) =>
-      `${misses} missing ${misses === 1 ? "entry is" : "entries are"} copied from CPU memory into free slots. Attention reads the buffer. The new token's KV goes back to CPU memory.`,
+  {
+    zh: "查 buffer。t5、t12、t30 已经在 buffer 里，t21 不在。t28 是最久没用过的。",
+    en: "Look up. t5, t12, and t30 are already in the buffer. t21 is not. t28 is the least recently used.",
   },
-  evict: {
-    zh: (token: number, evicted: number) =>
-      `buffer 已满。最久没用的 t${evicted} 让出槽位，t${token} 从 CPU 内存拷入。`,
-    en: (token: number, evicted: number) =>
-      `The buffer is full. t${evicted}, the least recently used, gives up its slot. t${token} is copied in from CPU memory.`,
+  {
+    zh: "拷入。t21 的 KV 从 CPU 内存拷进 t28 的槽位。这一步只有这一次拷贝。",
+    en: "Swap in. The KV of t21 is copied from CPU memory into t28's slot. It is the only copy in this step.",
   },
-};
+  {
+    zh: "注意力。模型从 buffer 里读选中的 4 份 KV，生成新 token t33。",
+    en: "Attention. The model reads the 4 selected KV from the buffer and generates the new token t33.",
+  },
+  {
+    zh: "追加。t33 在 GPU 上多一个 index key，在 CPU 内存里多一份 KV。之前存下的内容都不变。",
+    en: "Append. t33 adds one index key on the GPU and one KV entry in CPU memory. Nothing stored earlier changes.",
+  },
+];
 
 /* ---------------- MissPolicyViz ---------------- */
 

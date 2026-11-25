@@ -19,6 +19,7 @@ references:
 ---
 
 import SparseAttnViz from "../../../viz/hisparse/SparseAttnViz";
+import IndexerViz from "../../../viz/hisparse/IndexerViz";
 import ConcurrencyBenchViz from "../../../viz/hisparse/ConcurrencyBenchViz";
 import HiSparseFlowViz from "../../../viz/hisparse/HiSparseFlowViz";
 import MissPolicyViz from "../../../viz/hisparse/MissPolicyViz";
@@ -38,6 +39,16 @@ import SweepBenchViz from "../../../viz/hisparse/SweepBenchViz";
 
 每一步选中的 token 都在变。这一步被跳过的 token，过几步可能又被选中。
 
+### Indexer 怎样打分
+
+每个注意力层有自己的 indexer。一个 token 第一次被处理时，indexer 给它算出一个小向量，叫 index key，并存在 GPU 上。
+
+在每个解码步，indexer 把当前 token 变成几个 query 向量，每个 head 一个，再给每个 head 算一个权重。对每个历史 token，它用每个 query 和这个 token 的 index key 做点积。负的结果清零。其余的乘上各 head 的权重再相加。这个和就是这个 token 的分数。分数最高的 k 个 token 进入注意力计算。
+
+<IndexerViz client:visible />
+
+存下来的 index key 不会再变。每一步新算的只有 query 和权重。所以同一个 token 可能这一步分数高，下一步分数低。
+
 ### 显存限制
 
 稀疏注意力减少了每一步的计算量。它没有减少显存占用。任何一个 token 之后都可能被选中，所以整段上下文的 KV 都要留在 GPU 显存里。上下文 32K、k = 2048 时，一步只读 GPU 为这个请求保存的 KV 的大约 6%。
@@ -52,16 +63,19 @@ import SweepBenchViz from "../../../viz/hisparse/SweepBenchViz";
 
 SGLang 的 HiSparse 把 KV cache 存在两个地方。CPU 内存保存每个请求的完整 KV。GPU 显存为每个请求保留一个小缓冲区，叫 hot device buffer，槽位数固定。Indexer 的 key 也留在 GPU 上，因为 indexer 仍然要给整段上下文打分。
 
-每个解码步执行四个动作：
+每个解码步执行五个动作：
 
-1. Indexer 选出 top-k 个 token。
-2. Swap-in 检查其中哪些已经在 buffer 里。不在的从 CPU 内存拷进 buffer。
-3. 注意力从 buffer 里读 top-k 的 KV。
-4. 新 token 的 KV 拷回 CPU 内存。
+1. 打分。Indexer 给每个历史 token 打分，留下分数最高的 k 个。
+2. 查 buffer。HiSparse 检查这 k 个 token 里哪些已经在 buffer 里。
+3. 拷入。不在 buffer 里的 token，它的 KV 从 CPU 内存拷进 buffer。Buffer 满了就替换最久没用过的 token。
+4. 注意力。模型从 buffer 里读 top-k 的 KV，生成下一个 token。
+5. 追加。新 token 的 KV 拷到 CPU 内存，它的 index key 加入 GPU 上的 index key。
 
 Buffer 的槽位数比 k 多，所以它还留着最近几步选中过的 token。相邻两步选中的 token 大部分相同。因此多数查找都能命中 buffer，每一步只需要搬少量 KV。
 
 <HiSparseFlowViz client:visible />
+
+一个解码步不会改写之前存下的任何内容。一个 token 的 KV 和 index key 都只算一次。每一步只为新 token 各追加一份。
 
 现在一个请求在 GPU 上只占固定数量的 KV 槽位，上下文多长都一样。同一块 GPU 能容纳的请求多了很多，decode batch 也随之变大。
 

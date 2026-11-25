@@ -144,23 +144,10 @@
   font-variant-numeric: tabular-nums;
 }
 
-.hsp-slot-token.empty {
-  fill: var(--muted);
-  font-weight: 400;
-  font-size: 10.5px;
-}
-
 .hsp-evicted {
   fill: var(--muted);
   font-size: 10px;
   text-decoration: line-through;
-}
-
-.hsp-copy-line {
-  stroke: var(--series-2);
-  stroke-width: 1.4;
-  fill: none;
-  opacity: 0.85;
 }
 
 .hsp-stat {
@@ -288,4 +275,281 @@
   text-align: right;
   font-weight: 650;
   color: var(--ink);
+}
+
+/* ---------------- HiSparseFlowViz:GPU / CPU 两个框 + 飞卡 ---------------- */
+
+.hsp-phases {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0.2rem 0 0.7rem;
+}
+
+.hsp-phase {
+  font-size: var(--hsp-font-xs);
+  color: var(--muted);
+  border: 1px solid var(--grid);
+  border-radius: 999px;
+  padding: 0.1rem 0.65rem;
+}
+
+.hsp-phase.active {
+  color: var(--accent-ink);
+  background: var(--accent);
+  border-color: var(--accent);
+  font-weight: 650;
+}
+
+.hsp-frame {
+  fill: none;
+  stroke: var(--grid);
+  stroke-width: 1.2;
+}
+
+.hsp-frame-label {
+  fill: var(--ink);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.hsp-slot.read {
+  fill: color-mix(in srgb, var(--series-1) 20%, transparent);
+  stroke: var(--series-1);
+  stroke-width: 2;
+}
+
+.hsp-slot.victim {
+  fill: var(--grid);
+  stroke: var(--series-8);
+  stroke-width: 2;
+  stroke-dasharray: 4 3;
+}
+
+.hsp-slot.pending {
+  stroke-dasharray: 4 3;
+}
+
+.hsp-slot.new {
+  fill: color-mix(in srgb, var(--series-7) 22%, transparent);
+  stroke: var(--series-7);
+  stroke-width: 2;
+}
+
+.hsp-lru {
+  fill: var(--series-8);
+  font-size: 10px;
+  font-weight: 650;
+}
+
+.hsp-fly {
+  animation: hsp-fly 1.1s cubic-bezier(0.45, 0, 0.25, 1) both;
+  pointer-events: none;
+}
+
+.hsp-fly rect {
+  stroke-width: 2;
+  filter: drop-shadow(0 3px 5px color-mix(in srgb, var(--ink) 22%, transparent));
+}
+
+.hsp-fly text {
+  fill: var(--accent-ink);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.hsp-fly.miss rect {
+  fill: var(--series-2);
+  stroke: var(--series-2);
+}
+
+.hsp-fly.write rect {
+  fill: var(--series-7);
+  stroke: var(--series-7);
+}
+
+@keyframes hsp-fly {
+  0% {
+    transform: translate(var(--hsp-dx), var(--hsp-dy));
+    opacity: 1;
+  }
+  15% {
+    transform: translate(var(--hsp-dx), var(--hsp-dy));
+    opacity: 1;
+  }
+  88% {
+    transform: none;
+    opacity: 1;
+  }
+  100% {
+    transform: none;
+    opacity: 0;
+  }
+}
+
+/* 飞卡落地之后目标位置的内容才出现 */
+.hsp-arrive {
+  animation: hsp-arrive 1.1s ease both;
+}
+
+@keyframes hsp-arrive {
+  0%,
+  80% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hsp-fly {
+    animation: none;
+    opacity: 0;
+  }
+
+  .hsp-arrive {
+    animation: none;
+  }
+}
+
+/* ---------------- IndexerViz ---------------- */
+
+.hsp-idx-sides {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.7rem;
+  margin: 0.3rem 0 0.8rem;
+}
+
+@media (max-width: 640px) {
+  .hsp-idx-sides {
+    grid-template-columns: 1fr;
+  }
+}
+
+.hsp-idx-side {
+  display: grid;
+  gap: 0.35rem;
+  align-content: start;
+  border: 1px solid var(--grid);
+  border-radius: 8px;
+  padding: 0.5rem 0.65rem;
+}
+
+.hsp-idx-side-head {
+  font-size: var(--hsp-font-sm);
+  font-weight: 650;
+  color: var(--ink);
+}
+
+.hsp-idx-note {
+  font-size: var(--hsp-font-xs);
+  color: var(--muted);
+}
+
+.hsp-idx-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+.hsp-idx-chip {
+  display: inline-block;
+  font-size: var(--hsp-font-xs);
+  font-variant-numeric: tabular-nums;
+  border-radius: 5px;
+  padding: 0.05rem 0.4rem;
+  border: 1px solid var(--axis);
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+
+.hsp-idx-chip.fresh {
+  border-color: var(--series-1);
+  color: var(--series-1);
+}
+
+.hsp-idx-chip.stored {
+  background: var(--grid);
+}
+
+.hsp-idx-table {
+  display: grid;
+  gap: 2px;
+}
+
+.hsp-idx-row {
+  display: grid;
+  grid-template-columns: 3rem 4rem repeat(3, minmax(2.8rem, 4.4rem)) minmax(7rem, 1fr);
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.22rem 0.5rem;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink-2);
+  font: inherit;
+  font-size: var(--hsp-font-sm);
+  font-variant-numeric: tabular-nums;
+  text-align: left;
+}
+
+button.hsp-idx-row {
+  cursor: pointer;
+}
+
+button.hsp-idx-row:hover {
+  border-color: var(--grid);
+}
+
+button.hsp-idx-row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.hsp-idx-row.head {
+  font-size: var(--hsp-font-xs);
+  color: var(--muted);
+}
+
+.hsp-idx-row.selected {
+  border-color: var(--accent);
+  color: var(--ink);
+}
+
+.hsp-idx-neg {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+
+.hsp-idx-score {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.hsp-idx-bar {
+  height: 12px;
+  border-radius: 3px;
+  min-width: 3px;
+  flex: none;
+}
+
+.hsp-idx-score output {
+  font-weight: 650;
+  color: var(--ink);
+}
+
+.hsp-idx-score em {
+  font-style: normal;
+  font-size: var(--hsp-font-xs);
+  color: var(--series-1);
+  font-weight: 650;
+}
+
+.hsp-idx-calc {
+  font-variant-numeric: tabular-nums;
+  min-height: 0;
 }

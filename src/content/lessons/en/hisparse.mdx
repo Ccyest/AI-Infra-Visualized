@@ -19,6 +19,7 @@ references:
 ---
 
 import SparseAttnViz from "../../../viz/hisparse/SparseAttnViz";
+import IndexerViz from "../../../viz/hisparse/IndexerViz";
 import ConcurrencyBenchViz from "../../../viz/hisparse/ConcurrencyBenchViz";
 import HiSparseFlowViz from "../../../viz/hisparse/HiSparseFlowViz";
 import MissPolicyViz from "../../../viz/hisparse/MissPolicyViz";
@@ -48,6 +49,25 @@ configurations used here, however long the context is.
 The selection changes from step to step. A token that is skipped now may be
 selected a few steps later.
 
+### Indexer scoring
+
+Each attention layer has its own indexer. When a token is first processed, the
+indexer computes one small vector for it, called an index key, and stores it on
+the GPU.
+
+At each decoding step, the indexer turns the current token into a few query
+vectors, one per head, and one weight per head. For every earlier token, it
+takes the dot product of each query with that token's index key. Negative
+results are set to zero. The rest are multiplied by the head weights and added
+up. The sum is the token's score. The k tokens with the highest scores go to
+attention.
+
+<IndexerViz client:visible lang="en" />
+
+A stored index key never changes. Only the queries and the weights are new at
+each step. The same token can therefore score high at one step and low at the
+next.
+
 ### The memory limit
 
 Sparse attention cuts the work of each step. It does not cut the memory. Any
@@ -70,19 +90,27 @@ KV of every request. GPU memory holds a small buffer for each request, called
 the hot device buffer, with a fixed number of slots. The indexer's keys also
 stay on the GPU, because the indexer still scores the whole context.
 
-Each decoding step then runs four actions:
+Each decoding step then runs five actions:
 
-1. The indexer selects the top-k tokens.
-2. A swap-in step checks which of them are already in the buffer. The missing
-   ones are copied from CPU memory into the buffer.
-3. Attention reads the top-k KV from the buffer.
-4. The KV of the new token is copied back to CPU memory.
+1. Score. The indexer scores every earlier token and keeps the top k.
+2. Look up. HiSparse checks which of the top-k tokens are already in the
+   buffer.
+3. Swap in. The KV of each missing token is copied from CPU memory into the
+   buffer. If the buffer is full, it replaces the least recently used token.
+4. Attention. The model reads the top-k KV from the buffer and generates the
+   next token.
+5. Append. The new token's KV is copied to CPU memory, and its index key joins
+   the index keys on the GPU.
 
 The buffer has more slots than k, so it also keeps tokens that were selected in
 recent steps. Consecutive steps select many of the same tokens. Most lookups
 therefore hit the buffer, and only a few entries move in each step.
 
 <HiSparseFlowViz client:visible lang="en" />
+
+Nothing stored earlier is rewritten during a step. The KV and the index key of
+a token are computed once. Each step only appends one of each for the new
+token.
 
 A request now takes a fixed number of KV slots on the GPU, however long its
 context is. The same GPU holds many more requests, and the decode batch grows
