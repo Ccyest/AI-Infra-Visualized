@@ -43,13 +43,19 @@ export const CONC = {
 export const INDEXER = {
   title: { zh: "Indexer 打分图示", en: "Indexer scoring diagram" },
   subtitle: {
-    zh: "示意：3 个 head · key 维度 4 · 8 个历史 token · top-k = 3 · 蓝色为正，灰色为负",
-    en: "Schematic: 3 heads · key size 4 · 8 earlier tokens · top-k = 3 · blue is positive, gray is negative",
+    zh: "示意尺寸 ·「实际」指 DeepSeek-V3.2 · 蓝色为正，灰色为负",
+    en: "Schematic sizes · \"real\" means DeepSeek-V3.2 · blue is positive, gray is negative",
   },
   current: { zh: "当前 token 的隐状态", en: "Current hidden state" },
   queries: { zh: "Query · 每个 head 一列", en: "Queries · one column per head" },
   keys: { zh: "Index key = 隐状态 × W_K", en: "Index keys = hidden state × W_K" },
   score: { zh: "分数", en: "Score" },
+  dimTokens: { zh: "token：图中 8 个，实际是整段上下文", en: "Tokens: 8 drawn, whole context real" },
+  dimKey: { zh: "key 维度：图中 4，实际 128", en: "Key size: 4 drawn, 128 real" },
+  dimHeads: { zh: "head：图中 3 个，实际 64 个", en: "Heads: 3 drawn, 64 real" },
+  dimQuery: { zh: "每段维度：图中 4，实际 128", en: "Part size: 4 drawn, 128 real" },
+  dimWeights: { zh: "权重：图中 3 个，实际 64 个", en: "Weights: 3 drawn, 64 real" },
+  dimTopk: { zh: "top-k：图中 3，实际 2048", en: "Top-k: 3 drawn, 2,048 real" },
 } satisfies Record<string, Localized>;
 
 /** 时间轴上的五个阶段(第 2 个阶段占 3 格,每个 head 一格) */

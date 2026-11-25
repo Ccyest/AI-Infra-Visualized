@@ -55,14 +55,16 @@ fixed and does not grow with the context.
 
 Each attention layer has an indexer. It keeps one small vector for every token,
 called an index key. Take DeepSeek-V3.2 as an example. A token's hidden state
-at a layer has 7,168 dimensions. Multiplying it by a matrix $W_K$ gives 128
-dimensions. Those 128 numbers are the token's index key. It is computed once
-and stored on the GPU.
+at a layer has 7,168 dimensions. $W_K$ is a 128 × 7,168 matrix, so multiplying
+the hidden state by it gives 128 dimensions. Those 128 numbers are the token's
+index key. It is computed once and stored on the GPU.
 
 At each decoding step, the indexer computes two things for the current token.
-The first is the query. A matrix $W_Q$ produces an 8,192-dimensional vector,
-which is cut into 64 parts of 128 dimensions, one part per head. The second is
-64 weights, one per head, produced by a matrix $W_w$.
+The first is the query. $W_Q$ is an 8,192 × 1,536 matrix. Its input is a
+1,536-dimensional vector that attention has already computed from the hidden
+state. Its output has 8,192 dimensions and is cut into 64 parts of 128
+dimensions, one part per head. The second is 64 weights, one per head. $W_w$ is
+a 64 × 7,168 matrix that turns the hidden state into those 64 weights.
 
 To score an earlier token, the indexer takes the dot product of its
 128-dimensional key with each of the 64 query parts. That gives 64 numbers.

@@ -5,6 +5,8 @@ import { INDEXER, INDEXER_PHASES, INDEXER_STEPS } from "./strings";
 import "./styles.css";
 
 /* indexer 打分的矩阵走查(示意:3 个 head、key 维度 4、8 个历史 token、top-k = 3)。
+   图上的灰色小字标出 DeepSeek-V3.2 的真实尺寸(config.json:index_n_heads = 64、
+   index_head_dim = 128、index_topk = 2048)。
      score = ReLU(K · Qᵀ) · w
    - K(8×4):每个历史 token 一行 index key,算一次后存下
    - Qᵀ(4×3):当前 token 现算的 query,每个 head 一列
@@ -111,7 +113,7 @@ function svgSubs(text: string) {
 /* ---------------- 版面 ---------------- */
 
 const W = 820;
-const H = 352;
+const H = 356;
 const ROW_Y = 124;
 const ROW_H = 24;
 const K_X = 64;
@@ -317,6 +319,25 @@ export default function IndexerViz({ lang = "zh" }: { lang?: Locale }) {
           {activeHead >= 0 && (
             <rect className="hsp-mx-focus" x={K_X} y={ROW_Y} width={DIM * K_W} height={ROW_H} rx={4} />
           )}
+
+          <text className="hsp-tick" x={K_X} y={ROW_Y + K.length * ROW_H + 14}>
+            {INDEXER.dimTokens[lang]}
+          </text>
+          <text className="hsp-tick" x={K_X} y={ROW_Y + K.length * ROW_H + 27}>
+            {INDEXER.dimKey[lang]}
+          </text>
+          <text className="hsp-tick" x={Q_X + HEADS * Q_W + 10} y={Q_Y + 34}>
+            {INDEXER.dimHeads[lang]}
+          </text>
+          <text className="hsp-tick" x={Q_X + HEADS * Q_W + 10} y={Q_Y + 48}>
+            {INDEXER.dimQuery[lang]}
+          </text>
+          <text className="hsp-tick" x={Q_X + HEADS * Q_W + 10} y={W_Y + 15}>
+            {INDEXER.dimWeights[lang]}
+          </text>
+          <text className="hsp-tick" x={SCORE_X + 48} y={ROW_Y - 8}>
+            {INDEXER.dimTopk[lang]}
+          </text>
 
           {/* K · Qᵀ:每行一个 token,每列一个 head */}
           <text className="hsp-mx-op" x={(K_X + DIM * K_W + Q_X) / 2} y={ROW_Y + (K.length * ROW_H) / 2 + 5} textAnchor="middle">
