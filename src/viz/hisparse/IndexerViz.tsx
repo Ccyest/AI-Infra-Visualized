@@ -68,6 +68,46 @@ function sumExample(): string {
   return `t1: ${terms} = ${(SCORES[0] ?? 0).toFixed(2)}`;
 }
 
+/* 文案里的 W_K / W_Q / W_w 渲染成下标。SVG 里用 dy 下沉再抬回(Firefox 不支持 baseline-shift)。 */
+const SUBSCRIPT = /(W_[A-Za-z])/;
+
+function htmlSubs(text: string) {
+  return text.split(SUBSCRIPT).map((part, i) =>
+    SUBSCRIPT.test(part) ? (
+      <span key={i}>
+        W<sub>{part.slice(2)}</sub>
+      </span>
+    ) : (
+      part
+    ),
+  );
+}
+
+function svgSubs(text: string) {
+  let lowered = false;
+  return text.split(SUBSCRIPT).map((part, i) => {
+    if (!part) return null;
+    const lift = lowered ? -3 : 0;
+    if (SUBSCRIPT.test(part)) {
+      lowered = true;
+      return (
+        <tspan key={i}>
+          <tspan dy={lift}>W</tspan>
+          <tspan dy={3} fontSize="8">
+            {part.slice(2)}
+          </tspan>
+        </tspan>
+      );
+    }
+    lowered = false;
+    return (
+      <tspan key={i} dy={lift}>
+        {part}
+      </tspan>
+    );
+  });
+}
+
 /* ---------------- 版面 ---------------- */
 
 const W = 820;
@@ -83,7 +123,7 @@ const Q_H = 20;
 const W_Y = ROW_Y + K.length * ROW_H + 10;
 const SCORE_X = 446;
 const SCORE_MAX = 220;
-const TOKEN_BOX = { x: K_X, y: Q_Y + 22, w: 118, h: 30 };
+const TOKEN_BOX = { x: K_X, y: Q_Y + 22, w: 150, h: 30 };
 
 function tint(value: number): { fill: string; fillOpacity: number } {
   if (value === 0) return { fill: "var(--grid)", fillOpacity: 1 };
@@ -180,10 +220,20 @@ export default function IndexerViz({ lang = "zh" }: { lang?: Locale }) {
             {INDEXER.current[lang]}
           </text>
           {hasQuery && (
-            <path
-              className="hsp-mx-arrow"
-              d={`M${TOKEN_BOX.x + TOKEN_BOX.w + 6} ${TOKEN_BOX.y + TOKEN_BOX.h / 2} H${Q_X - 12} m-6 -4 l6 4 l-6 4`}
-            />
+            <g>
+              <path
+                className="hsp-mx-arrow"
+                d={`M${TOKEN_BOX.x + TOKEN_BOX.w + 6} ${TOKEN_BOX.y + TOKEN_BOX.h / 2} H${Q_X - 10} m-6 -4 l6 4 l-6 4`}
+              />
+              <text
+                className="hsp-mx-head"
+                x={(TOKEN_BOX.x + TOKEN_BOX.w + Q_X) / 2 - 2}
+                y={TOKEN_BOX.y + TOKEN_BOX.h / 2 - 8}
+                textAnchor="middle"
+              >
+                {svgSubs("× W_Q")}
+              </text>
+            </g>
           )}
 
           {/* Qᵀ:每个 head 一列 */}
@@ -240,7 +290,7 @@ export default function IndexerViz({ lang = "zh" }: { lang?: Locale }) {
 
           {/* K:每个历史 token 一行,已存下 */}
           <text className="hsp-label" x={K_X} y={ROW_Y - 8}>
-            {INDEXER.keys[lang]}
+            {svgSubs(INDEXER.keys[lang])}
           </text>
           {K.map((key, token) => (
             <g key={token}>
@@ -384,7 +434,7 @@ export default function IndexerViz({ lang = "zh" }: { lang?: Locale }) {
         </svg>
       </div>
 
-      <div className="hsp-step-desc">{description}</div>
+      <div className="hsp-step-desc">{htmlSubs(description)}</div>
     </VizStage>
   );
 }

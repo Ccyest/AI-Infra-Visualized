@@ -46,9 +46,9 @@ export const INDEXER = {
     zh: "示意：3 个 head · key 维度 4 · 8 个历史 token · top-k = 3 · 蓝色为正，灰色为负",
     en: "Schematic: 3 heads · key size 4 · 8 earlier tokens · top-k = 3 · blue is positive, gray is negative",
   },
-  current: { zh: "当前 token", en: "Current token" },
+  current: { zh: "当前 token 的隐状态", en: "Current hidden state" },
   queries: { zh: "Query · 每个 head 一列", en: "Queries · one column per head" },
-  keys: { zh: "Index key · 每个 token 一行", en: "Index keys · one row per token" },
+  keys: { zh: "Index key = 隐状态 × W_K", en: "Index keys = hidden state × W_K" },
   score: { zh: "分数", en: "Score" },
 } satisfies Record<string, Localized>;
 
@@ -63,13 +63,16 @@ export const INDEXER_PHASES: Localized[] = [
 
 export const INDEXER_STEPS = {
   start: {
-    zh: () => "每个历史 token 都已经存了一个 index key，一个 token 一行。",
-    en: () => "Every earlier token already has a stored index key, one row per token.",
+    zh: () =>
+      "每个历史 token 被处理时，它的隐状态乘上 indexer 的 key 矩阵 W_K，得到 index key 并存下。一个 token 一行。",
+    en: () =>
+      "When each earlier token was processed, its hidden state was multiplied by the indexer's key matrix W_K. The result is its index key, stored one row per token.",
   },
   query: {
-    zh: () => "当前 token 给每个 head 算出一个 query 和一个权重 w。这两样每一步都重新算。",
+    zh: () =>
+      "当前 token 的隐状态乘上 query 矩阵 W_Q，输出切成 3 段，每个 head 一个 query。另一个矩阵 W_w 给每个 head 算一个权重 w。",
     en: () =>
-      "The current token produces one query and one weight w per head. Both are recomputed at every step.",
+      "The current hidden state is multiplied by the query matrix W_Q. The output is cut into 3 parts, one query per head. Another matrix, W_w, gives one weight w per head.",
   },
   head: {
     zh: (head: number, example: string) =>
