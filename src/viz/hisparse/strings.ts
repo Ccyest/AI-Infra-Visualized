@@ -43,23 +43,55 @@ export const CONC = {
 export const INDEXER = {
   title: { zh: "Indexer 打分图示", en: "Indexer scoring diagram" },
   subtitle: {
-    zh: "示意：3 个 head · 8 个历史 token · top-k = 3 · 点一行看它的算式",
-    en: "Schematic: 3 heads · 8 earlier tokens · top-k = 3 · select a row to see its sum",
+    zh: "示意：3 个 head · key 维度 4 · 8 个历史 token · top-k = 3 · 蓝色为正，灰色为负",
+    en: "Schematic: 3 heads · key size 4 · 8 earlier tokens · top-k = 3 · blue is positive, gray is negative",
   },
   current: { zh: "当前 token", en: "Current token" },
-  earlier: { zh: "历史 token", en: "Earlier tokens" },
-  fresh: {
-    zh: "每个 head 一个 query 和一个权重，每步现算",
-    en: "One query and one weight per head, computed at every step",
-  },
-  stored: {
-    zh: "每个 token 一个 index key，算一次后存下",
-    en: "One index key per token, computed once and stored",
-  },
-  colToken: { zh: "Token", en: "Token" },
-  colKey: { zh: "Index key", en: "Index key" },
-  colScore: { zh: "分数", en: "Score" },
+  queries: { zh: "Query · 每个 head 一列", en: "Queries · one column per head" },
+  keys: { zh: "Index key · 每个 token 一行", en: "Index keys · one row per token" },
+  score: { zh: "分数", en: "Score" },
 } satisfies Record<string, Localized>;
+
+/** 时间轴上的五个阶段(第 2 个阶段占 3 格,每个 head 一格) */
+export const INDEXER_PHASES: Localized[] = [
+  { zh: "算 query 和权重", en: "Queries and weights" },
+  { zh: "点积", en: "Dot products" },
+  { zh: "ReLU", en: "ReLU" },
+  { zh: "加权求和", en: "Weighted sum" },
+  { zh: "取 top-k", en: "Top-k" },
+];
+
+export const INDEXER_STEPS = {
+  start: {
+    zh: () => "每个历史 token 都已经存了一个 index key，一个 token 一行。",
+    en: () => "Every earlier token already has a stored index key, one row per token.",
+  },
+  query: {
+    zh: () => "当前 token 给每个 head 算出一个 query 和一个权重 w。这两样每一步都重新算。",
+    en: () =>
+      "The current token produces one query and one weight w per head. Both are recomputed at every step.",
+  },
+  head: {
+    zh: (head: number, example: string) =>
+      `Head ${head}：每个 index key 和这个 head 的 query 做点积。以第一行为例：${example}`,
+    en: (head: number, example: string) =>
+      `Head ${head}: every index key takes a dot product with this head's query. For the first row: ${example}`,
+  },
+  relu: {
+    zh: () => "ReLU 把负的点积清零。",
+    en: () => "ReLU sets the negative dot products to zero.",
+  },
+  sum: {
+    zh: (example: string) => `每一行乘上 head 权重 w 再相加，得到这个 token 的分数。${example}`,
+    en: (example: string) =>
+      `Each row is multiplied by the head weights w and added up. That gives the token's score. ${example}`,
+  },
+  topk: {
+    zh: (tokens: string) => `分数最高的 3 个是 top-k：${tokens}。注意力只读这 3 个 token 的 KV。`,
+    en: (tokens: string) =>
+      `The 3 highest scores are the top-k: ${tokens}. Attention reads the KV of these 3 tokens only.`,
+  },
+};
 
 /* ---------------- HiSparseFlowViz ---------------- */
 
