@@ -25,19 +25,17 @@ import HiSparseFlowViz from "../../../viz/hisparse/HiSparseFlowViz";
 import MissPolicyViz from "../../../viz/hisparse/MissPolicyViz";
 import SweepBenchViz from "../../../viz/hisparse/SweepBenchViz";
 
-本文改编自 [LMSYS 的 HiSparse 文章](https://www.lmsys.org/blog/2026-04-10-sglang-hisparse/)。
-
 ## 背景
 
 ### 稀疏注意力
 
-模型生成一个 token 时，注意力要回看上下文。它靠的是 KV cache，里面存着每一层、每个历史 token 的 key 和 value。Full attention 会把它们全部读一遍。上下文有 32K 个 token，每一步就要读 32K 条，所以每步的开销随上下文变长而增加。
+模型生成一个 token 时，注意力要反复回看上下文。为此，人们发明了 KV cache，里面存着每一层、每个历史 token 的 key 和 value。Full Attention 会把所有 KV 全部读一遍。上下文有 32K 个 token，每一步就要读 32K 条，所以每步的开销随上下文变长而增加。
 
-稀疏注意力只读上下文的一部分。DeepSeek-V3.2 和 GLM-5.1 用的设计叫 DeepSeek Sparse Attention（DSA）。它分两步。第一步，一个叫 indexer 的小模块给每个历史 token 打分，分数只对当前这一步有效。Indexer 有自己的一套精简 key，所以给整段上下文打分很便宜。第二步，模型留下分数最高的 k 个 token，只在这些 token 上做注意力。k 是固定的。本文涉及的配置里 k 是 2048，上下文多长都不变。
+而稀疏注意力，是基于 Attention 原理的一个优化算法方案，它只读上下文的一部分。DeepSeek-V3.2 和 GLM-5.1 用的设计叫 DeepSeek Sparse Attention（DSA）。它分两步。第一步，一个叫 indexer 的小模块给每个历史 token 打分，分数只对当前这一步有效。Indexer 有自己的一套精简 key，所以给整段上下文打分很便宜。第二步，模型留下分数最高的 k 个 token，只在这些 token 上做注意力。k 是固定的。本文涉及的配置里 k 是 2048，上下文多长都不变。
 
 <SparseAttnViz client:visible />
 
-每一步选中的 token 都在变。这一步被跳过的 token，过几步可能又被选中。
+图中就是稀疏注意力的演示，每一轮 indexer 都会打分，打分之后，选取得分最高的 top-k，只对 top-k 进行注意力计算。因此每一步开销固定，不会随着上下文增长而增长。
 
 ### Indexer 怎样打分
 
@@ -51,9 +49,9 @@ import SweepBenchViz from "../../../viz/hisparse/SweepBenchViz";
 
 ### 显存限制
 
-稀疏注意力减少了每一步的计算量。它没有减少显存占用。任何一个 token 之后都可能被选中，所以整段上下文的 KV 都要留在 GPU 显存里。上下文 32K、k = 2048 时，一步只读 GPU 为这个请求保存的 KV 的大约 6%。
+稀疏注意力减少了每一步的计算量。它没有减少显存占用。任何一个 token 之后都可能被选中，所以整段上下文的 KV 都要留在 GPU 显存里。
 
-于是 GPU 显存决定了能同时解码多少个请求。显存一满，再增加并发也不会提高吞吐。下面的 benchmark 里，baseline 在 32 并发时就不再增长。
+于是 GPU 显存决定了能同时解码多少个请求。显存一满，再增加并发也不会提高吞吐。下面的 benchmark 里也可以看出，baseline 在 32 并发时就不再增长。
 
 <ConcurrencyBenchViz client:visible />
 
@@ -61,7 +59,7 @@ import SweepBenchViz from "../../../viz/hisparse/SweepBenchViz";
 
 ### 设计与机制
 
-SGLang 的 HiSparse 把 KV cache 存在两个地方。CPU 内存保存每个请求的完整 KV。GPU 显存为每个请求保留一个小缓冲区，叫 hot device buffer，槽位数固定。Indexer 的 key 也留在 GPU 上，因为 indexer 仍然要给整段上下文打分。
+SGLang 的 HiSparse 为了解决这个问题应运而生。HiSparse 把 KV cache 存在两个地方。CPU 内存保存每个请求的完整 KV。GPU 显存为每个请求保留一个小缓冲区，叫 hot device buffer，槽位数固定。Indexer 的 key 也留在 GPU 上，因为 indexer 仍然要给整段上下文打分。
 
 每个解码步执行五个动作：
 
@@ -71,7 +69,7 @@ SGLang 的 HiSparse 把 KV cache 存在两个地方。CPU 内存保存每个请�
 4. 注意力。模型从 buffer 里读 top-k 的 KV，生成下一个 token。
 5. 追加。新 token 的 KV 拷到 CPU 内存，它的 index key 加入 GPU 上的 index key。
 
-Buffer 的槽位数比 k 多，所以它还留着最近几步选中过的 token。相邻两步选中的 token 大部分相同。因此多数查找都能命中 buffer，每一步只需要搬少量 KV。
+Buffer 的槽位数比 k 多，所以它还留着最近几步选中过的 token。因为 Indexer 以及模型上下文的特性，相邻两步选中的 token 大部分相同。因此多数查找都能命中 buffer，每一步只需要搬少量 KV，而非全部 top-k。
 
 <HiSparseFlowViz client:visible />
 

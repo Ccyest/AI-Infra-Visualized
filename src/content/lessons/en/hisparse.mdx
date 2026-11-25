@@ -25,29 +25,31 @@ import HiSparseFlowViz from "../../../viz/hisparse/HiSparseFlowViz";
 import MissPolicyViz from "../../../viz/hisparse/MissPolicyViz";
 import SweepBenchViz from "../../../viz/hisparse/SweepBenchViz";
 
-Adapted from the [LMSYS article on HiSparse](https://www.lmsys.org/blog/2026-04-10-sglang-hisparse/).
-
 ## Background
 
 ### Sparse attention
 
-When a model generates a token, attention looks back at the context. It does
-this through the KV cache, which stores keys and values for every earlier token
-at every layer. Full attention reads all of them. With a 32K-token context,
-every step reads 32K entries, so the cost of a step grows with the context.
+When a model generates a token, attention looks back at the context again and
+again. The KV cache was invented for this. It stores keys and values for every
+earlier token at every layer. Full attention reads all of that KV. With a
+32K-token context, every step reads 32K entries, so the cost of a step grows
+with the context.
 
-Sparse attention reads only part of the context. DeepSeek-V3.2 and GLM-5.1 use
-a design called DeepSeek Sparse Attention (DSA). It works in two stages. First,
-a small module called the indexer gives every earlier token a score for the
-current step. The indexer has its own compact keys, so scoring the whole
-context is cheap. Second, the model keeps the k tokens with the highest scores
-and runs attention on those tokens only. k is fixed. It is 2048 in the
-configurations used here, however long the context is.
+Sparse attention is an optimization built on the same attention mechanism. It
+reads only part of the context. DeepSeek-V3.2 and GLM-5.1 use a design called
+DeepSeek Sparse Attention (DSA). It works in two stages. First, a small module
+called the indexer gives every earlier token a score for the current step. The
+indexer has its own compact keys, so scoring the whole context is cheap.
+Second, the model keeps the k tokens with the highest scores and runs attention
+on those tokens only. k is fixed. It is 2048 in the configurations used here,
+however long the context is.
 
 <SparseAttnViz client:visible lang="en" />
 
-The selection changes from step to step. A token that is skipped now may be
-selected a few steps later.
+The diagram shows sparse attention at work. The indexer scores the context at
+every step. The k tokens with the highest scores are selected, and attention
+runs on those tokens only. The cost of each step is therefore fixed and does
+not grow with the context.
 
 ### Indexer scoring
 
@@ -72,12 +74,11 @@ next.
 
 Sparse attention cuts the work of each step. It does not cut the memory. Any
 token may be selected later, so the KV of the whole context stays in GPU
-memory. With a 32K-token context and k = 2048, a step reads about 6% of the KV
-that the GPU holds for that request.
+memory.
 
-GPU memory then decides how many requests can decode together. Once it is
-full, sending more concurrent requests adds no throughput. In the benchmark
-below, the baseline stops scaling at 32 concurrent requests.
+GPU memory then decides how many requests can decode together. Once it is full,
+sending more concurrent requests adds no throughput. The benchmark below shows
+this as well. The baseline stops scaling at 32 concurrent requests.
 
 <ConcurrencyBenchViz client:visible lang="en" />
 
@@ -85,10 +86,11 @@ below, the baseline stops scaling at 32 concurrent requests.
 
 ### Design and mechanism
 
-SGLang's HiSparse stores the KV cache in two places. CPU memory holds the full
-KV of every request. GPU memory holds a small buffer for each request, called
-the hot device buffer, with a fixed number of slots. The indexer's keys also
-stay on the GPU, because the indexer still scores the whole context.
+SGLang's HiSparse was built to solve this problem. HiSparse stores the KV cache
+in two places. CPU memory holds the full KV of every request. GPU memory holds
+a small buffer for each request, called the hot device buffer, with a fixed
+number of slots. The indexer's keys also stay on the GPU, because the indexer
+still scores the whole context.
 
 Each decoding step then runs five actions:
 
@@ -103,8 +105,9 @@ Each decoding step then runs five actions:
    the index keys on the GPU.
 
 The buffer has more slots than k, so it also keeps tokens that were selected in
-recent steps. Consecutive steps select many of the same tokens. Most lookups
-therefore hit the buffer, and only a few entries move in each step.
+recent steps. Because of how the indexer and model contexts behave, consecutive
+steps select many of the same tokens. Most lookups therefore hit the buffer,
+and each step moves only a few KV entries instead of the whole top-k.
 
 <HiSparseFlowViz client:visible lang="en" />
 
