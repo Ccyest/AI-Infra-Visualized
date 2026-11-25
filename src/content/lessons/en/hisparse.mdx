@@ -68,6 +68,13 @@ results are set to zero. The rest are multiplied by the head weights and added
 up. The sum is the token's score. The k tokens with the highest scores go to
 attention.
 
+This starts the same way as attention: a query and a key are compared with a
+dot product. The rest is lighter. The indexer has no values and no softmax,
+because it only needs one score for each token. Its key is also small. $W_K$ is
+not a square matrix. In DeepSeek-V3.2 it takes a 7,168-dimensional hidden state
+and outputs a 128-dimensional key, and all heads share that one key. Each query
+part is also 128-dimensional, so the dot product lines up.
+
 <IndexerViz client:visible lang="en" />
 
 A stored index key never changes. Only the queries and the weights are new at

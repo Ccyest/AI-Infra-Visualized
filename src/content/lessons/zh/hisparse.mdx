@@ -43,6 +43,8 @@ import SweepBenchViz from "../../../viz/hisparse/SweepBenchViz";
 
 在每个解码步，indexer 算 query 的方式和注意力一样。它用当前 token 的隐状态乘 $W_Q$。输出被切成等长的几段，每个 head 一段，每段就是一个 query 向量。$W_w$ 把同一个隐状态变成每个 head 一个权重。对每个历史 token，indexer 用每个 query 和这个 token 的 index key 做点积。负的结果清零。其余的乘上各 head 的权重再相加。这个和就是这个 token 的分数。分数最高的 k 个 token 进入注意力计算。
 
+这一步的开头和注意力一样：query 和 key 做点积。之后就轻得多。Indexer 没有 value，也不做 softmax，因为它只需要给每个 token 一个分数。它的 key 也很小。$W_K$ 不是方阵。在 DeepSeek-V3.2 里，它的输入是 7168 维的隐状态，输出是 128 维的 key，所有 head 共用这一个 key。每段 query 也是 128 维，所以点积对得上。
+
 <IndexerViz client:visible />
 
 存下来的 index key 不会再变。每一步新算的只有 query 和权重。所以同一个 token 可能这一步分数高，下一步分数低。
