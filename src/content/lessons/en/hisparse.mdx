@@ -126,9 +126,9 @@ Nothing stored earlier is rewritten during a step. The KV and the index key of
 a token are computed once. Each step only appends one of each for the new
 token.
 
-A request now takes a fixed number of KV slots on the GPU, however long its
-context is. The same GPU holds many more requests, and the decode batch grows
-with it.
+With HiSparse, a request takes a fixed number of KV slots on the GPU, however
+long its context is. The same GPU holds many more requests, and the decode
+batch grows with it.
 
 ### Swap-in kernel
 

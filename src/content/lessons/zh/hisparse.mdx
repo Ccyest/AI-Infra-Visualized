@@ -77,7 +77,7 @@ Buffer 的槽位数比 k 多，所以它还留着最近几步选中过的 token�
 
 一个解码步不会改写之前存下的任何内容。一个 token 的 KV 和 index key 都只算一次。每一步只为新 token 各追加一份。
 
-现在一个请求在 GPU 上只占固定数量的 KV 槽位，上下文多长都一样。同一块 GPU 能容纳的请求多了很多，decode batch 也随之变大。
+有了 HiSparse，一个请求在 GPU 上只占固定数量的 KV 槽位，上下文多长都一样。同一块 GPU 能容纳的请求多了很多，decode batch 也随之变大。
 
 ### Swap-in kernel
 
