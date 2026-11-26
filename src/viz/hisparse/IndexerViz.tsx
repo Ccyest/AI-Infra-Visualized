@@ -2,6 +2,7 @@ import VizStage from "../../components/core/VizStage";
 import { useSimPlayer } from "../../components/core/useSimPlayer";
 import type { Locale } from "../../lib/i18n";
 import { INDEXER, INDEXER_PHASES, INDEXER_STEPS } from "./strings";
+import { HBracket, VBracket, htmlSubs, svgSubs } from "./svgHelpers";
 import "./styles.css";
 
 /* indexer 打分的矩阵走查(示意:3 个 head、key 维度 4、8 个历史 token、top-k = 3)。
@@ -72,46 +73,6 @@ function sumExample(): string {
   return `t1: ${terms} = ${(SCORES[0] ?? 0).toFixed(2)}`;
 }
 
-/* 文案里的 W_K / W_Q / W_w 渲染成下标。SVG 里用 dy 下沉再抬回(Firefox 不支持 baseline-shift)。 */
-const SUBSCRIPT = /(W_[A-Za-z])/;
-
-function htmlSubs(text: string) {
-  return text.split(SUBSCRIPT).map((part, i) =>
-    SUBSCRIPT.test(part) ? (
-      <span key={i}>
-        W<sub>{part.slice(2)}</sub>
-      </span>
-    ) : (
-      part
-    ),
-  );
-}
-
-function svgSubs(text: string) {
-  let lowered = false;
-  return text.split(SUBSCRIPT).map((part, i) => {
-    if (!part) return null;
-    const lift = lowered ? -3 : 0;
-    if (SUBSCRIPT.test(part)) {
-      lowered = true;
-      return (
-        <tspan key={i}>
-          <tspan dy={lift}>W</tspan>
-          <tspan dy={3} fontSize="8">
-            {part.slice(2)}
-          </tspan>
-        </tspan>
-      );
-    }
-    lowered = false;
-    return (
-      <tspan key={i} dy={lift}>
-        {part}
-      </tspan>
-    );
-  });
-}
-
 /* ---------------- 版面 ---------------- */
 
 const W = 820;
@@ -161,28 +122,6 @@ function Cell({
       <rect x={x + 1} y={y + 1} width={w - 2} height={h - 2} rx={3} {...tint(value)} />
       <text x={x + w / 2} y={y + h / 2 + 3.5} textAnchor="middle">
         {num(value)}
-      </text>
-    </g>
-  );
-}
-
-function HBracket({ x0, x1, y, label }: { x0: number; x1: number; y: number; label: number }) {
-  return (
-    <g className="hsp-mx-dim">
-      <path d={`M${x0 + 1} ${y} v5 H${x1 - 1} v-5`} />
-      <text x={(x0 + x1) / 2} y={y + 17} textAnchor="middle">
-        {label}
-      </text>
-    </g>
-  );
-}
-
-function VBracket({ x, y0, y1, label }: { x: number; y0: number; y1: number; label: number }) {
-  return (
-    <g className="hsp-mx-dim">
-      <path d={`M${x} ${y0 + 1} h5 V${y1 - 1} h-5`} />
-      <text x={x + 10} y={(y0 + y1) / 2 + 4}>
-        {label}
       </text>
     </g>
   );

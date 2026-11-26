@@ -19,6 +19,7 @@ references:
 ---
 
 import SparseAttnViz from "../../../viz/hisparse/SparseAttnViz";
+import QueryBuildViz from "../../../viz/hisparse/QueryBuildViz";
 import IndexerViz from "../../../viz/hisparse/IndexerViz";
 import ConcurrencyBenchViz from "../../../viz/hisparse/ConcurrencyBenchViz";
 import HiSparseFlowViz from "../../../viz/hisparse/HiSparseFlowViz";
@@ -53,34 +54,54 @@ fixed and does not grow with the context.
 
 ### Indexer scoring
 
-Each attention layer has an indexer. It keeps one small vector for every token,
-called an index key. Take DeepSeek-V3.2 as an example. A token's hidden state
-at a layer has 7,168 dimensions. $W_K$ is a 128 × 7,168 matrix, so multiplying
-the hidden state by it gives 128 dimensions. Those 128 numbers are the token's
-index key. It is computed once and stored on the GPU.
+The indexer answers one question: which earlier tokens are worth reading for
+the current token. It starts the way attention does. A query is compared with
+the key of every earlier token by a dot product, and a larger result means more
+relevant. The difference is that the indexer's keys and queries are much
+smaller. The numbers below are from DeepSeek-V3.2.
 
-At each decoding step, the indexer computes two things for the current token.
-The first is the query. $W_Q$ is an 8,192 × 1,536 matrix. Its input is a
-1,536-dimensional vector that attention has already computed from the hidden
-state. Its output has 8,192 dimensions and is cut into 64 parts of 128
-dimensions, one part per head. The second is 64 weights, one per head. $W_w$ is
-a 64 × 7,168 matrix that turns the hidden state into those 64 weights.
+Start with the key. Each attention layer has an indexer, and it keeps a
+128-dimensional vector for every token, called an index key. A token's hidden
+state at that layer has 7,168 dimensions. $W_K$ is a 128 × 7,168 matrix, and
+multiplying the hidden state by it gives the index key. It is computed once and
+stored on the GPU.
+
+Next, the query. It is not computed directly from the hidden state. DeepSeek's
+attention builds its own queries in two steps. It first compresses the
+7,168-dimensional hidden state to 1,536 dimensions, then expands that vector
+into the queries of its heads. The indexer reuses the 1,536-dimensional vector
+in the middle instead of starting again from the hidden state.
+
+One query can judge relevance by only one criterion. A token can be worth
+reading for many reasons, so the indexer uses 64 queries at once. These are its
+64 heads, with 128 dimensions each. $W_Q$ is an 8,192 × 1,536 matrix. It can be
+read as 64 small matrices of 128 × 1,536 stacked together. One multiplication
+gives the 64 queries end to end, 8,192 dimensions in total. Cutting the output
+into 64 parts only separates the queries of the heads. Ordinary multi-head
+attention builds its queries the same way.
+
+<QueryBuildViz client:visible lang="en" />
+
+The results of the 64 heads have to be combined into one score, so each head
+also needs a weight that says how much it counts at this step. $W_w$ is a 64 ×
+7,168 matrix that turns the current token's hidden state into those 64 weights.
 
 To score an earlier token, the indexer takes the dot product of its
-128-dimensional key with each of the 64 query parts. That gives 64 numbers.
+128-dimensional key with each of the 64 queries. That gives 64 numbers.
 Negative ones are set to zero. The rest are multiplied by their head weights
 and added up. The sum is the token's score. The 2,048 tokens with the highest
-scores go to attention.
-
-This starts the same way as attention, with a query and a key in a dot product.
-The indexer is much lighter, though. It has no values and no softmax, because
-it only needs one score per token. It also reads only 128 numbers per token.
+scores go to attention. There is only one key, shared by all 64 heads, so each
+token stores just 128 numbers.
 
 <IndexerViz client:visible lang="en" />
 
 A stored index key never changes. Only the queries and the weights are new at
 each step. The same token can therefore score high at one step and low at the
 next.
+
+Compared with attention, the indexer is lighter in two ways. It has no values
+and no softmax, because it only needs one score per token. It also reads only
+128 numbers for each token.
 
 ### The memory limit
 

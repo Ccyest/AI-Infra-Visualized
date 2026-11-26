@@ -19,6 +19,7 @@ references:
 ---
 
 import SparseAttnViz from "../../../viz/hisparse/SparseAttnViz";
+import QueryBuildViz from "../../../viz/hisparse/QueryBuildViz";
 import IndexerViz from "../../../viz/hisparse/IndexerViz";
 import ConcurrencyBenchViz from "../../../viz/hisparse/ConcurrencyBenchViz";
 import HiSparseFlowViz from "../../../viz/hisparse/HiSparseFlowViz";
@@ -39,17 +40,25 @@ import SweepBenchViz from "../../../viz/hisparse/SweepBenchViz";
 
 ### Indexer 怎样打分
 
-每个注意力层有一个 indexer。它为每个 token 存一个很小的向量，叫 index key。以 DeepSeek-V3.2 为例：一个 token 在某一层的隐状态是 7168 维。$W_K$ 是一个 128 × 7168 的矩阵，隐状态乘上它之后变成 128 维。这 128 个数就是这个 token 的 index key。它只算一次，算完存在 GPU 上。
+Indexer 要回答的问题是：生成当前 token 时，上下文里哪些 token 值得读。它的做法和注意力的前半段一样：让 query 和每个历史 token 的 key 做点积，点积越大越相关。区别是 indexer 的 key 和 query 都小得多。下面以 DeepSeek-V3.2 为例。
 
-每个解码步，indexer 为当前 token 算两样东西。第一样是 query。$W_Q$ 是一个 8192 × 1536 的矩阵。它的输入是主注意力已经从隐状态算好的一个 1536 维向量，输出是 8192 维，切成 64 段，每段 128 维，每个 head 拿一段。第二样是 64 个权重，每个 head 一个。$W_w$ 是一个 64 × 7168 的矩阵，把隐状态变成这 64 个权重。
+先看 key。每个注意力层有一个 indexer，它为每个 token 存一个 128 维的向量，叫 index key。一个 token 在这一层的隐状态是 7168 维。$W_K$ 是一个 128 × 7168 的矩阵，隐状态乘上它就得到 index key。它只算一次，算完存在 GPU 上。
 
-给一个历史 token 打分时，indexer 用它的 128 维 key 和 64 段 query 各做一次点积，得到 64 个数。负数清零。剩下的乘上各自 head 的权重再加起来，就是这个 token 的分数。分数最高的 2048 个 token 进入注意力计算。
+再看 query。它不是直接从隐状态算的。DeepSeek 的注意力算自己的 query 时分两步：先把 7168 维的隐状态压缩成 1536 维，再把这个 1536 维向量展开成各个 head 的 query。Indexer 借用中间这个 1536 维向量，不再从隐状态重新算起。
 
-这和注意力的开头一样，都是 query 和 key 做点积。但 indexer 轻得多。它没有 value，也不做 softmax，因为它只需要给每个 token 一个分数。而且每个 token 它只读 128 个数。
+一个 query 只能按一种标准衡量历史 token 是否相关。一个 token 值得读的原因可以有很多种，所以 indexer 同时用 64 个 query，也就是 64 个 head，每个 128 维。$W_Q$ 是一个 8192 × 1536 的矩阵，可以看成 64 个 128 × 1536 的小矩阵叠在一起。乘一次就得到 64 个首尾相接的 query，一共 8192 维。切成 64 段，只是把每个 head 的 query 分开。普通的多头注意力也是这样算 query 的。
+
+<QueryBuildViz client:visible />
+
+64 个 head 的结果要合成一个分数，所以每个 head 还需要一个权重，表示这一步里它有多重要。$W_w$ 是一个 64 × 7168 的矩阵，把当前 token 的隐状态变成这 64 个权重。
+
+给一个历史 token 打分时，indexer 用它的 128 维 key 和 64 个 query 各做一次点积，得到 64 个数。负数清零。剩下的乘上各自 head 的权重再加起来，就是这个 token 的分数。分数最高的 2048 个 token 进入注意力计算。Key 只有一个，64 个 head 共用，所以每个 token 只需要存 128 个数。
 
 <IndexerViz client:visible />
 
 存下来的 index key 不会再变。每一步新算的只有 query 和权重。所以同一个 token 可能这一步分数高，下一步分数低。
+
+和注意力相比，indexer 轻在两处。它没有 value，也不做 softmax，因为它只需要给每个 token 一个分数。它为每个 token 只读 128 个数。
 
 ### 显存限制
 

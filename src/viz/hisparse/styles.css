@@ -413,6 +413,60 @@
   }
 }
 
+/* ---------------- QueryBuildViz ---------------- */
+
+.hsp-pop {
+  animation: hsp-mx-pop 0.4s ease both;
+}
+
+.hsp-qb-bar {
+  stroke-width: 1.2;
+}
+
+.hsp-qb-bar.hidden {
+  fill: var(--grid);
+  stroke: var(--axis);
+}
+
+.hsp-qb-bar.compressed {
+  fill: color-mix(in srgb, var(--series-1) 30%, transparent);
+  stroke: var(--series-1);
+}
+
+.hsp-qb-bar.query {
+  fill: color-mix(in srgb, var(--series-1) 62%, transparent);
+  stroke: var(--series-1);
+}
+
+.hsp-qb-main {
+  fill: none;
+  stroke: var(--axis);
+  stroke-dasharray: 4 3;
+}
+
+.hsp-qb-main-text {
+  fill: var(--muted);
+  font-size: 11px;
+}
+
+.hsp-qb-box-text {
+  fill: var(--ink);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.hsp-qb-zoom {
+  fill: none;
+  stroke: var(--axis);
+  stroke-dasharray: 3 3;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hsp-pop {
+    animation: none;
+  }
+}
+
 /* ---------------- IndexerViz:矩阵走查 ---------------- */
 
 .hsp-mx-cell text {

@@ -38,6 +38,50 @@ export const CONC = {
   hisparse: { zh: "HiSparse", en: "HiSparse" },
 } satisfies Record<string, Localized>;
 
+/* ---------------- QueryBuildViz ---------------- */
+
+export const QBUILD = {
+  title: { zh: "Query 的来历", en: "Where the queries come from" },
+  subtitle: {
+    zh: "DeepSeek-V3.2 的实际维度 · 条的长度按维度比例画",
+    en: "Real sizes in DeepSeek-V3.2 · bar lengths are proportional to dimensions",
+  },
+  hidden: { zh: "当前 token 的隐状态", en: "Current token's hidden state" },
+  compress: { zh: "压缩", en: "compress" },
+  compressed: { zh: "压缩后的 query", en: "Compressed query" },
+  main: {
+    zh: "主注意力自己的 query：128 个 head，每个 192 维",
+    en: "Attention's own queries: 128 heads, 192 dimensions each",
+  },
+  query: { zh: "Indexer 的 query", en: "Indexer queries" },
+} satisfies Record<string, Localized>;
+
+export const QBUILD_PHASES: Localized[] = [
+  { zh: "压缩", en: "Compress" },
+  { zh: "展开", en: "Expand" },
+  { zh: "切开", en: "Cut" },
+];
+
+/** t = 0..3 的说明 */
+export const QBUILD_STEPS: Localized[] = [
+  {
+    zh: "一切从当前 token 的隐状态开始，一共 7168 维。",
+    en: "Everything starts from the current token's hidden state, which has 7,168 dimensions.",
+  },
+  {
+    zh: "注意力先把隐状态压缩成 1536 维。这是它算自己的 query 的前半步，有没有 indexer 都要做。",
+    en: "Attention first compresses the hidden state to 1,536 dimensions. This is the first half of building its own queries, with or without an indexer.",
+  },
+  {
+    zh: "同一个 1536 维向量用了两次。主注意力把它展开成自己的 query。Indexer 用自己的矩阵 W_Q 把它展开成 8192 维。",
+    en: "The same 1,536-dimensional vector is used twice. Attention expands it into its own queries. The indexer expands it to 8,192 dimensions with its own matrix W_Q.",
+  },
+  {
+    zh: "8192 = 64 × 128。W_Q 是 64 个小矩阵叠在一起，每个算出一个 head 的 128 维 query。切开只是把这 64 个 query 分给各自的 head。",
+    en: "8,192 = 64 × 128. W_Q is 64 small matrices stacked together, and each one produces one head's 128-dimensional query. Cutting only hands the 64 queries to their heads.",
+  },
+];
+
 /* ---------------- IndexerViz ---------------- */
 
 export const INDEXER = {
