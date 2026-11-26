@@ -98,10 +98,6 @@ Swap-in 在每个解码步都要执行，所以它的延迟很关键。SGLang �
 
 <MissPolicyViz client:visible />
 
-### Prefill-decode 分离
-
-SGLang 可以把 prefill 和 decode 放在不同的实例上。HiSparse 作用在 decode 实例。Prefill 实例把 KV 直接发进 decode 实例的 CPU 内存。Decode 侧的 GPU 从头到尾不用装下完整 KV，传输期间也不用。Prefill 实例不需要任何改动。
-
 ## 结果
 
 第二组 benchmark 在 GLM-5.1-FP8 上遍历不同的输入和输出长度。六组配置下，HiSparse 的生成吞吐是 1,720 到 2,320 tokens/s。Baseline 是 352 到 752 tokens/s。上下文越长差距越大。最短的一组配置是 3.1 倍，输入 40K、输出 20K 时超过 5 倍。

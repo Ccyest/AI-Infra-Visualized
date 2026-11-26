@@ -168,13 +168,6 @@ less than FIFO and random eviction.
 
 <MissPolicyViz client:visible lang="en" />
 
-### Prefill-decode disaggregation
-
-SGLang can run prefill and decode on separate instances. HiSparse works on the
-decode instance. The prefill instance sends its KV directly into the CPU memory
-of the decode instance. The decode GPU never holds the full KV, not even during
-the transfer. The prefill instance needs no change.
-
 ## Results
 
 The second benchmark sweeps input and output lengths on GLM-5.1-FP8. HiSparse
