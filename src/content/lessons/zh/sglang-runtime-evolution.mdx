@@ -1,6 +1,6 @@
 ---
-title: "SGLang 的缓存如何为 agent 演进：同样的 GPU 放下 4.7× 的长上下文请求，prefill 快 1.70×"
-description: "一个 coding agent 把一项任务拆成几十次相互关联的模型调用，推理服务端收到的却是一条条独立的请求。从 2024 年起，SGLang 一直在 runtime 里把这部分丢失的结构找回来。本文基于 Ying Sheng 在 MIT 的讲座梳理这段演进：最初的 RadixAttention 设计，混合模型和多级内存如何重塑缓存，以及 agent session 仍然需要声明什么。今天 SGLang 能在 full-attention、sliding-window 和 recurrent 三种层上复用前缀。Unified Memory 让同样的 GPU 放下 **4.7×** 的长上下文请求，breakable CUDA graph 让 prefill 快 **1.70×**，亲和路由在 agentic RL 中达到约 **96%** 的缓存命中率。"
+title: "SGLang runtime 的演进：同样的 GPU 放下 4.7× 的长上下文请求，prefill 快 1.70×"
+description: "SGLang 在 2024 年以一门前端语言加一个 runtime 的形式出现，用来执行结构化的 LLM 程序。此后模型、内存和负载都变了，runtime 也跟着变。本文基于 Ying Sheng 在 MIT 的讲座，分四部分梳理这段演进：原始设计，为混合模型和多级内存重做的缓存，执行路径，以及 agent 和 RL 负载。有一个问题贯穿这四部分：哪些信息 runtime 可以自己推断，哪些必须由应用声明？今天，Unified Memory 让同样的 GPU 放下 **4.7×** 的长上下文请求，breakable CUDA graph 让 prefill 快 **1.70×**，亲和路由在 agentic RL 中达到约 **96%** 的缓存命中率。"
 publishedDate: "2026-11-26"
 order: 11
 concepts: []
@@ -14,6 +14,8 @@ references:
     url: "https://www.lmsys.org/blog/2025-09-10-sglang-hicache/"
   - label: "LMSYS Blog：HiSparse: Turbocharging Sparse Attention with Hierarchical Memory"
     url: "https://www.lmsys.org/blog/2026-04-10-sglang-hisparse/"
+  - label: "LMSYS Blog：Advanced CUDA Graph Techniques in SGLang"
+    url: "https://www.lmsys.org/blog/2026-08-17-advanced-cuda-graph/"
   - label: "sglang#2771：Host memory pool for hierarchical caching"
     url: "https://github.com/sgl-project/sglang/pull/2771"
   - label: "sglang#6563：Hybrid kv cache for LLaMA4"
@@ -32,140 +34,317 @@ references:
 
 import ProgramViz from "../../../viz/sglang-runtime-evolution/ProgramViz";
 import ForkHintViz from "../../../viz/sglang-runtime-evolution/ForkHintViz";
+import PageShareViz from "../../../viz/sglang-runtime-evolution/PageShareViz";
 import RadixTreeViz from "../../../viz/sglang-runtime-evolution/RadixTreeViz";
 import ScheduleViz from "../../../viz/sglang-runtime-evolution/ScheduleViz";
 import JumpForwardViz from "../../../viz/sglang-runtime-evolution/JumpForwardViz";
 import TimelineViz from "../../../viz/sglang-runtime-evolution/TimelineViz";
+import WindowViz from "../../../viz/sglang-runtime-evolution/WindowViz";
+import CheckpointViz from "../../../viz/sglang-runtime-evolution/CheckpointViz";
+import StateCopyViz from "../../../viz/sglang-runtime-evolution/StateCopyViz";
 import ResumePointViz from "../../../viz/sglang-runtime-evolution/ResumePointViz";
+import LockViz from "../../../viz/sglang-runtime-evolution/LockViz";
+import ShareViz from "../../../viz/sglang-runtime-evolution/ShareViz";
 import PoolSplitViz from "../../../viz/sglang-runtime-evolution/PoolSplitViz";
+import CompactionViz from "../../../viz/sglang-runtime-evolution/CompactionViz";
+import DeferredFreeViz from "../../../viz/sglang-runtime-evolution/DeferredFreeViz";
+import TierViz from "../../../viz/sglang-runtime-evolution/TierViz";
+import BackupViz from "../../../viz/sglang-runtime-evolution/BackupViz";
 import RestoreViz from "../../../viz/sglang-runtime-evolution/RestoreViz";
+import HideTransferViz from "../../../viz/sglang-runtime-evolution/HideTransferViz";
+import SparseViz from "../../../viz/sglang-runtime-evolution/SparseViz";
+import HitTtftViz from "../../../viz/sglang-runtime-evolution/HitTtftViz";
 import OverlapViz from "../../../viz/sglang-runtime-evolution/OverlapViz";
+import FutureSlotViz from "../../../viz/sglang-runtime-evolution/FutureSlotViz";
 import SessionViz from "../../../viz/sglang-runtime-evolution/SessionViz";
+import WeightsViz from "../../../viz/sglang-runtime-evolution/WeightsViz";
+import AffinityViz from "../../../viz/sglang-runtime-evolution/AffinityViz";
+import RouterIndexViz from "../../../viz/sglang-runtime-evolution/RouterIndexViz";
 import RouterViz from "../../../viz/sglang-runtime-evolution/RouterViz";
+import TokenizeViz from "../../../viz/sglang-runtime-evolution/TokenizeViz";
+import PdViz from "../../../viz/sglang-runtime-evolution/PdViz";
 import DeclareViz from "../../../viz/sglang-runtime-evolution/DeclareViz";
 
-本文改编自 Ying Sheng 在 MIT 6.S979 的讲座 *SGLang: The Evolution of an LLM Runtime*（2026 年 11 月 18 日）。
+本文改编自 Ying Sheng 在 MIT 6.S979 的讲座 *SGLang: The Evolution of an LLM Runtime*（2026 年 11 月 18 日）。讲座沿着缓存系统来梳理 runtime 的演进，因为缓存能把每个设计决策讲得很具体。
 
 ## 背景
 
-Coding agent 不是一项任务只发一次请求。在包含 393 个 Claude Code session 的 AgentX trace 里，session 的中位数是 43 轮。中位数的一轮里，每输出 1 个 token 要输入 320 个 token，44% 的 session 会 fork 出 subagent。每一轮都把整段历史重发一遍，各个分支又从同一段共享上下文出发。
+一项 coding 任务是一个程序，而不是一次请求。在包含 393 个 Claude Code session 的 AgentX trace 里，session 的中位数是 43 轮。中位数的一轮里，每输出 1 个 token 要输入 320 个 token，44% 的 session 会 fork 出 subagent。一项任务对应许多次模型调用，这些调用彼此相关。每一轮都把历史重发一遍，各个分支又从同一段共享上下文出发。
 
-应用清楚这些调用之间的关系，服务端并不清楚。它收到的是一条条独立的请求，每条都带着完整的历史。本文从头到尾用同一个例子：agent 先读完一个仓库，再分叉成 Fix bug（两轮）和 Write tests。
+应用清楚这些调用之间的关系，请求流里却看不出来。本文从头到尾用同一个例子：agent 先读完一个仓库，再分叉成 Fix bug（两轮）和 Write tests。服务端收到的是三条请求，每条都带着完整的历史。
 
 <ProgramViz client:visible />
 
-共享前缀可以通过比较 token 找回来。另一些事实不在 token 里：哪些分支马上要来，输出必须长什么样，一个 session 是否已经结束。下面几节讲 SGLang 如何处理这两类信息。
+SGLang 背后的想法是：程序结构是一种可以用来优化的资源。其中一部分结构能从 token 里看出来，其余的必须声明。
+
+- **共享前缀**在 token 里。Runtime 可以把它们找出来并复用状态。
+- **即将到来的分支**，应用事先就知道。声明之后，共享的部分只需要计算一次。
+- **Session 和权重更新**完全不在 token 里。它们必须被声明，runtime 才知道状态该保留、丢弃还是刷新。
+
+下面四个部分讲的，就是“推断”和“声明”之间这条分界线如何移动。
 
 ## 原始设计
 
-2024 年的 SGLang 论文把一门前端语言和一个 runtime 配在一起。前端声明程序的结构，runtime 自己找出共享前缀。
+找出共享前缀有两种办法。一种是前端声明分支，由程序说明哪些请求共享上下文。另一种是 runtime 拿收到的 token 前缀去匹配缓存。2024 年的 SGLang 论文把两者结合了起来。
 
-### Fork
+### 前端
 
-在前端里，`s.fork(2)` 从同一个状态创建两个 prompt 分支。两个请求都还没发出时，前端就已经知道这两个分支。它先把共享上下文发出去，runtime 只计算一次，两个分支都复用它。
+在 SGLang 的前端里，一个 prompt 就是一个状态 `s`。`fork` 从同一个位置创建多个分支，`gen` 为每个分支请求一次生成。
+
+```python
+s += shared_context
+branches = s.fork(2)
+branches[0] += "Fix bug"
+branches[1] += "Write tests"
+for b in branches:
+    b += gen("result")
+```
+
+两个请求都还没发出时，前端就已经知道这次 fork。它把这一点当作提示，先把共享上下文发出去。Runtime 只计算一次，两个分支都复用它。没有这个提示，后到的请求仍然能命中缓存。区别在于时机。
 
 <ForkHintViz client:visible />
 
 ### RadixAttention
 
-KV 保存起来很贵，重算也很贵。以一个 32 层、8 个 KV head、每个 head 128 维、BF16 的模型为例，一个 token 的 KV 占 128 KiB，32K token 的上下文占 4 GiB。
+管理 KV 包含三件相互独立的事。分配决定 KV 放在 GPU 显存的什么位置，这是 PagedAttention 做的事。前缀索引回答哪段前缀已经在缓存里，这是 RadixAttention 做的事。搬运负责让 KV 在 GPU、主机内存和存储之间移动，它要到后面的 HiCache 才出现。
 
-RadixAttention 把缓存的前缀存在一棵 radix tree 里。每个节点存一段 token、这段 token 的 KV 页号，以及一个锁计数。新请求从根开始走树，一直复用 KV 到第一个不同的 token 为止。一个 token 的 KV 依赖它前面的所有 token，所以这个位置之后的内容都不能复用，即使文本完全相同。
+复用之所以重要，是因为 KV 很贵。以一个 32 层、8 个 KV head、每个 head 128 维、BF16 的模型为例，一个 token 的 KV 占 128 KiB，32K token 的上下文占 4 GiB。有了前缀索引，共享的前缀只存一份，各个请求指向同一批页。
 
-运行中的请求会把自己路径上每个节点的锁计数加一。驱逐只会移除没有加锁的叶子，所以共享前缀会比它下面的分支留得更久。
+<PageShareViz client:visible />
+
+RadixAttention 把缓存的前缀存在一棵 radix tree 里。每个节点存一段 token、这段 token 的 KV 页号，以及一个锁计数。新请求从根开始走树，一直复用 KV 到第一个不同的 token 为止。匹配长度会向下取整到整页。一个 token 的 KV 依赖它前面的所有 token，所以第一个不同处之后的内容都不能复用，即使文本完全相同。
+
+运行中的请求会把自己路径上每个节点的锁计数加一。节点只有在计数为 0 时才能被驱逐，而且驱逐先从没有加锁的叶子开始。因此共享前缀会比它下面的分支留得更久。
 
 <RadixTreeViz client:visible />
 
 ### 调度
 
-请求的顺序决定缓存能省下多少 prefill。两对相关的请求交替服务，要计算 24 个 token。按前缀分组后只要 16 个。对离线的一批请求，按深度优先的顺序走树，每个节点的 token 恰好只算一次，这就是最小值。放到上面的例子里，是 4 + 2 + 1 + 3 = 10 个 token。
+请求的顺序决定缓存能省下多少 prefill。假设缓存能放 6 个 token，有两对请求，每对共享 4 个 token 的前缀。在两对之间交替服务，要计算 24 个 token。按前缀分组后只要 16 个。对离线的一批请求，按深度优先的顺序走树就能得到最小值。每个节点的 token 只算一次，放到本文的例子里是 4 + 2 + 1 + 3 = 10 个 token。
 
-在线服务要为此付出代价。最长前缀优先（`--schedule-policy lpm`）会把没有缓存的请求排到队尾。SGLang 现在默认按到达顺序服务，`lpm` 需要手动开启。当队列里两个请求共享一段还没缓存的前缀时，缓存感知的策略还可以让其中一个延后一个批次。第一个请求把前缀放进缓存，第二个直接复用。
+在线服务要为此付出代价。最长前缀优先会把没有缓存的请求排到队尾。调度器也能在没有前端的情况下发现 fork。当队列里两个请求共享一段还没有任何请求缓存过的前缀时，它让其中一个延后一个批次。第一个请求把前缀放进缓存，第二个直接复用。
 
 <ScheduleViz client:visible />
 
+今天实际发布的行为更保守。默认是先到先服务，缓存感知的规则需要用 `--schedule-policy lpm` 手动开启。延后的阈值是 32 个 token。等待的请求超过 128 个时，调度器退回到按到达顺序服务，因为对每个等待的请求做匹配和排序的开销太大。
+
 ### 结构化输出
 
-Schema 是输出一侧的结构。在 `{"summary": "...", "grade": "A"}` 里，字段名和标点是固定的，只有值由模型决定。原始设计加入了 jump-forward：当语法只允许一种字符串时，一步把它追加进去，不再逐 token 解码。这些被定死的 token 仍然需要 KV，所以这一步相当于对它们做一次 prefill。
+共享前缀是输入里的结构，schema 是输出里的结构。在 `{"summary": "...", "grade": "A"}` 里，字段名和标点是固定的语法，只有 summary 的文本和 grade 的取值由模型决定。Schema 限制了哪些 token 可以被采样。
+
+原始设计加入了 jump-forward。当语法只允许一种字符串时，一步把它追加进去，不再逐 token 解码。这些被定死的 token 仍然需要 KV，所以这一步相当于对它们做一次 prefill。Jump-forward 省下的是 forward 次数，不是 KV。
 
 <JumpForwardViz client:visible />
 
-Jump-forward 在 2025 年被移除。由语法后端做 token masking 的方式保留了下来，默认后端是 xgrammar。
+### 回顾
+
+有三类结构可以说明哪里需要声明。
+
+- **共享前缀**：已经在缓存里的前缀靠匹配 token 找到。同时到达的请求必须声明，否则其中一个要等待。
+- **输出约束**：由应用提供 schema 或语法。
+- **Session 生命周期**：Runtime 分辨不出 tool 的停顿是否意味着 session 已经结束。“负载”部分会回到这个问题。
+
+原始设计并没有全部保留下来。
+
+- **保留：自动前缀复用**。它默认开启。现在一棵前缀树同时覆盖 full KV、sliding-window KV 和 recurrent state。
+- **改变：调度和入口**。默认的排队顺序是先到先服务。应用调用的是 OpenAI 兼容的服务端，不再是那门前端语言。
+- **过渡方案：jump-forward**。它在 2025 年被移除。由语法后端做 token masking 的方式保留了下来，默认后端是 xgrammar。
 
 ## 模型与内存
 
-原始设计为每个 token 保存 KV，并且全部放在 GPU 上。这两个假设后来都不成立了。每出现一种新的层类型或一级新的内存，缓存的前缀需要包含的东西就跟着变。
+原始设计为每个 token 保存 KV，并且全部放在 GPU 上。这两个假设现在都不成立了。每出现一种新的层类型或一级新的内存，缓存的前缀必须包含的东西就跟着变。新的层类型起初各有各的缓存，到 2026 年合并成了一个。
 
 <TimelineViz client:visible />
 
-### 恢复点
+每种层类型都要回答同样的五个问题。原始设计只回答了前四个，而且只针对 full attention。
 
-Full attention 为每个 token 保存 KV，所以请求可以从任意一个匹配到的 token 之后恢复。Sliding-window 层只读最近的 token。窗口为 4 个 token 时，从 token N 之后恢复需要 token N−3 到 N 的 KV，更早的 KV 可以驱逐。Recurrent 层把所有 token 折叠进一个状态。这个状态不能回退，所以请求只能从保存过状态副本的位置恢复。状态会随着 token 的处理不断变化，因此每个请求要在自己的副本上继续计算。
+1. **状态**：恢复时必须保留什么？
+2. **恢复点**：请求可以从哪里重新开始？
+3. **保护**：什么被加锁，什么被驱逐？
+4. **内存**：状态放在哪个池里？
+5. **搬运**：离开 GPU 之后它放在哪里？
 
-三种层共用同一棵树。请求从所有层类型都有可用状态的最深位置恢复，其余部分重算。在图里点击 recurrent 一行的某个 token，就可以在那里保存一个状态。这棵树的细节见 [SGLang 里的 Unified Radix Cache](https://yichizhang.dev/AI-Infra-Visualized/lessons/unified-radix-cache/)。
+### Sliding window
+
+Sliding-window 层只看最近的 token，所以只保留最近的 KV。窗口为 4 个 token 时，从 token N 之后恢复需要 token N−3 到 N 的 KV。更早的 KV 可以驱逐。哪些 KV 算“更早”取决于请求，因为匹配 token 数较少的请求需要的是更靠前的窗口。在图里点击某一段，可以驱逐或恢复它。
+
+<WindowViz client:visible />
+
+### Recurrent state
+
+Recurrent 层用一份状态代表所有 token。Full-attention 的 KV 每个 token 一条，所以请求可以从任意一个匹配到的 token 之后恢复。Recurrent state 把 token 折叠在一起，无法回退。请求只能从保存过状态副本的位置恢复，再从那里开始重算。
+
+状态保存在哪里，决定了要重算多少。SGLang 默认在请求结束处和请求分叉处保存。更密的一档还会在每个 prefill chunk 保存一份。保存得越多重算越少，但每一份都是状态的完整副本。
+
+<CheckpointViz client:visible />
+
+Recurrent state 还会随着 token 的处理而变化，所以两个请求不能共用一份。每个请求在匹配到前缀时复制一份保存的状态，然后推进自己的副本。Full-attention 的 KV 是共享的，不需要复制。
+
+<StateCopyViz client:visible />
+
+### 一棵树
+
+混合模型把这几种层类型混在一起，它们都放在同一棵 radix tree 上。同一条路径上的 8 个 token，对 full attention 是 8 条 KV，对 sliding window 是 4 条，对 recurrent 层是 1 份保存的状态。
+
+请求从所有层类型都有可用状态的位置恢复。这是所有层都允许的最深位置，而不是其中某一层能匹配到的最长位置。在图里点击 recurrent 一行的某个 token，就可以在那里保存一个状态。
 
 <ResumePointViz client:visible />
 
+保护的方式也同样各不相同。运行中的请求对 full attention 需要整条路径，对 sliding-window 层需要一个窗口，对 recurrent 层需要一份状态。驱逐某个节点的 full KV 时，会连带驱逐它的 window KV 和 recurrent state，反过来则不会。这棵树的细节见 [SGLang 里的 Unified Radix Cache](https://yichizhang.dev/AI-Infra-Visualized/lessons/unified-radix-cache/)。
+
+<LockViz client:visible />
+
 ### Unified memory
 
-每种层类型最初都有自己的内存池，大小在启动时定好。需求却随负载变化。Reflection Beam 是一个混合注意力模型，默认切分把 80% 的 KV 内存给了 window KV。而输入约 60K token 的 agent 流量只需要 9%。结果是 full-attention 池用光了，window 池还闲着。
+每种新的层类型都带来了自己的内存池，大小在启动时定好。各类状态需要的内存不一样，需求还会随负载变化。Full KV 随保留的上下文增长。Window KV 取决于窗口大小和活跃的分支数。Recurrent state 取决于运行中的请求数和保存的状态数。Reflection Beam 是一个混合注意力模型，在它上面，上下文越长，window KV 需要的占比越小。
+
+<ShareViz client:visible />
+
+默认切分把 80% 的 KV 内存给了 window KV，而 agent 流量只需要 9%。上下文很长时，full-attention 池用光了，window 池还闲着。
 
 <PoolSplitViz client:visible />
 
-Unified Memory（`--enable-unified-memory`）把所有 KV 池和状态池放进同一个 arena。空闲的页谁需要就给谁。在 4× B300 上，Reflection Beam 能同时放下的长上下文请求数是原来的 4.7×。在 64 个 session 的 agent 回放中，TTFT 中位数从 688 ms 降到 462 ms，前缀缓存命中率从 87% 升到 95%。分配器的细节见 [SGLang 里的 Unified Memory](https://yichizhang.dev/AI-Infra-Visualized/lessons/unified-memory/)。
+Unified Memory（`--enable-unified-memory`）用一个 arena 取代固定切分。Full-attention KV、window KV、recurrent state 和 draft 模型的 KV 都共用它，空闲的页谁需要就给谁。在 4× B300 上，Reflection Beam 能同时放下的长上下文请求数是默认切分的 4.7×。在 64 个 session 的 agent 回放中，TTFT 中位数从 688 ms 降到 462 ms，前缀缓存命中率从 87% 升到 95%。
+
+多个池共用一个 arena，空闲空间会变得零碎，所以页需要能搬动。请求持有的是页号，页表把页号映射到物理 slot。搬动一页时，runtime 复制它的数据，再改掉页表里的一项。请求全程察觉不到这次搬动。
+
+<CompactionViz client:visible />
+
+旧的 slot 不能马上复用，已结束请求的 slot 也一样。在 overlap 调度下，CPU 释放一个已结束的请求时，GPU 上可能还有一次 forward 在运行，并且仍然会读这些 slot。因此释放被拆成两个阶段。页号立即空闲，物理 slot 要等这次 forward 结束才释放。分配器的细节见 [SGLang 里的 Unified Memory](https://yichizhang.dev/AI-Infra-Visualized/lessons/unified-memory/)。
+
+<DeferredFreeViz client:visible />
 
 ### HiCache
 
-缓存的状态也超出了 GPU 的容量。HiCache 把被驱逐的状态存到主机内存和共享存储里，命中时再加载回来。在 Inkling-Small 和 8× H200 上，加一层 500 GiB 的存储后，有效输入吞吐从 15.5K 提升到 67.1K tokens/s。
+缓存的状态在 GPU 上已经放不下了。HiCache 把被驱逐的状态存到主机内存和可选的共享存储里，命中时再加载回来。在 Inkling-Small、8× H200、500 GiB 存储层的配置下，有效输入吞吐从只用 GPU 缓存时的 15.5K tokens/s 提升到 67.1K。
 
-命中的数据如果不在 GPU 上，就需要一次传输，而传输不一定划算。以 50 GiB/s 的速度恢复 1 GiB 的 KV，加上 2 ms 的固定开销，需要 22 ms。如果重算要 35 ms，恢复更快。如果重算只要 12 ms，重算更快。SGLang 默认对少于 10 个 token 的主机内存命中直接重算，对少于 256 个 token 的存储命中不做预取。
+GPU 和主机内存由同一份索引覆盖，存储则按需查询。Attention 只从 GPU 显存读取，所以命中在更下层时要先做传输。命中得越深，请求运行前要做的拷贝越多。
+
+<TierViz client:visible />
+
+每种层类型的备份方式不同，只有 full-attention 的拷贝量随节点长度增长。恢复时，recurrent state 只能恢复到备份过的位置，后面的 token 要重算。
+
+<BackupViz client:visible />
+
+传输并不总是划算。以 50 GiB/s 的速度恢复 1 GiB 的 KV，加上 2 ms 的固定开销，需要 22 ms。如果重算要 35 ms，恢复更快。如果重算只要 12 ms，重算更快。SGLang 默认对少于 10 个 token 的主机内存命中直接重算，对少于 256 个 token 的存储命中不做预取。
 
 <RestoreViz client:visible />
 
-SGLang 还会在请求排队时就开始传输，请求等待拷贝的时间因此更短。分层和传输的细节见 [SGLang 里的 HiCache](https://yichizhang.dev/AI-Infra-Visualized/lessons/hicache/)。
+当恢复确实划算时，SGLang 把它藏进请求本来就要花的时间里。请求还在排队时，就开始从存储预取。加载和计算也做成流水线，每一层的计算只等自己这一层的加载。拷贝仍然发生，但请求不再为它等待。
 
-稀疏注意力又多出一种情况。稀疏层每一步只读少数几条 KV。HiSparse 把完整的 KV 放在主机内存里，GPU 上只留被选中的条目，腾出的显存可以用来放更大的 decode batch。用 GLM-5.1-FP8 在一台 8× H200 服务器上测试，256 并发时 decode 吞吐提升到 3× 以上。并发较低时，换入的开销可能反而拖慢速度。详见 [SGLang 里的 HiSparse](https://yichizhang.dev/AI-Infra-Visualized/lessons/hisparse/)。
+<HideTransferViz client:visible />
+
+状态放进共享存储之后，还多出一个问题：用什么来标识它？只有下面三项都和读取方一致，一页才能复用。
+
+- **输入身份**：token id、位置，以及其他附加的模型输入。
+- **模型身份**：权重、adapter，以及兼容的模型配置。
+- **存储格式**：状态类型、dtype、布局，以及 GPU 分片方式。
+
+Token 匹配看不到模型身份，RL 一节会回到这个问题。分层和传输的细节见 [SGLang 里的 HiCache](https://yichizhang.dev/AI-Infra-Visualized/lessons/hicache/)。
+
+### 稀疏注意力
+
+稀疏注意力每一步只读少数几条 KV，但只用 GPU 的缓存仍然保存着完整的上下文。HiSparse 把完整的 KV 放在主机内存里，GPU 上只留被选中的条目。每个 decode 步里，只有被选中但未命中的条目需要从主机内存搬到 GPU。
+
+<SparseViz client:visible />
+
+腾出的显存可以放下更大的 decode batch。用 GLM-5.1-FP8 在一台 8× H200 服务器上测试，256 并发、输入 32K、输出 8K tokens 时，decode 吞吐提升到 3× 以上。并发较低时，换入的开销可能反而拖慢速度。详见 [SGLang 里的 HiSparse](https://yichizhang.dev/AI-Infra-Visualized/lessons/hisparse/)。
+
+### 各层类型的答案
+
+| | Full attention | Sliding window | Recurrent state |
+| --- | --- | --- | --- |
+| 状态 | 每个 token 的 KV | 最后一个窗口的 KV | 保存的 recurrent state |
+| 恢复点 | 任意匹配到的 token，向下取整到整页 | 紧挨在它前面有一整窗 KV 的位置 | 最深的已保存状态，其余重算 |
+| 保护 | 锁住到根的整条路径。驱逐未加锁的叶子，连同它的 window KV 和状态 | 锁住跨一个窗口的节点。驱逐更早的 KV，节点保留 | 锁住一个节点。只驱逐状态本身 |
+| 内存 | Full KV 池，随上下文增长 | Window KV 池，上限由窗口决定 | 由固定大小槽位组成的状态池 |
+| 搬运 | 节点的 KV | 一个窗口内的 KV | 一个状态槽位 |
+
+这些新的层类型不需要应用额外提供任何信息。
 
 ## 执行
 
-命中率提高，首 token 时间并不会等比例下降。命中率统计的是跳过了多少 token。TTFT 还包括排队等待，以及匹配前缀、组 batch 这些 CPU 工作，命中并不会缩短它们。前缀命中缓存后，GPU 时间变短，同样的 CPU 时间所占的比例就变大了。
+上一部分让更多状态可以复用。这一部分看的是缓存命中之后剩下的时间。
 
-SGLang 让两者重叠执行。GPU 运行第 N 批时，CPU 同时准备第 N+1 批。第 N+1 批的输入 token 此时还没采样出来，所以 CPU 先指定 GPU 缓冲区里的一个槽位，GPU 之后把 token 填进去。这样每一步的耗时是 max(CPU, GPU)，不再是两者之和。一旦前缀命中让 GPU 这一步比 CPU 这一步还短，节奏就由 CPU 决定。
+### 命中率与 TTFT
+
+命中率提高，首 token 时间并不会等比例下降。命中率数的是 token：复用的 token 数除以输入的 token 数。TTFT 数的是时间：排队等待，匹配前缀和组 batch 的 CPU 工作，以及对新 token 做的 GPU prefill。命中只缩短最后一段。CPU 时间不变，所占的比例变大，于是节奏开始由 CPU 决定。
+
+<HitTtftViz client:visible />
+
+### Overlap 调度
+
+GPU 运行当前这一批时，SGLang 同时准备下一批。每批 CPU 工作 2 ms、GPU 工作 6 ms 时，串行的循环每批要 8 ms。重叠之后每批只要 6 ms，因为 GPU 不再等 CPU。
 
 <OverlapViz client:visible />
 
-剩下的办法是压缩 CPU 工作本身。Breakable CUDA graph 直接回放捕获好的 kernel，不再逐个发起。在 gpt-oss-120b、TP4、4× GB300 上，prefill 比 eager 快 1.70×。Rust 版 radix tree 的原型把 TTFT 最多降低 38%。详见 [SGLang 里的 Breakable CUDA Graph](https://yichizhang.dev/AI-Infra-Visualized/lessons/breakable-cuda-graph/)。
+这里有一个依赖关系挡在中间。第 N+1 批的输入是第 N 批采样出的 token，等它出来就等于放弃了重叠。所以 CPU 不等这个 token。它把 GPU 采样 token 缓冲区里的一个槽位指定为输入，由 GPU 之后把槽位填上。
+
+<FutureSlotViz client:visible />
+
+Overlap 有它的上限。每一步的耗时是 max(CPU, GPU)，而不是两者之和。每批 CPU 8 ms、GPU 6 ms 时，串行的一步要 14 ms，重叠之后要 8 ms，其中 GPU 空闲 2 ms。前缀命中让 GPU 这一步变短，一旦 CPU 这一步更长，节奏就由 CPU 决定。
+
+### 减少 CPU 工作
+
+当 overlap 不够用时，剩下的办法就是压缩 CPU 工作本身。Prefill 很短时，kernel 的发起和树操作占了大头。
+
+Eager 模式的 forward 要从 CPU 逐个发起 kernel。CUDA graph 改为回放捕获好的 kernel，但有些操作无法被捕获。Breakable graph 把这样的操作夹在两段捕获好的图之间运行。先回放 graph A，再运行这个操作并把结果写进一块固定的缓冲区，最后回放 graph B 来读这块缓冲区。在 gpt-oss-120b、TP4、4× GB300 上，prefill 比 eager 快 1.70×。详见 [SGLang 里的 Breakable CUDA Graph](https://yichizhang.dev/AI-Infra-Visualized/lessons/breakable-cuda-graph/)。
+
+Radix tree 的匹配、插入和驱逐操作改在 Rust 里运行，Python 只负责编排缓存。Rust 版树的原型把 TTFT 最多降低 38%。
 
 ## 负载
 
-Agent 和 RL 负载带来了一些光靠 token 匹配回答不了的问题。
+Agent 和 RL 负载带来了两个请求流回答不了的问题。第一个是 session 是否已经结束。一轮结束后还没有新请求到达时，可能是 tool 调用还在运行，也可能是用户已经离开。第二个是缓存的 KV 是否来自当前的权重。权重更新之后，新请求仍然可以逐 token 地匹配上缓存的前缀。两种情况下 token 都一样，所以 runtime 分辨不出自己处在哪一种。
 
 ### Session
 
-运行中的请求会锁住自己的 KV。两轮之间 tool 在运行，此时没有任何请求存在，缓存就认为这个 session 的 KV 没人用。如果另一个请求需要内存，这份 KV 可能被驱逐，下一轮只能把整段历史重算一遍。
+请求运行期间，它的 KV 不能被驱逐。请求一结束，这份 KV 就可以被驱逐了。Tool 运行期间没有任何东西保护这个 session 的 KV，缓存认为它没人用。如果另一个请求需要内存，这份 KV 就被驱逐，下一轮只能为整段历史重新付一次计算的代价。
 
-应用可以告诉 runtime 哪些请求属于同一个 session。开启 `--enable-session-radix-cache` 后，应用在每个请求上带一个 session id，或者调用 `open_session` 和 `close_session`。这样 session 的 KV 会被排到最后才驱逐。Session 关闭或超时后，它的 KV 变回普通缓存。被多个 session 共享的 KV 会一直受保护，直到最后一个 session 结束。
+应用可以告诉 runtime 哪些请求属于同一个 session。开启 `--enable-session-radix-cache` 后，应用给这些轮次带上同一个 session id，或者调用 `open_session` 和 `close_session`。这样 session 的 KV 会被排到最后才驱逐，其他没人用的 KV 先被驱逐。关闭 session 或者超时都会去掉这个标记，这份 KV 变回普通缓存。每个缓存节点都记录着有多少个打开的 session 经过它，所以共享的 KV 会一直受保护，直到最后一个用到它的 session 结束。
 
 <SessionViz client:visible />
 
 ### RL rollout
 
-在 RL 里，权重会在两次 rollout 之间更新。同样的 prompt token 在新权重下会算出不同的 KV，而 token 匹配看不出这个变化。于是由更新权重的调用来做选择。默认情况下它会清空缓存，prompt 用新权重重新计算。保留 KV 更快，但这份 KV 已经过期。
+在 RL 里，新的权重可能让旧的 KV 失效。同样的 prompt token 在新权重下会算出不同的 KV，而 token 匹配看不出这个变化。于是由更新权重的调用来做选择。`flush_cache` 默认为 true，缓存被清空，prompt 用新权重重新计算。保留 KV 更快，但这份 KV 已经过期。`--enable-prefill-weight-versions` 会报告每个 token 的 KV 是由哪一版权重算出来的。
+
+<WeightsViz client:visible />
 
 ### 分布式
 
-有多个引擎时，能否复用取决于请求落到哪里。Miles 是构建在 SGLang 上的 RL 框架，它把一个 session 的所有轮次发到同一个引擎和同一个 DP rank。在一次 GLM-5.2 的 agentic RL 运行中，它报告的前缀缓存命中率约为 96%。
+有多个引擎时，能否复用还取决于请求落到哪里。Miles 是构建在 SGLang 上的 RL 框架，它把一个 session 的各轮发到同一个引擎和同一个 DP rank。DP rank 是一个拥有独立缓存的数据并行副本。在一次 GLM-5.2 的 agentic RL 运行中，Miles 报告的前缀缓存命中率约为 96%。
 
-对一般流量，sgl-router 的 `cache_aware` 策略维护一份索引，记录每段前缀在哪个引擎上。这份索引由各个引擎发出的 KV 事件更新。缓存命中的那条路并不总是最快的。一个排着长队的热引擎，可能比冷引擎完成得更晚，所以负载保护可以否决缓存匹配最优的选择。
+<AffinityViz client:visible />
+
+对一般流量，由 router 记录每段前缀在哪个引擎上。各个引擎持续发出 KV 事件，sgl-router 的 `cache_aware` 策略据此维护一份前缀索引。这个策略需要手动开启，默认策略是 `round_robin`。索引可能过期，因为引擎可能在请求到达之前就驱逐了那段前缀。这时引擎会检查自己的本地状态，然后恢复或者重算。过期的索引只会多花一次重算，不会算出错误的结果。
+
+<RouterIndexViz client:visible />
+
+缓存命中的那条路也并不总是最快的。Router 会比较每个引擎上的排队时间加剩余工作量，负载保护可以否决缓存匹配最优的选择。
 
 <RouterViz client:visible />
 
-有两个细节保证了正确性。第一，索引可能过期，因为引擎可能在请求到达之前就驱逐了那段前缀。引擎会检查自己的本地状态，然后恢复或者重算。过期的索引只会多花时间，不会算出错误的结果。第二，router 只 tokenize 一次，并把 token id 直接转发给引擎（[#28744](https://github.com/sgl-project/sglang/pull/28744)）。这样 router 和引擎匹配的是同一组 id。
+索引要起作用，两边看到的 token 必须相同。如果 router 和引擎各自渲染 chat，模板稍有不同就会差一个 token，匹配到那里就断了。所以 router 只 tokenize 一次，并把 id 直接转发给引擎（[#28744](https://github.com/sgl-project/sglang/pull/28744)）。引擎跳过自己的 tokenizer。
 
-Prefill/decode 分离的部署也遵循同样的思路。开启 `--disaggregation-decode-enable-radix-cache` 后，如果 decode worker 已经持有 384 个输入 token 中 256 个的 KV，它只需要接收缺少的 128 个。
+<TokenizeViz client:visible />
+
+Prefill/decode 分离的部署用同样的复用来减少传输。开启 `--disaggregation-decode-enable-radix-cache` 后，如果 decode worker 已经持有前面那些 token 的 KV，它只需要接收缺少的页。被复用的页会一直加锁到请求完成或失败，所以缺少的页还在传输时，它们不会被驱逐。
+
+<PdViz client:visible />
 
 ## 总结
 
-2024 年，应用声明整个程序。今天，runtime 自己就能在每种层类型、每一级内存上找出共享前缀。应用只需要声明 token 里看不出来的东西：输出 schema，哪些请求属于同一个 session，以及权重什么时候变了。
+Runtime 推断得越来越多，剩下的由应用声明。2024 年，应用声明整个程序。今天，runtime 自己就能在每种层类型里，在 GPU、主机内存和存储上找出共享前缀。应用只需要声明 token 里看不出来的东西：输出 schema，哪些请求属于同一个 session，以及权重什么时候变了。
 
 <DeclareViz client:visible />
+
+### 开放问题
+
+有些提示会有帮助，但应用今天还没有办法声明。
+
+- **预计的 tool 耗时**：暂停中的 session，状态应该留在 GPU 上，搬到主机内存，还是直接释放？
+- **即将发生的 fan-out**：要不要在分支到达之前，先把共享前缀 prefill 一次？
+- **一段前缀再次出现的概率**：哪些状态值得保留，或者值得备份到主机内存？
+- **Deadline**：应该先驱逐哪些状态？今天的请求带的是优先级，不是 deadline。
+
+还有两个问题超出了缓存的范围。现在程序是 agent 写的，runtime 能不能在没有前端的情况下学到它们的结构？当 KV 在多个租户之间共享时，复用会不会通过时间差把一个租户的 prompt 泄露给另一个？

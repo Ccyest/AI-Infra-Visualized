@@ -1,6 +1,6 @@
 ---
-title: "How SGLang's cache evolved for agents: 4.7× as many long-context requests, 1.70× faster prefill"
-description: "A coding agent runs one task as dozens of related model calls, but an inference server receives them as separate requests. Since 2024, SGLang has been recovering that lost structure in its runtime. This article follows the evolution, based on Ying Sheng's MIT lecture: the original RadixAttention design, how hybrid models and memory tiers reshaped the cache, and what agent sessions still have to declare. Today SGLang reuses prefixes across full-attention, sliding-window, and recurrent layers. Unified Memory fits **4.7×** as many long-context requests on the same GPUs, breakable CUDA graphs make prefill **1.70×** faster, and affinity routing reaches about **96%** cache hits in agentic RL."
+title: "How the SGLang runtime evolved: 4.7× as many long-context requests, 1.70× faster prefill"
+description: "SGLang began in 2024 as a frontend language and a runtime for structured LLM programs. Since then models, memory, and workloads have all changed, and the runtime has changed with them. This article follows that evolution in four parts, based on Ying Sheng's MIT lecture: the original design, the cache rework for hybrid models and memory tiers, the execution path, and agent and RL workloads. One question runs through all four: what can the runtime infer, and what must the application declare? Today Unified Memory fits **4.7×** as many long-context requests on the same GPUs, breakable CUDA graphs make prefill **1.70×** faster, and affinity routing reaches about **96%** cache hits in agentic RL."
 publishedDate: "2026-11-26"
 order: 11
 concepts: []
@@ -14,6 +14,8 @@ references:
     url: "https://www.lmsys.org/blog/2025-09-10-sglang-hicache/"
   - label: "LMSYS Blog: HiSparse: Turbocharging Sparse Attention with Hierarchical Memory"
     url: "https://www.lmsys.org/blog/2026-04-10-sglang-hisparse/"
+  - label: "LMSYS Blog: Advanced CUDA Graph Techniques in SGLang"
+    url: "https://www.lmsys.org/blog/2026-08-17-advanced-cuda-graph/"
   - label: "sglang#2771: Host memory pool for hierarchical caching"
     url: "https://github.com/sgl-project/sglang/pull/2771"
   - label: "sglang#6563: Hybrid kv cache for LLaMA4"
@@ -32,140 +34,317 @@ references:
 
 import ProgramViz from "../../../viz/sglang-runtime-evolution/ProgramViz";
 import ForkHintViz from "../../../viz/sglang-runtime-evolution/ForkHintViz";
+import PageShareViz from "../../../viz/sglang-runtime-evolution/PageShareViz";
 import RadixTreeViz from "../../../viz/sglang-runtime-evolution/RadixTreeViz";
 import ScheduleViz from "../../../viz/sglang-runtime-evolution/ScheduleViz";
 import JumpForwardViz from "../../../viz/sglang-runtime-evolution/JumpForwardViz";
 import TimelineViz from "../../../viz/sglang-runtime-evolution/TimelineViz";
+import WindowViz from "../../../viz/sglang-runtime-evolution/WindowViz";
+import CheckpointViz from "../../../viz/sglang-runtime-evolution/CheckpointViz";
+import StateCopyViz from "../../../viz/sglang-runtime-evolution/StateCopyViz";
 import ResumePointViz from "../../../viz/sglang-runtime-evolution/ResumePointViz";
+import LockViz from "../../../viz/sglang-runtime-evolution/LockViz";
+import ShareViz from "../../../viz/sglang-runtime-evolution/ShareViz";
 import PoolSplitViz from "../../../viz/sglang-runtime-evolution/PoolSplitViz";
+import CompactionViz from "../../../viz/sglang-runtime-evolution/CompactionViz";
+import DeferredFreeViz from "../../../viz/sglang-runtime-evolution/DeferredFreeViz";
+import TierViz from "../../../viz/sglang-runtime-evolution/TierViz";
+import BackupViz from "../../../viz/sglang-runtime-evolution/BackupViz";
 import RestoreViz from "../../../viz/sglang-runtime-evolution/RestoreViz";
+import HideTransferViz from "../../../viz/sglang-runtime-evolution/HideTransferViz";
+import SparseViz from "../../../viz/sglang-runtime-evolution/SparseViz";
+import HitTtftViz from "../../../viz/sglang-runtime-evolution/HitTtftViz";
 import OverlapViz from "../../../viz/sglang-runtime-evolution/OverlapViz";
+import FutureSlotViz from "../../../viz/sglang-runtime-evolution/FutureSlotViz";
 import SessionViz from "../../../viz/sglang-runtime-evolution/SessionViz";
+import WeightsViz from "../../../viz/sglang-runtime-evolution/WeightsViz";
+import AffinityViz from "../../../viz/sglang-runtime-evolution/AffinityViz";
+import RouterIndexViz from "../../../viz/sglang-runtime-evolution/RouterIndexViz";
 import RouterViz from "../../../viz/sglang-runtime-evolution/RouterViz";
+import TokenizeViz from "../../../viz/sglang-runtime-evolution/TokenizeViz";
+import PdViz from "../../../viz/sglang-runtime-evolution/PdViz";
 import DeclareViz from "../../../viz/sglang-runtime-evolution/DeclareViz";
 
-Adapted from Ying Sheng's MIT 6.S979 lecture, *SGLang: The Evolution of an LLM Runtime* (November 18, 2026).
+Adapted from Ying Sheng's MIT 6.S979 lecture, *SGLang: The Evolution of an LLM Runtime* (November 18, 2026). The lecture traces the runtime through its cache system, because caching makes each design decision concrete.
 
 ## Background
 
-A coding agent does not send one request per task. In the AgentX trace of 393 Claude Code sessions, the median session has 43 turns. The median turn sends 320 input tokens for every output token, and 44% of sessions fork subagents. Each turn resends the whole history, and branches start from a shared context.
+A coding task is a program, not a request. In the AgentX trace of 393 Claude Code sessions, the median session has 43 turns. The median turn sends 320 input tokens for every output token, and 44% of sessions fork subagents. One task is many model calls, and the calls are related. Each turn resends the history, and branches start from a shared context.
 
-The application knows how these calls relate. The server does not. It receives separate requests, each carrying its full history. This article uses one example throughout: an agent reads a repository, then forks into Fix bug (two turns) and Write tests.
+The application knows how its calls relate. The request stream does not say. This article uses one example throughout: an agent reads a repository, then forks into Fix bug (two turns) and Write tests. The server receives three requests, each with its full history.
 
 <ProgramViz client:visible lang="en" />
 
-Shared prefixes can be recovered by comparing tokens. Other facts are not in the tokens: which branches are about to arrive, what the output must look like, and whether a session is over. The sections below follow how SGLang handles both kinds.
+The idea behind SGLang is that program structure is an optimization resource. Some of that structure is visible in the tokens, and the rest has to be declared.
+
+- **Shared prefixes** are in the tokens. The runtime can find them and reuse state.
+- **Branches about to arrive** are known to the application in advance. Declaring them lets the shared part be computed once.
+- **Sessions and weight updates** are not in the tokens at all. They must be declared, so the runtime knows whether to keep, drop, or refresh state.
+
+The four parts below follow how the line between inferred and declared has moved.
 
 ## The original design
 
-The 2024 SGLang paper paired a frontend language with a runtime. The frontend declared the program's structure. The runtime found shared prefixes on its own.
+There are two ways to find shared prefixes. The frontend can declare the branches, so the program says where requests share context. Or the runtime can match incoming token prefixes against the cache. The 2024 SGLang paper combined both.
 
-### Fork
+### Frontend
 
-In the frontend, `s.fork(2)` creates two prompt branches from the same state. The frontend knows about both branches before either request exists. It sends the shared context first, so the runtime computes it once and both branches reuse it.
+In the SGLang frontend, a prompt is a state `s`. `fork` creates branches from the same point, and `gen` requests a completion for each branch.
+
+```python
+s += shared_context
+branches = s.fork(2)
+branches[0] += "Fix bug"
+branches[1] += "Write tests"
+for b in branches:
+    b += gen("result")
+```
+
+The frontend knows about the fork before either request exists. It uses that as a hint and sends the shared context first. The runtime computes it once, and both branches reuse it. Without the hint, caching still works for requests that arrive later. The difference is timing.
 
 <ForkHintViz client:visible lang="en" />
 
 ### RadixAttention
 
-KV is expensive to keep and to recompute. Take a model with 32 layers, 8 KV heads of 128 dimensions, and BF16 values. One token takes 128 KiB of KV, and a 32K-token context takes 4 GiB.
+Serving KV involves three separate jobs. Allocation decides where KV fits in GPU memory, which is what PagedAttention does. The prefix index answers which prefix is already cached, which is what RadixAttention does. Movement carries KV between GPUs, host memory, and storage. It arrives later, with HiCache.
 
-RadixAttention stores cached prefixes in a radix tree. Each node holds a span of tokens, the page ids of that span's KV, and a lock count. A new request walks the tree from the root and reuses KV up to its first token that differs. A token's KV depends on every token before it, so nothing after that point can be reused, even if the text is identical.
+Reuse matters because KV is expensive. Take a model with 32 layers, 8 KV heads of 128 dimensions, and BF16 values. One token takes 128 KiB of KV, and a 32K-token context takes 4 GiB. With a prefix index, a shared prefix is stored once, and requests point to the same pages.
 
-A running request raises the lock count on every node along its path. Eviction only removes unlocked leaves, so a shared prefix outlives the branches below it.
+<PageShareViz client:visible lang="en" />
+
+RadixAttention stores cached prefixes in a radix tree. Each node holds a span of tokens, the page ids of that span's KV, and a lock count. A new request walks the tree from the root and reuses KV up to its first token that differs. A match is rounded down to whole pages. A token's KV depends on every token before it, so nothing after the first difference can be reused, even if the text is identical.
+
+A running request raises the lock count on every node along its path. A node can be evicted only when its count is 0, and eviction takes unlocked leaves first. A shared prefix therefore outlives the branches below it.
 
 <RadixTreeViz client:visible lang="en" />
 
 ### Scheduling
 
-The order of requests changes how much prefill the cache saves. Serving two pairs of related requests in alternating order computes 24 tokens. Grouping them by prefix computes 16. For an offline batch, a depth-first walk of the tree computes each node's tokens exactly once, which is the minimum. On the example above that is 4 + 2 + 1 + 3 = 10 tokens.
+The order of requests changes how much prefill the cache saves. Take a cache that holds 6 tokens and two pairs of requests, where each pair shares a 4-token prefix. Alternating between the pairs computes 24 tokens. Grouping by prefix computes 16. For an offline batch, a depth-first walk of the tree gives the minimum. Each node's tokens are computed once, which is 4 + 2 + 1 + 3 = 10 tokens on the running example.
 
-Online serving pays for this. Longest-prefix-first (`--schedule-policy lpm`) sends uncached requests to the back of the queue. SGLang's default today is first come, first served, and `lpm` is opt-in. A cache-aware policy can also hold back a request for one batch when it shares an uncached prefix with another request in the queue. The first request caches the prefix, and the second reuses it.
+Online serving pays for this. Longest-prefix-first sends uncached requests to the back of the queue. The scheduler can also find a fork without the frontend. When two queued requests share a prefix that nothing has cached yet, it holds one back for a batch. The first request caches the prefix, and the second reuses it.
 
 <ScheduleViz client:visible lang="en" />
 
+What ships today is more conservative. The default is first come, first served, and the cache-aware rules are opt-in with `--schedule-policy lpm`. The deferral threshold is 32 tokens. Above 128 waiting requests the scheduler falls back to arrival order, because matching and sorting every waiting request costs too much.
+
 ### Structured output
 
-A schema is structure on the output side. In `{"summary": "...", "grade": "A"}`, the field names and punctuation are fixed, and only the values are the model's choice. The original design added jump-forward: when the grammar allows only one string, append it in one step instead of decoding it token by token. The forced tokens still need KV, so that step is a prefill over them.
+A shared prefix is structure in the input. A schema is structure in the output. In `{"summary": "...", "grade": "A"}`, the field names and punctuation are fixed syntax. Only the summary text and the grade are the model's choice. The schema limits which tokens can be sampled.
+
+The original design added jump-forward. When the grammar allows only one string, it is appended in one step instead of being decoded token by token. The forced tokens still need KV, so that step is a prefill over them. Jump-forward saves model passes, not KV.
 
 <JumpForwardViz client:visible lang="en" />
 
-Jump-forward was removed in 2025. Token masking by a grammar backend stayed, with xgrammar as the default.
+### Looking back
+
+Three kinds of structure show where a declaration is needed.
+
+- **Shared prefixes.** Cached prefixes are found by matching tokens. Requests that arrive together must be declared, or one of them waits.
+- **Output constraints.** The application supplies a schema or grammar.
+- **Session lifetime.** The runtime cannot tell whether a tool pause means the session is done. The Workloads part returns to this.
+
+Not all of the original design survived.
+
+- **Stayed: automatic prefix reuse.** It is on by default. One prefix tree now covers full KV, sliding-window KV, and recurrent state.
+- **Changed: scheduling and the entry point.** The default queue order is first come, first served. Applications call an OpenAI-compatible server instead of the frontend language.
+- **Stepping stone: jump-forward.** It was removed in 2025. Token masking by a grammar backend stayed, with xgrammar as the default.
 
 ## Models and memory
 
-The original design kept KV for every token, all on the GPU. Neither assumption held. Each new layer type and memory tier changed what a cached prefix has to contain.
+The original design kept KV for every token, all on the GPU. Neither assumption still holds. Each new layer type and memory tier changed what a cached prefix must hold. New layer types each got their own cache at first, and in 2026 they merged into one.
 
 <TimelineViz client:visible lang="en" />
 
-### Resume point
+Every layer type has to answer the same five questions. The original design answered the first four, for full attention only.
 
-Full attention keeps KV for every token, so a request can resume after any matched token. A sliding-window layer reads only recent tokens. With a 4-token window, resuming after token N needs KV for tokens N−3 to N, and older KV can be evicted. A recurrent layer folds all tokens into one state. The state cannot be rolled back, so a request can only resume where a copy of the state was saved. Each request then works on its own copy, because the state changes as tokens are processed.
+1. **State.** What must be kept to resume?
+2. **Resume point.** Where can a request restart?
+3. **Protection.** What is locked, and what is evicted?
+4. **Memory.** Which pool holds the state?
+5. **Movement.** Where does it live beyond the GPU?
 
-One tree serves all three. A request resumes at the deepest token where every layer type has usable state, and recomputes the rest. In the figure, click a token in the recurrent row to save a state there. [Unified Radix Cache in SGLang](https://yichizhang.dev/AI-Infra-Visualized/en/lessons/unified-radix-cache/) covers the tree in detail.
+### Sliding window
+
+A sliding-window layer attends only to recent tokens, so it keeps only recent KV. With a 4-token window, resuming after token N needs KV for tokens N−3 to N. Older KV can be evicted. Which KV counts as old depends on the request, because a request that matches fewer tokens needs an earlier window. In the figure, click a block to evict or restore it.
+
+<WindowViz client:visible lang="en" />
+
+### Recurrent state
+
+A recurrent layer keeps one state for all tokens. Full-attention KV has one entry per token, so a request can resume after any matched token. A recurrent state folds the tokens together and cannot be rolled back. A request can only resume where a copy of the state was saved, and it recomputes from there.
+
+Where states are saved decides how much is recomputed. By default SGLang saves them at request ends and where requests diverge. A denser level also saves one per prefill chunk. More saved states mean less recompute, but each one is a full copy of the state.
+
+<CheckpointViz client:visible lang="en" />
+
+A recurrent state also changes as tokens are processed, so two requests cannot share one. Each request copies the saved state when it matches the prefix, and then advances its own copy. Full-attention KV is shared, not copied.
+
+<StateCopyViz client:visible lang="en" />
+
+### One tree
+
+A hybrid model mixes these layer types, and all of them live on one radix tree. The same 8 tokens on one tree path mean 8 KV entries for full attention, 4 for a sliding window, and 1 saved state for a recurrent layer.
+
+A request resumes where every layer type has usable state. That is the deepest position all of them allow, not the longest match of any single one. In the figure, click a token in the recurrent row to save a state there.
 
 <ResumePointViz client:visible lang="en" />
 
+Protection differs in the same way. A running request needs the whole path for full attention, one window for a sliding-window layer, and one state for a recurrent layer. Evicting full KV on a node also evicts its window KV and recurrent state, but not the other way round. [Unified Radix Cache in SGLang](https://yichizhang.dev/AI-Infra-Visualized/en/lessons/unified-radix-cache/) covers the tree in detail.
+
+<LockViz client:visible lang="en" />
+
 ### Unified memory
 
-Each layer type first got its own memory pool, sized at startup. Demand shifts with the workload. On Reflection Beam, a hybrid-attention model, the default split gives window KV 80% of KV memory. Agent traffic with about 60K input tokens needs 9%. The full-attention pool runs out while the window pool sits idle.
+Every new layer type brought its own memory pool, sized at startup. Each state type needs a different amount of memory, and demand shifts with the workload. Full KV grows with the retained context. Window KV depends on the window size and the active branches. Recurrent state depends on the running requests and the saved states. On Reflection Beam, a hybrid-attention model, longer contexts need a smaller share for window KV.
+
+<ShareViz client:visible lang="en" />
+
+The default split gives window KV 80% of KV memory, and agent traffic needs 9%. With long contexts, the full-attention pool runs out while the window pool sits idle.
 
 <PoolSplitViz client:visible lang="en" />
 
-Unified Memory (`--enable-unified-memory`) puts every KV and state pool in one arena. Free pages go to whichever pool needs them. On 4× B300, Reflection Beam fits 4.7× as many concurrent long-context requests. In a 64-session agent replay, median TTFT falls from 688 ms to 462 ms, and the prefix-cache hit rate rises from 87% to 95%. See [Unified Memory in SGLang](https://yichizhang.dev/AI-Infra-Visualized/en/lessons/unified-memory/) for the allocator.
+Unified Memory (`--enable-unified-memory`) replaces the fixed splits with one arena. Full-attention KV, window KV, recurrent state, and draft-model KV all share it, and free pages serve whichever pool needs them. On 4× B300, Reflection Beam fits 4.7× as many concurrent long-context requests as with the default split. In a 64-session agent replay, median TTFT falls from 688 ms to 462 ms, and the prefix-cache hit rate rises from 87% to 95%.
+
+Pools that share one arena fragment its free space, so pages have to move. A request holds a page id, and a page table maps the id to a physical slot. To move a page, the runtime copies its data and changes one table entry. The request never sees the move.
+
+<CompactionViz client:visible lang="en" />
+
+The old slot cannot be reused right away, and neither can the slots of a finished request. With overlap scheduling, the CPU frees a finished request while a GPU forward is still running and may still read those slots. Freeing is therefore split into two stages. The page id is free at once, and the physical slot waits until the forward ends. [Unified Memory in SGLang](https://yichizhang.dev/AI-Infra-Visualized/en/lessons/unified-memory/) covers the allocator.
+
+<DeferredFreeViz client:visible lang="en" />
 
 ### HiCache
 
-Cached state also outgrew the GPU. HiCache keeps evicted state in host memory and shared storage, and loads it back on a hit. On Inkling-Small with 8× H200, a 500 GiB storage tier raises effective input throughput from 15.5K to 67.1K tokens/s.
+Cached state no longer fits on the GPU. HiCache keeps evicted state in host memory and in optional shared storage, and loads it back on a hit. On Inkling-Small with 8× H200 and a 500 GiB storage tier, effective input throughput rises from 15.5K tokens/s with the GPU cache alone to 67.1K.
 
-A hit below the GPU needs a transfer, and a transfer is not always worth it. Restoring 1 GiB of KV at 50 GiB/s with a 2 ms fixed cost takes 22 ms. If recomputing takes 35 ms, restoring wins. If it takes 12 ms, recomputing wins. By default SGLang recomputes host hits under 10 tokens and skips storage prefetches under 256.
+One index covers GPU and host memory, and storage is queried on demand. Attention reads only from GPU memory, so a hit lower down needs a transfer first. The deeper the hit, the more copies before the request can run.
+
+<TierViz client:visible lang="en" />
+
+Each layer type is backed up differently, and only the full-attention copy grows with the node. On restore, a recurrent state comes back only where one was backed up, and later tokens are recomputed.
+
+<BackupViz client:visible lang="en" />
+
+A transfer is not always worth it. Restoring 1 GiB of KV at 50 GiB/s with a 2 ms fixed cost takes 22 ms. If recomputing takes 35 ms, restoring wins. If it takes 12 ms, recomputing wins. By default SGLang recomputes host hits under 10 tokens and skips storage prefetches under 256.
 
 <RestoreViz client:visible lang="en" />
 
-SGLang also starts the transfer while the request is still queued, so the request waits less for the copy. See [HiCache in SGLang](https://yichizhang.dev/AI-Infra-Visualized/en/lessons/hicache/) for the tiers and transfers.
+When a restore is worth it, SGLang hides it in time the request already spends. It prefetches from storage while the request waits in the queue. It also pipelines the load with the compute, so each layer's compute waits only for its own layer's load. The copy still happens, but the request no longer waits for it.
 
-Sparse attention adds one more case. A sparse layer reads only a few KV entries per step. HiSparse keeps the full KV in host memory and only the selected entries on the GPU, which frees GPU memory for larger decode batches. With GLM-5.1-FP8 on one 8× H200 server, decode throughput at 256 concurrent requests is more than 3× higher. At low concurrency the swap-in overhead can hurt. See [HiSparse in SGLang](https://yichizhang.dev/AI-Infra-Visualized/en/lessons/hisparse/).
+<HideTransferViz client:visible lang="en" />
+
+State in shared storage raises one more question: what identifies it? A page is reusable only if three things match the reader.
+
+- **Input identity:** token ids, positions, and any additional model inputs.
+- **Model identity:** weights, adapters, and a compatible model configuration.
+- **Storage format:** state type, dtype, layout, and GPU sharding.
+
+Token matching cannot see model identity, and the RL section returns to this. [HiCache in SGLang](https://yichizhang.dev/AI-Infra-Visualized/en/lessons/hicache/) covers the tiers and transfers.
+
+### Sparse attention
+
+Sparse attention reads only a few KV entries per step, yet a GPU-only cache still holds the full context. HiSparse keeps the full KV in host memory and only the selected entries on the GPU. At each decode step, only the selected misses move from host to GPU.
+
+<SparseViz client:visible lang="en" />
+
+The freed GPU memory fits larger decode batches. With GLM-5.1-FP8 on one 8× H200 server, at 256 concurrent requests with 32K input and 8K output tokens, decode throughput is more than 3× higher. At low concurrency the swap-in overhead can hurt. See [HiSparse in SGLang](https://yichizhang.dev/AI-Infra-Visualized/en/lessons/hisparse/).
+
+### Answers by layer type
+
+| | Full attention | Sliding window | Recurrent state |
+| --- | --- | --- | --- |
+| State | KV for every token | KV for the last window | The saved recurrent state |
+| Resume point | Any matched token, rounded down to a whole page | Where a full window of KV sits right before it | The deepest saved state; recompute the rest |
+| Protection | Lock the whole path to the root. Evict unlocked leaves, with their window KV and state | Lock the nodes that span one window. Evict older KV; the node stays | Lock one node. Evict the state alone |
+| Memory | Full KV pool; grows with the context | Window KV pool; bounded by the window | State pool of fixed-size slots |
+| Movement | The node's KV | KV within one window | One state slot |
+
+The new layer types need nothing new from the application.
 
 ## Execution
 
-A higher hit rate does not lower time to first token by the same amount. Hit rate counts tokens skipped. TTFT also includes the queue wait and the CPU work of matching the prefix and building the batch, which a hit does not shorten. When the prefix is cached, GPU time shrinks, and the same CPU time becomes a larger share.
+The previous part made more state reusable. This part follows the time that a cache hit leaves behind.
 
-SGLang overlaps the two. The CPU prepares batch N+1 while the GPU runs batch N. The input token for batch N+1 is not sampled yet, so the CPU names a slot in a GPU buffer and the GPU fills it later. A step then costs max(CPU, GPU) instead of their sum. Once prefix hits shrink the GPU step below the CPU step, the CPU sets the pace.
+### Hit rate and TTFT
+
+A higher hit rate does not lower time to first token by the same amount. Hit rate counts tokens: reused tokens divided by input tokens. TTFT counts time: the wait in the queue, the CPU work of matching the prefix and building the batch, and the GPU prefill of the new tokens. A hit shortens only the last part. The CPU time stays the same and becomes a larger share, so the CPU starts to set the pace.
+
+<HitTtftViz client:visible lang="en" />
+
+### Overlap scheduling
+
+SGLang prepares the next batch while the GPU runs the current one. With 2 ms of CPU and 6 ms of GPU work per batch, a serial loop takes 8 ms per batch. An overlapped loop takes 6 ms, because the GPU never waits for the CPU.
 
 <OverlapViz client:visible lang="en" />
 
-The remaining lever is to shrink the CPU work itself. Breakable CUDA graphs replay captured kernels instead of launching each one. On gpt-oss-120b with TP4 on 4× GB300, prefill is 1.70× faster than eager. A Rust radix tree prototype lowers TTFT by up to 38%. See [Breakable CUDA Graph in SGLang](https://yichizhang.dev/AI-Infra-Visualized/en/lessons/breakable-cuda-graph/).
+One dependency stands in the way. The input of batch N+1 is the token sampled by batch N, and waiting for it would undo the overlap. So the CPU never waits for the token. It names a slot in a GPU buffer of sampled tokens as the input, and the GPU fills the slot.
+
+<FutureSlotViz client:visible lang="en" />
+
+Overlap has a limit. A step costs max(CPU, GPU) instead of their sum. With 8 ms of CPU and 6 ms of GPU per batch, a serial step takes 14 ms and an overlapped step takes 8 ms, with the GPU idle for 2 ms. Prefix hits shrink the GPU step, and once the CPU step is the longer one, the CPU sets the pace.
+
+### Less CPU work
+
+When overlap is not enough, the remaining lever is to shrink the CPU work. With short prefills, kernel launches and tree operations dominate.
+
+An eager forward launches every kernel from the CPU. A CUDA graph replays captured kernels instead, but some operations cannot be captured. A breakable graph runs such an operation between two captured segments. Graph A replays, the operation runs and writes a fixed buffer, and graph B replays and reads that buffer. On gpt-oss-120b with TP4 on 4× GB300, prefill is 1.70× faster than eager. See [Breakable CUDA Graph in SGLang](https://yichizhang.dev/AI-Infra-Visualized/en/lessons/breakable-cuda-graph/).
+
+The radix tree's match, insert, and evict operations run in Rust, and Python only orchestrates the cache. The Rust tree prototype lowers TTFT by up to 38%.
 
 ## Workloads
 
-Agent and RL workloads raise questions that token matching cannot answer.
+Agent and RL workloads raise two questions that the request stream cannot answer. The first is whether a session is over. When a turn finishes and no new request has arrived, a tool call may still be running, or the user may have left. The second is whether cached KV comes from the current weights. A new request can match a cached prefix token for token after the weights were updated. In both cases the tokens are the same, so the runtime cannot tell which case it is in.
 
 ### Sessions
 
-A running request locks its KV. Between turns, while a tool runs, no request exists, so the cache sees the session's KV as unused. If another request needs memory, that KV can be evicted, and the next turn recomputes the whole history.
+While a request runs, its KV cannot be evicted. Once it finishes, the KV is evictable. While a tool runs, nothing protects the session's KV, and the cache sees it as unused. If another request needs memory, the KV is evicted, and the next turn pays for the full history again.
 
-The application can say which requests form a session. With `--enable-session-radix-cache`, it sends a session id on each request, or calls `open_session` and `close_session`. Session KV is then evicted last. When the session closes or times out, its KV becomes ordinary cache again. KV shared by several sessions stays protected until the last one ends.
+The application can say which requests form a session. With `--enable-session-radix-cache`, it tags the turns with one session id, or calls `open_session` and `close_session`. Session KV is then evicted last, and other unused KV goes first. Closing the session, or a timeout, removes the tag, and the KV becomes ordinary cache again. Each cached node counts the open sessions that reach it, so shared KV stays protected until the last session that uses it ends.
 
 <SessionViz client:visible lang="en" />
 
 ### RL rollouts
 
-In RL, the weights change between rollouts. The same prompt tokens under new weights produce different KV, and token matching cannot see the change. The weight update call makes the choice. By default it flushes the cache, and the prompt is recomputed with the new weights. Keeping the KV is faster, but the KV is stale.
+In RL, new weights can invalidate old KV. The same prompt tokens under new weights give different KV, and token matching cannot see the change. The update call makes the choice. `flush_cache` defaults to true, so the cache is dropped and the prompt is recomputed with the new weights. Keeping the KV is fast but stale. `--enable-prefill-weight-versions` reports which weights computed each token's KV.
+
+<WeightsViz client:visible lang="en" />
 
 ### Distribution
 
-With several engines, reuse depends on where a request lands. Miles, an RL framework on SGLang, sends all turns of a session to the same engine and DP rank. It reports about 96% prefix-cache hits in a GLM-5.2 agentic RL run.
+With several engines, reuse also depends on where a request lands. Miles, an RL framework on SGLang, sends a session's turns to the same engine and DP rank. A DP rank is a data-parallel replica with its own cache. Miles reports about 96% prefix-cache hits in a GLM-5.2 agentic RL run.
 
-For general traffic, sgl-router's `cache_aware` policy keeps an index of which engine holds each prefix. The engines feed it with KV events. A cache hit is not always the fastest route. A warm engine with a long queue can finish later than a cold one, so a load guard can override the best match.
+<AffinityViz client:visible lang="en" />
+
+For general traffic, the router tracks which engine has each prefix. Each engine streams KV events, and sgl-router's `cache_aware` policy keeps one prefix index. The policy is opt-in, and the default is `round_robin`. The index can be stale, because an engine may evict a prefix before the request reaches it. The engine then checks its local state and restores or recomputes. A stale index costs a recompute, never a wrong answer.
+
+<RouterIndexViz client:visible lang="en" />
+
+A cache hit is not always the fastest route either. The router compares queue time plus remaining work on each engine, and a load-pressure guard can override the best cache match.
 
 <RouterViz client:visible lang="en" />
 
-Two details keep this correct. First, the index can be stale, because an engine may evict a prefix before the request reaches it. The engine checks its own state and restores or recomputes. A stale index costs time, never a wrong answer. Second, the router tokenizes once and forwards the token ids ([#28744](https://github.com/sgl-project/sglang/pull/28744)). The router and the engine then match on the same ids.
+The index only works if both sides see the same tokens. If the router and the engine each render the chat, a slightly different template changes one token, and the match stops there. So the router tokenizes once and forwards the ids ([#28744](https://github.com/sgl-project/sglang/pull/28744)). The engine skips its own tokenizer.
 
-Prefill/decode disaggregation follows the same idea. With `--disaggregation-decode-enable-radix-cache`, a decode worker that already holds KV for 256 of 384 input tokens receives only the missing 128.
+<TokenizeViz client:visible lang="en" />
+
+Prefill/decode disaggregation uses the same reuse to save transfers. With `--disaggregation-decode-enable-radix-cache`, a decode worker that already holds KV for earlier tokens receives only the missing pages. The reused pages stay locked until the request finishes or fails, so they cannot be evicted while the missing ones are still arriving.
+
+<PdViz client:visible lang="en" />
 
 ## Summary
 
-In 2024 the application declared the whole program. Today the runtime finds shared prefixes on its own, across every layer type and memory tier. The application declares only what tokens cannot show: the output schema, which requests form a session, and when the weights changed.
+The runtime infers more, and the application declares the rest. In 2024 the application declared the whole program. Today the runtime finds shared prefixes on its own, in every layer type and on GPU, host, and storage. The application declares only what tokens cannot show: the output schema, which requests form a session, and when the weights changed.
 
 <DeclareViz client:visible lang="en" />
+
+### Open problems
+
+Some hints would help, but an application cannot declare them today.
+
+- **Expected tool duration.** Should a paused session's state stay on the GPU, move to host memory, or be freed?
+- **Fan-out about to happen.** Should the shared prefix be prefilled once, before the branches arrive?
+- **Chance that a prefix returns.** Which state is worth keeping, or backing up to host memory?
+- **Deadline.** Which state should be evicted first? Requests carry a priority today, not a deadline.
+
+Two questions go beyond the cache. Agents now write the programs, so can the runtime learn their structure without a frontend? And when KV is shared across tenants, can reuse leak one tenant's prompt to another through timing?

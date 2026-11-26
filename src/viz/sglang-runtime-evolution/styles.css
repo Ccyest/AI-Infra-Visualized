@@ -820,3 +820,275 @@
   .evo-milestone-date { grid-row: 1; grid-column: 1; }
   .evo-milestone-dot { grid-row: 1; grid-column: 2; }
 }
+
+/* ============ 补全讲座内容的图:通用小部件 ============ */
+
+/* 一排小格子:token、页、slot 都用它 */
+.evo-cells {
+  display: flex;
+  gap: 2px;
+  min-width: 0;
+}
+
+.evo-cells.fixed { flex-wrap: wrap; }
+.evo-cells.fixed .evo-cell { flex: 0 0 1.55rem; }
+
+.evo-cell {
+  --c: var(--series-2);
+  position: relative;
+  flex: 1 1 0;
+  min-width: 0;
+  height: 1.7rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border-radius: 3px;
+  border: 1px solid transparent;
+  background: color-mix(in srgb, var(--grid) 45%, transparent);
+  font-size: var(--evo-xs);
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  transition: background 0.25s ease, opacity 0.25s ease;
+}
+
+.evo-cell.c1 { --c: var(--series-1); }
+.evo-cell.c3 { --c: var(--series-3); }
+.evo-cell.c7 { --c: var(--series-7); }
+
+.evo-cell.on {
+  background: color-mix(in srgb, var(--c) 40%, var(--surface));
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.evo-cell.hatch { background: var(--evo-hatch); border-color: var(--grid); }
+.evo-cell.dim { opacity: 0.4; }
+.evo-cell.sel { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+
+.evo-cell.miss {
+  border-color: var(--series-8);
+  box-shadow: 0 0 0 1px var(--series-8);
+  color: var(--series-8);
+  font-weight: 650;
+}
+
+.evo-cell.new {
+  background: color-mix(in srgb, var(--series-3) 45%, var(--surface));
+  color: var(--ink);
+  font-weight: 650;
+}
+
+/* 格子右缘的保存点刻度 */
+.evo-cell.mark { overflow: visible; }
+.evo-cell.mark::after {
+  content: "";
+  position: absolute;
+  top: -4px;
+  bottom: -4px;
+  right: -2.5px;
+  border-right: 2px solid var(--series-7);
+}
+
+.evo-cell.dot::before {
+  content: "";
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--series-7);
+}
+
+button.evo-cell {
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--evo-xs);
+  flex-direction: column;
+  height: 2.5rem;
+  line-height: 1.25;
+}
+
+button.evo-cell:hover { border-color: var(--accent); }
+
+/* 行头 | 内容 | 右侧注记 */
+.evo-rows {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 0.45rem 0.7rem;
+  align-items: center;
+  margin: 0.5rem 0;
+}
+
+.evo-rows.two { grid-template-columns: auto minmax(0, 1fr); }
+
+.evo-note {
+  font-size: var(--evo-xs);
+  color: var(--ink-2);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.evo-note.good { color: var(--good); font-weight: 650; }
+.evo-note.bad { color: var(--series-8); font-weight: 650; }
+
+/* 一排卡片(引擎、内存层、状态副本) */
+.evo-boxes {
+  display: flex;
+  align-items: stretch;
+  gap: 0.4rem;
+  margin: 0.5rem 0;
+}
+
+.evo-box {
+  flex: 1 1 0;
+  min-width: 0;
+  display: grid;
+  gap: 0.3rem;
+  align-content: start;
+  justify-items: start;
+  min-height: 4.4rem;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid var(--grid);
+  border-radius: 8px;
+  font-size: var(--evo-sm);
+  color: var(--ink-2);
+  transition: border-color 0.3s ease, opacity 0.3s ease;
+}
+
+.evo-box > b { color: var(--ink); font-weight: 650; }
+.evo-box.active { border-color: var(--accent); }
+.evo-box.ghost { border-style: dashed; }
+
+.evo-chip {
+  --c: var(--series-2);
+  display: inline-flex;
+  align-items: center;
+  padding: 0.08rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--c) 55%, var(--grid));
+  background: color-mix(in srgb, var(--c) 22%, var(--surface));
+  color: var(--ink);
+  font-size: var(--evo-xs);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.evo-chip.c1 { --c: var(--series-1); }
+.evo-chip.c3 { --c: var(--series-3); }
+.evo-chip.c7 { --c: var(--series-7); }
+.evo-chip.bad { --c: var(--series-8); }
+
+.evo-chip.muted {
+  background: transparent;
+  border-style: dashed;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.evo-arrow {
+  flex: none;
+  align-self: center;
+  color: var(--axis);
+  font-size: 1.05rem;
+  line-height: 1;
+  transition: color 0.3s ease;
+}
+
+.evo-arrow.on { color: var(--accent); font-weight: 700; }
+
+/* 行头 + 三个阶段的网格 */
+.evo-phase-grid {
+  display: grid;
+  grid-template-columns: auto repeat(3, minmax(0, 1fr));
+  gap: 4px;
+  align-items: stretch;
+  margin: 0.5rem 0;
+}
+
+.evo-pcell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  min-height: 2rem;
+  padding: 0.15rem 0.35rem;
+  border-radius: 5px;
+  border: 1px solid var(--grid);
+  background: color-mix(in srgb, var(--grid) 30%, transparent);
+  font-size: var(--evo-xs);
+  color: var(--ink);
+  line-height: 1.3;
+}
+
+.evo-pcell.head {
+  border-color: transparent;
+  background: none;
+  color: var(--muted);
+  min-height: 1.3rem;
+}
+
+.evo-pcell.head.active { color: var(--accent); font-weight: 650; }
+.evo-pcell.on { background: color-mix(in srgb, var(--series-1) 26%, var(--surface)); border-color: color-mix(in srgb, var(--series-1) 55%, var(--grid)); }
+.evo-pcell.cpu { background: color-mix(in srgb, var(--series-4) 34%, var(--surface)); border-color: color-mix(in srgb, var(--series-4) 60%, var(--grid)); }
+.evo-pcell.warn { background: color-mix(in srgb, var(--series-4) 30%, var(--surface)); border-color: var(--series-4); }
+.evo-pcell.good { background: color-mix(in srgb, var(--series-3) 30%, var(--surface)); border-color: var(--series-3); }
+.evo-pcell.bad { background: color-mix(in srgb, var(--series-8) 20%, var(--surface)); border-color: var(--series-8); font-weight: 650; }
+.evo-pcell.blank { border-color: transparent; background: none; }
+
+/* 时间条的三种块 */
+.evo-block.queue { background: color-mix(in srgb, var(--grid) 85%, var(--surface)); color: var(--ink-2); font-weight: 500; }
+.evo-block.transfer { background: var(--surface); border-color: var(--axis); }
+.evo-block.compute { background: color-mix(in srgb, var(--series-1) 50%, var(--surface)); }
+
+.evo-track.bare { background: none; }
+
+/* 窗口占比条形图的默认切分刻度 */
+.evo-share-track {
+  position: relative;
+  height: 1.7rem;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--grid) 40%, transparent);
+}
+
+.evo-share-track i {
+  display: block;
+  height: 100%;
+  border-radius: 4px;
+  background: var(--series-3);
+}
+
+.evo-share-track::after {
+  content: "";
+  position: absolute;
+  top: -4px;
+  bottom: -4px;
+  left: 80%;
+  border-left: 2px dashed var(--series-8);
+}
+
+.evo-share-name {
+  display: grid;
+  line-height: 1.3;
+  font-size: var(--evo-sm);
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.evo-share-name small { font-size: var(--evo-xs); color: var(--muted); font-weight: 400; }
+
+@media (max-width: 640px) {
+  .evo-rows { grid-template-columns: 1fr; gap: 0.2rem; margin-bottom: 0.7rem; }
+  .evo-rows.two { grid-template-columns: 1fr; }
+  .evo-rows > .evo-cells,
+  .evo-rows > .evo-share-track,
+  .evo-rows > .evo-row { margin-bottom: 0.1rem; }
+  .evo-boxes { flex-direction: column; }
+  .evo-boxes .evo-arrow { transform: rotate(90deg); }
+  .evo-box { min-height: 0; }
+  .evo-phase-grid { grid-template-columns: 3.6rem repeat(3, minmax(0, 1fr)); }
+  .evo-phase-grid .evo-rowhead { font-size: var(--evo-xs); white-space: normal; }
+}
+
+.evo-note b { color: var(--ink); font-weight: 650; }
+.evo-seg.evo-cpu { --c: var(--series-4); background: color-mix(in srgb, var(--c) 34%, var(--surface)); }

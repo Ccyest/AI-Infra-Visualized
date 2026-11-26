@@ -11,10 +11,11 @@ import "./styles.css";
 /* 三个场景,数据全部取自讲座:
    group(第 17 页):缓存 6 tokens,两对请求各共享 4 tokens,每个请求新增 2。
      交替顺序每个请求都算 6,共 24;分组后每对的第二个只算 2,共 16。
+   dfs(第 18 页):离线批处理按深度优先走树,每个节点的 token 只算一次:6 + 1 + 3 = 10。
    lpm(第 19 页):无关请求最先到,但最长前缀优先把它排到最后。
    defer(第 20 页):两个请求共享一段还没缓存的前缀;延后一个批次,前缀只算一次。 */
 
-type Scene = "group" | "lpm" | "defer";
+type Scene = "group" | "dfs" | "lpm" | "defer";
 
 interface Bar {
   name: Localized;
@@ -51,6 +52,11 @@ const lone: Bar = { name: SPAN.other, segs: [seg("other", 6, "compute", SPAN.oth
 const loneFirst: Bar = { ...lone, tag: SCHED.arrivedFirst };
 const waiting: Bar = { name: SPAN.tests, segs: [seg("tests", 7, "wait", SCHED.testsWaits)] };
 
+const turn2: Bar = {
+  name: SPAN.turn,
+  segs: [seg("ctx", 4, "reuse", SPAN.ctx), seg("fix", 2, "reuse", SPAN.fix), seg("turn", 1, "compute", SPAN.turnShort)],
+};
+
 const SCENES: Record<Scene, { sub: Localized; stat: "total" | "ctx" | "none"; slot: "batch" | "served" | "none"; lanes: Lane[] }> = {
   group: {
     sub: SCHED.subGroup,
@@ -66,6 +72,12 @@ const SCENES: Record<Scene, { sub: Localized; stat: "total" | "ctx" | "none"; sl
         slots: [[fix("compute")], [tests("reuse")], [unrelated(U1, "compute")], [unrelated(U2, "reuse")]],
       },
     ],
+  },
+  dfs: {
+    sub: SCHED.subDfs,
+    stat: "total",
+    slot: "none",
+    lanes: [{ head: SCHED.dfsLane, slots: [[fix("compute")], [turn2], [tests("reuse", 3)]] }],
   },
   lpm: {
     sub: SCHED.subLpm,
@@ -133,6 +145,7 @@ export default function ScheduleViz({ lang = "zh" }: { lang?: Locale }) {
           }}
           options={[
             { key: "group", label: SCHED.group[lang] },
+            { key: "dfs", label: SCHED.dfs[lang] },
             { key: "lpm", label: SCHED.lpm[lang] },
             { key: "defer", label: SCHED.defer[lang] },
           ]}
@@ -147,7 +160,7 @@ export default function ScheduleViz({ lang = "zh" }: { lang?: Locale }) {
         />
       }
     >
-      <div className="evo-lanes">
+      <div className={`evo-lanes${def.lanes.length === 1 ? " single" : ""}`}>
         {def.lanes.map((lane) => {
           const s = stat(lane);
           return (
