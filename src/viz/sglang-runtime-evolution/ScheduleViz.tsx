@@ -170,7 +170,7 @@ export default function ScheduleViz({ lang = "zh" }: { lang?: Locale }) {
                 {s && <span aria-live="polite">{s}</span>}
               </div>
               {lane.slots.map((bars, i) => (
-                <div className={`evo-slot${i < t ? "" : " evo-hide"}`} key={i}>
+                <div className={`evo-slot${i < t ? (i === t - 1 ? " evo-enter" : "") : " evo-hide"}`} key={i}>
                   <span className="evo-slot-label">{slotLabel(i)}</span>
                   <div className="evo-slot-bars">
                     {bars.length === 0 && <div className="evo-row evo-empty" aria-hidden="true" />}

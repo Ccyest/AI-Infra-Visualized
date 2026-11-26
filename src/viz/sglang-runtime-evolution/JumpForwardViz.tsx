@@ -30,15 +30,15 @@ export default function JumpForwardViz({ lang = "zh" }: { lang?: Locale }) {
         <div className="evo-tokens">
           {kind === "token"
             ? FORCED.map((tok, i) => (
-                <code className={`evo-tok forced${i < t ? "" : " evo-hide"}`} key={i}>
+                <code className={`evo-tok forced${i < t ? (i === t - 1 ? " evo-pop" : "") : " evo-hide"}`} key={i}>
                   {tok}
                 </code>
               ))
             : (
-                <code className={`evo-tok forced wide${t >= 1 ? "" : " evo-hide"}`}>{FORCED.join("").replace(":", ": ")}</code>
+                <code className={`evo-tok forced wide${t >= 1 ? (t === 1 ? " evo-pop" : "") : " evo-hide"}`}>{FORCED.join("").replace(":", ": ")}</code>
               )}
           {Array.from({ length: TOTAL - 1 }, (_, i) => (
-            <code className={`evo-tok sampled${i < sampled ? "" : " evo-hide"}`} key={`s${i}`} aria-hidden="true">
+            <code className={`evo-tok sampled${i < sampled ? (i === sampled - 1 ? " evo-pop" : "") : " evo-hide"}`} key={`s${i}`} aria-hidden="true">
               ···
             </code>
           ))}

@@ -3,45 +3,62 @@ import Legend from "../../components/core/Legend";
 import VizStage from "../../components/core/VizStage";
 import { useSimPlayer } from "../../components/core/useSimPlayer";
 import type { Locale } from "../../lib/i18n";
-import { COMMON, FORK, SPAN } from "./strings";
-import { Seg, SWATCH_COMPUTE, SWATCH_REUSE, Tabs } from "./ui";
-import type { SegMode, SpanKey } from "./ui";
+import { COMMON, FORK, FORK_STEPS, SCENE, SPAN } from "./strings";
+import { Blk, centerOf, Fly, Frame, Scene } from "./scene";
+import type { Look, Tone } from "./scene";
+import { SWATCH_COMPUTE, SWATCH_REUSE, Tabs } from "./ui";
 import "./styles.css";
 
-/* 讲座第 10 页:没有提示时,两个分支各自把 Shared context 算一遍(2 次);
-   有提示时,前端先把 Shared context 单独发出去,算 1 次,两个分支都复用。 */
+/* 讲座第 9、10 页:左边是前端(它在两个请求发出之前就知道 fork),右边是 runtime。
+   没有提示:两个分支各自把 Shared context 算一遍(2 次)。
+   有提示:前端先把 Shared context 单独发出去,runtime 算 1 次并放进 KV 缓存,两个分支都复用。
+   每一步有一张卡片从前端飞到 runtime。token 宽度按 4 / 2 / 3 个 token 画。 */
 
 type Mode = "without" | "with";
+type Part = "ctx" | "fix" | "tests";
+
+const W = 820;
+const H = 236;
+const FRONT = { x: 26, w: 196, y: { ctx: 40, fix: 98, tests: 138 } };
+const RUN_X = 276;
+const UNIT = 52;
+const TOKENS: Record<Part, number> = { ctx: 4, fix: 2, tests: 3 };
+const ROW_Y = [40, 80, 120];
+const CACHE = { x: 356, y: 172, w: TOKENS.ctx * UNIT, h: 30 };
 
 interface Row {
-  head: "ctx" | "fix" | "tests";
-  segs: { span: SpanKey; tokens: number; mode: SegMode }[];
+  /** 这一行是由前端的哪一块发出来的 */
+  from: Part;
+  segs: { part: Part; look: Look }[];
 }
 
 const ROWS: Record<Mode, Row[]> = {
   without: [
-    { head: "fix", segs: [{ span: "ctx", tokens: 4, mode: "compute" }, { span: "fix", tokens: 2, mode: "compute" }] },
-    { head: "tests", segs: [{ span: "ctx", tokens: 4, mode: "compute" }, { span: "tests", tokens: 3, mode: "compute" }] },
+    { from: "fix", segs: [{ part: "ctx", look: "solid" }, { part: "fix", look: "solid" }] },
+    { from: "tests", segs: [{ part: "ctx", look: "solid" }, { part: "tests", look: "solid" }] },
   ],
   with: [
-    { head: "ctx", segs: [{ span: "ctx", tokens: 4, mode: "compute" }] },
-    { head: "fix", segs: [{ span: "ctx", tokens: 4, mode: "reuse" }, { span: "fix", tokens: 2, mode: "compute" }] },
-    { head: "tests", segs: [{ span: "ctx", tokens: 4, mode: "reuse" }, { span: "tests", tokens: 3, mode: "compute" }] },
+    { from: "ctx", segs: [{ part: "ctx", look: "solid" }] },
+    { from: "fix", segs: [{ part: "ctx", look: "reuse" }, { part: "fix", look: "solid" }] },
+    { from: "tests", segs: [{ part: "ctx", look: "reuse" }, { part: "tests", look: "solid" }] },
   ],
 };
+
+/** KV 缓存里出现 Shared context 的那一步 */
+const CACHED_AT: Record<Mode, number> = { without: 2, with: 1 };
 
 export default function ForkHintViz({ lang = "zh" }: { lang?: Locale }) {
   const [mode, setMode] = useState<Mode>("without");
   const rows = ROWS[mode];
-  const player = useSimPlayer(rows.length, 0.9);
+  const player = useSimPlayer(rows.length, 0.42);
   const { t } = player;
 
+  const label = (p: Part) => (p === "ctx" ? SPAN.ctx[lang] : p === "fix" ? SPAN.fix[lang] : SPAN.tests[lang]);
   const shown = rows.slice(0, t);
-  const count = (m: SegMode) =>
-    shown.reduce((n, r) => n + r.segs.filter((s) => s.span === "ctx" && s.mode === m).length, 0);
-  const label = (k: SpanKey) =>
-    k === "ctx" ? SPAN.ctx[lang] : k === "fix" ? SPAN.fix[lang] : SPAN.tests[lang];
-  const head = (r: Row) => (r.head === "ctx" ? FORK.sentFirst[lang] : label(r.head));
+  const count = (look: Look) => shown.reduce((n, r) => n + r.segs.filter((s) => s.part === "ctx" && s.look === look).length, 0);
+  const rowWidth = (r: Row) => r.segs.reduce((n, s) => n + TOKENS[s.part] * UNIT, 0);
+  const cached = t >= CACHED_AT[mode];
+  const flying = t >= 1 ? rows[t - 1] : null;
 
   return (
     <VizStage
@@ -73,31 +90,65 @@ export default function ForkHintViz({ lang = "zh" }: { lang?: Locale }) {
         />
       }
     >
-      <div className="evo-requests evo-fork" style={{ minHeight: "7.6rem" }}>
-        {rows.map((r, i) => (
-          <div className={`evo-request${i < t ? "" : " evo-hide"}`} key={`${mode}-${i}`}>
-            <span className="evo-rowhead">{head(r)}</span>
-            <div className="evo-row evo-row-7">
-              {r.segs.map((s) => (
-                <Seg key={s.span} span={s.span} tokens={s.tokens} mode={s.mode} label={label(s.span)} />
-              ))}
-              <span
-                aria-hidden="true"
-                style={{ flexGrow: 7 - r.segs.reduce((n, s) => n + s.tokens, 0), flexBasis: 0 }}
-              />
-            </div>
-          </div>
-        ))}
-      </div>
-      <div className="evo-stats" aria-live="polite">
-        <span>
-          {FORK.ctxComputed[lang]} <b>{count("compute")}×</b>
-        </span>
-        {mode === "with" && (
-          <span>
-            {FORK.ctxReused[lang]} <b>{count("reuse")}×</b>
-          </span>
+      <Scene w={W} h={H} label={FORK.title[lang]}>
+        {/* 前端:一段共享上下文,fork 出两个分支 */}
+        <Frame x={6} y={6} w={236} h={H - 12} label={SCENE.frontend[lang]} />
+        <Blk x={FRONT.x} y={FRONT.y.ctx} w={FRONT.w} label={label("ctx")} tone="ctx" />
+        <text className="evo-tick" x={FRONT.x + FRONT.w / 2} y={88} textAnchor="middle">
+          s.fork(2)
+        </text>
+        <Blk x={FRONT.x} y={FRONT.y.fix} w={FRONT.w} label={label("fix")} tone="fix" />
+        <Blk x={FRONT.x} y={FRONT.y.tests} w={FRONT.w} label={label("tests")} tone="tests" />
+
+        {/* runtime:每个到达的请求一行 prefill,下面是 KV 缓存 */}
+        <Frame x={256} y={6} w={W - 262} h={H - 12} label={SCENE.runtime[lang]} />
+        {rows.map((r, i) => {
+          if (i >= t) return null;
+          let x = RUN_X;
+          return (
+            <g className={i === t - 1 ? "evo-arrive" : ""} key={`${mode}-${i}`}>
+              {r.segs.map((s) => {
+                const w = TOKENS[s.part] * UNIT;
+                const blk = <Blk key={s.part} x={x} y={ROW_Y[i]} w={w - 3} label={label(s.part)} tone={s.part as Tone} look={s.look} />;
+                x += w;
+                return blk;
+              })}
+            </g>
+          );
+        })}
+
+        <text className="evo-lbl" x={RUN_X} y={CACHE.y + 20}>
+          {SCENE.kvCache[lang]}
+        </text>
+        {cached ? (
+          <g className={t === CACHED_AT[mode] ? "evo-arrive" : ""} key={`cache-${mode}`}>
+            <Blk x={CACHE.x} y={CACHE.y} w={CACHE.w} h={CACHE.h} label={label("ctx")} tone="ctx" />
+          </g>
+        ) : (
+          <Blk x={CACHE.x} y={CACHE.y} w={CACHE.w} h={CACHE.h} label={SCENE.empty[lang]} look="ghost" />
         )}
+        <text className={`evo-stat-text${count("solid") > 1 ? " bad" : ""}`} x={CACHE.x + CACHE.w + 22} y={CACHE.y + 14}>
+          {FORK.ctxComputed[lang]} {count("solid")}×
+        </text>
+        {mode === "with" && (
+          <text className="evo-stat-text good" x={CACHE.x + CACHE.w + 22} y={CACHE.y + 30}>
+            {FORK.ctxReused[lang]} {count("reuse")}×
+          </text>
+        )}
+
+        {flying && (
+          <Fly
+            key={`${mode}-${t}`}
+            from={centerOf(FRONT.x, FRONT.y[flying.from], FRONT.w, 30)}
+            to={{ x: RUN_X + rowWidth(flying) / 2, y: ROW_Y[t - 1] + 15 }}
+            label={label(flying.from)}
+            tone={flying.from as Tone}
+            w={108}
+          />
+        )}
+      </Scene>
+      <div className="evo-step" aria-live="polite">
+        {FORK_STEPS[mode][t][lang]}
       </div>
     </VizStage>
   );

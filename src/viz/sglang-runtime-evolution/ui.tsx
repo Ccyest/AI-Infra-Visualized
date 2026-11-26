@@ -86,12 +86,6 @@ export function Seg({
   );
 }
 
-/** 计算 / 复用 的图例色块样式 */
-export const SWATCH_COMPUTE = {
-  background: "color-mix(in srgb, var(--ink-2) 55%, var(--surface))",
-};
-export const SWATCH_REUSE = {
-  background:
-    "repeating-linear-gradient(45deg, color-mix(in srgb, var(--ink-2) 45%, transparent) 0 2px, transparent 2px 4px)",
-  border: "1px dashed var(--axis)",
-};
+/** 计算 / 复用 的图例色块样式:计算 = 实色,复用 = 描边 */
+export const SWATCH_COMPUTE = { background: "var(--ink-2)" };
+export const SWATCH_REUSE = { background: "transparent", border: "2px solid var(--ink-2)" };

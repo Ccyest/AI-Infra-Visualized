@@ -645,3 +645,73 @@ export const PD = {
   transfer: { en: "Transfer", zh: "传输" },
   locked: { en: "Locked until the request finishes or fails", zh: "加锁，直到请求完成或失败" },
 } satisfies Record<string, Localized>;
+
+/* ============ SVG 场景用到的补充文案 ============ */
+
+export const SCENE = {
+  frontend: { en: "Frontend", zh: "前端" },
+  runtime: { en: "Runtime: prefill", zh: "Runtime：prefill" },
+  kvCache: { en: "KV cache", zh: "KV 缓存" },
+  empty: { en: "empty", zh: "空" },
+  radixTree: { en: "Radix tree", zh: "Radix tree" },
+  gpuBuffer: { en: "GPU: KV buffer", zh: "GPU：KV 缓冲区" },
+  hostFull: { en: "Host memory: full KV", zh: "主机内存：完整 KV" },
+  pending: { en: "pending", zh: "待释放" },
+  freeRange: { en: "one free range", zh: "一段连续的空闲区" },
+  pointsHere: { en: "page id A points here", zh: "页号 A 指向这里" },
+  cache: { en: "Cache", zh: "缓存" },
+  running: { en: "Running requests", zh: "运行中的请求" },
+  ready: { en: "ready to read", zh: "可以读取" },
+  copyStays: { en: "copy kept", zh: "副本保留" },
+  token: { en: "token", zh: "token" },
+  gpuCache: { en: "GPU cache", zh: "GPU 缓存" },
+  incoming: { en: "Another request", zh: "另一个请求" },
+  newKv: { en: "new KV", zh: "新 KV" },
+  sessionTag: { en: "session A", zh: "session A" },
+  session: { en: "Session", zh: "Session" },
+  kvOf: { en: "KV: turn", zh: "KV：第" },
+  kvOfTail: { en: "", zh: " 轮" },
+  stored: { en: "stored", zh: "stored" },
+  lookup: { en: "lookup", zh: "查索引" },
+  recompute: { en: "recompute P", zh: "重算 P" },
+  prefillWorker: { en: "Prefill worker", zh: "Prefill worker" },
+  decodeWorker: { en: "Decode worker", zh: "Decode worker" },
+  lockedTag: { en: "locked", zh: "已加锁" },
+  mode: { en: "Mode", zh: "模式" },
+  pSuffix: { en: "P + suffix", zh: "P + 后缀" },
+} satisfies Record<string, Localized>;
+
+export const FORK_STEPS = {
+  without: [
+    { en: "The frontend holds one shared context and two branches.", zh: "前端持有一段共享上下文和两个分支。" },
+    { en: "Fix bug is sent. Nothing is cached, so its prefill computes the shared context.", zh: "Fix bug 发出。缓存里什么都没有，它的 prefill 要计算共享上下文。" },
+    { en: "Write tests arrives before that KV is cached, and computes the shared context again.", zh: "Write tests 在这份 KV 进缓存之前到达，又把共享上下文算了一遍。" },
+  ],
+  with: [
+    { en: "The frontend holds one shared context and two branches.", zh: "前端持有一段共享上下文和两个分支。" },
+    { en: "The frontend sends the shared context first. The runtime computes it once and caches the KV.", zh: "前端先把共享上下文发出去。Runtime 计算一次，并把 KV 放进缓存。" },
+    { en: "Fix bug reuses the cached context and computes only its own tokens.", zh: "Fix bug 复用缓存里的上下文，只计算自己的 token。" },
+    { en: "Write tests does the same.", zh: "Write tests 同样如此。" },
+  ],
+} satisfies Record<string, Localized[]>;
+
+export const TIER_STEPS = {
+  gpu: { en: "The KV is already in GPU memory. The request runs with no copy.", zh: "KV 已经在 GPU 显存里。请求不需要拷贝就能运行。" },
+  host: { en: "One copy, host to GPU, before the request can run.", zh: "请求运行前要做一次拷贝：主机内存到 GPU。" },
+  storage: { en: "Two copies: storage to host, then host to GPU.", zh: "要做两次拷贝：存储到主机内存，再从主机内存到 GPU。" },
+} satisfies Record<string, Localized>;
+
+export const AFFINITY_STEPS = {
+  without: [
+    { en: "A session is about to send three turns.", zh: "一个 session 即将发出三轮请求。" },
+    { en: "Turn 1 goes to engine A, which computes and caches its KV.", zh: "第 1 轮发到引擎 A，A 计算并缓存它的 KV。" },
+    { en: "Turn 2 goes to engine B. The history is cached on A, so B recomputes it.", zh: "第 2 轮发到引擎 B。历史缓存在 A 上，B 只能重算。" },
+    { en: "Turn 3 goes to engine C, which recomputes the history again.", zh: "第 3 轮发到引擎 C，历史又被重算一遍。" },
+  ],
+  with: [
+    { en: "A session is about to send three turns.", zh: "一个 session 即将发出三轮请求。" },
+    { en: "Turn 1 goes to engine A, which computes and caches its KV.", zh: "第 1 轮发到引擎 A，A 计算并缓存它的 KV。" },
+    { en: "Turn 2 goes to engine A again and reuses the history.", zh: "第 2 轮还是发到引擎 A，复用了历史。" },
+    { en: "Turn 3 does the same.", zh: "第 3 轮同样如此。" },
+  ],
+} satisfies Record<string, Localized[]>;

@@ -153,6 +153,23 @@ code {
   padding: 0.1em 0.35em;
 }
 
+/* 代码块:行内 code 的底色与内边距不能带进 <pre>,否则每一行都会露出一条浅色底 */
+pre {
+  margin: 1.2rem 0;
+  padding: 0.9rem 1.1rem;
+  border-radius: var(--radius-sm);
+  overflow-x: auto;
+  font-size: 0.85rem;
+  line-height: 1.65;
+}
+
+pre code {
+  font-size: inherit;
+  background: none;
+  border-radius: 0;
+  padding: 0;
+}
+
 /* 滚动淡入(仅在 JS 可用时启用隐藏态,避免无 JS 时内容不可见) */
 .js .reveal {
   opacity: 0;
@@ -451,7 +468,7 @@ main {
   max-width: 780px;
 }
 
-.prose > :is(h2, h3, p, ul, ol, blockquote, table, details) {
+.prose > :is(h2, h3, p, ul, ol, blockquote, table, details, pre) {
   max-width: 44em;
 }
 

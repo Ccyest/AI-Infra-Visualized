@@ -114,7 +114,7 @@ export default function DeferredFreeViz({ lang = "zh" }: { lang?: Locale }) {
             {row.head[lang]}
           </span>,
           ...row.cells.map((c, i) => (
-            <span className={`evo-pcell ${c.cls}${i < t ? "" : " evo-hide"}`} key={`${row.head.en}-${i}`}>
+            <span className={`evo-pcell ${c.cls}${i < t ? (i === t - 1 ? " evo-pop" : "") : " evo-hide"}`} key={`${row.head.en}-${i}`}>
               {c.text[lang]}
             </span>
           )),
