@@ -1,6 +1,6 @@
 ---
 title: "SGLang runtime 的演进：从 RadixAttention 到 agent 负载的优化总览"
-description: "SGLang 在 2024 年以一门前端语言加一个 runtime 的形式出现，用来执行结构化的 LLM 程序。此后模型、内存和负载都变了，runtime 也跟着变。本文基于 Ying Sheng 在 MIT 的讲座，分四部分梳理这段演进：原始设计，为混合模型和多级内存重做的缓存，执行路径，以及 agent 和 RL 负载。有一个问题贯穿这四部分：哪些信息 runtime 可以自己推断，哪些必须由应用声明？今天，Unified Memory 让同样的 GPU 放下 **4.7×** 的长上下文请求，breakable CUDA graph 让 prefill 快 **1.70×**，亲和路由在 agentic RL 中达到约 **96%** 的缓存命中率。"
+description: "SGLang 在 2024 年以一门前端语言加一个 runtime 的形式出现，用来执行结构化的 LLM 程序。此后模型、内存和负载都变了，runtime 也跟着变。本文基于 Ying Sheng 在 MIT 的讲座，分四部分梳理这段演进：原始设计，为混合模型和多级内存重做的缓存，执行路径，以及 agent 和 RL 负载。有一个问题贯穿这四部分：哪些信息 runtime 可以自己推断，哪些必须由应用声明？"
 publishedDate: "2026-11-26"
 order: 11
 concepts: []
