@@ -548,7 +548,7 @@ export const HIT = {
   cached: { en: "Cached prefix: reused", zh: "已缓存前缀：复用" },
   newTokens: { en: "New tokens", zh: "新 token" },
   queue: { en: "Queue", zh: "排队" },
-  cpu: { en: "CPU: match prefix, build batch", zh: "CPU：匹配前缀、组 batch" },
+  cpu: { en: "CPU: match, build batch", zh: "CPU：匹配、组 batch" },
   gpu: { en: "GPU: prefill", zh: "GPU：prefill" },
 } satisfies Record<string, Localized>;
 
@@ -715,3 +715,42 @@ export const AFFINITY_STEPS = {
     { en: "Turn 3 does the same.", zh: "第 3 轮同样如此。" },
   ],
 } satisfies Record<string, Localized[]>;
+
+export const PROGRAM_STEPS: Localized[] = [
+  { en: "The application knows one program: a shared context, two branches, and a second turn.", zh: "应用知道的是一个程序：一段共享上下文、两个分支，外加第二轮。" },
+  { en: "Request 1 carries the shared context and Fix bug.", zh: "请求 1 带着共享上下文和 Fix bug。" },
+  { en: "Request 2 repeats both, then adds turn 2.", zh: "请求 2 把这两段重发一遍，再加上第 2 轮。" },
+  { en: "Request 3 carries the shared context again, with Write tests. The server sees three requests, each with its full history.", zh: "请求 3 再次带上共享上下文，后面是 Write tests。服务端看到的是三条请求，每条都带着完整的历史。" },
+];
+
+export const QUEUE = {
+  waiting: { en: "Waiting queue", zh: "等待队列" },
+  fix: { en: "Fix bug", zh: "Fix bug" },
+  turn2: { en: "Turn 2", zh: "第 2 轮" },
+  tests: { en: "Write tests", zh: "Write tests" },
+  u1: { en: "Unrelated 1", zh: "无关请求 1" },
+  u2: { en: "Unrelated 2", zh: "无关请求 2" },
+  lone: { en: "Unrelated", zh: "无关请求" },
+  otherPrefix: { en: "Other prefix", zh: "另一段前缀" },
+  plus2: { en: "+2", zh: "+2" },
+} satisfies Record<string, Localized>;
+
+export const EXTRA = {
+  needed: { en: "KV needed", zh: "KV 需求" },
+  memory: { en: "KV memory", zh: "KV 内存" },
+  gib: { en: "GiB", zh: "GiB" },
+  nodeOnGpu: { en: "Node on the GPU", zh: "GPU 上的节点" },
+  hostCopy: { en: "Copy in host memory", zh: "主机内存里的副本" },
+  resumesAfter: { en: "resumes after", zh: "恢复到 token" },
+  needs: { en: "needs", zh: "需要" },
+  resumeHere: { en: "resume", zh: "恢复点" },
+  replay: { en: "Replay", zh: "重播" },
+  saves: { en: "saves", zh: "省下" },
+  router: { en: "Router", zh: "Router" },
+  request: { en: "Next agent turn", zh: "下一轮 agent 请求" },
+  engineSide: { en: "Engine", zh: "引擎" },
+  newWeights: { en: "new weights", zh: "新权重" },
+  engineFrame: { en: "Engine", zh: "引擎" },
+  flushed: { en: "flushed", zh: "已清空" },
+  ids: { en: "ids", zh: "id" },
+} satisfies Record<string, Localized>;

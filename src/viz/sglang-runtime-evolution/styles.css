@@ -1365,3 +1365,152 @@ button.evo-cell:hover { border-color: var(--accent); }
 }
 
 .evo-blk.small text { font-size: 9.5px; }
+
+/* ============ 出现、生长、描线:对齐 HiSparse 的另外几种手法 ============ */
+
+/* 入场:场景激活时,现有元素按顺序错开弹出一次 */
+.evo-first .evo-blk,
+.evo-first .evo-stag {
+  animation: evo-pop 0.45s cubic-bezier(0.2, 0.7, 0.3, 1) both;
+  animation-delay: calc(var(--i, 0) * 45ms);
+}
+
+.evo-first .evo-frame,
+.evo-first .evo-frame-label,
+.evo-first .evo-lbl,
+.evo-first .evo-tick {
+  animation: evo-fade 0.5s ease both;
+}
+
+@keyframes evo-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* 横条从左侧生长;之后宽度变化走过渡 */
+.evo-g {
+  transform-box: fill-box;
+  transform-origin: left center;
+  transition: width 0.5s cubic-bezier(0.2, 0.7, 0.3, 1), x 0.5s cubic-bezier(0.2, 0.7, 0.3, 1), fill 0.3s ease, stroke 0.3s ease;
+}
+
+.evo-first .evo-g,
+.evo-g.grow {
+  animation: evo-grow 0.75s cubic-bezier(0.2, 0.7, 0.3, 1) both;
+  animation-delay: calc(var(--i, 0) * 60ms);
+}
+
+@keyframes evo-grow {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: none;
+  }
+}
+
+.evo-bar text { transition: opacity 0.3s ease; }
+
+/* 连线从起点画到终点 */
+.evo-draw {
+  stroke-dasharray: 1;
+  animation: evo-draw 0.7s ease both;
+}
+
+@keyframes evo-draw {
+  from {
+    stroke-dashoffset: 1;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+/* 错开弹出:--i 决定延时 */
+.evo-seq {
+  animation: evo-pop 0.4s cubic-bezier(0.2, 0.7, 0.3, 1) both;
+  animation-delay: calc(var(--i, 0) * 50ms);
+}
+
+/* 强调:描边脉冲一次 */
+.evo-pulse rect { animation: evo-pulse 0.9s ease both; }
+
+@keyframes evo-pulse {
+  0%,
+  100% {
+    stroke-width: 2.4;
+  }
+  45% {
+    stroke-width: 6;
+  }
+}
+
+/* 位置随数值滑动的分组 */
+.evo-slide { transition: transform 0.5s cubic-bezier(0.2, 0.7, 0.3, 1); }
+
+.evo-band {
+  fill: color-mix(in srgb, var(--accent) 10%, transparent);
+  stroke: var(--accent);
+  stroke-width: 1.6;
+  transition: transform 0.5s cubic-bezier(0.2, 0.7, 0.3, 1);
+}
+
+.evo-hit:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.evo-hit rect.hit { fill: transparent; }
+
+@media (prefers-reduced-motion: reduce) {
+  .evo-seq,
+  .evo-draw,
+  .evo-g.grow,
+  .evo-pulse rect { animation: none; }
+  .evo-g,
+  .evo-slide,
+  .evo-band { transition: none; }
+}
+
+/* HTML 图的入场:条目错开弹出,时间线的轴线从左画到右 */
+.evo-first .evo-milestone::before {
+  transform-origin: left center;
+  animation: evo-grow 0.9s ease both;
+}
+
+/* 按时间顺序生长的时间条(隐藏传输那张图):延时 = 开始时刻,时长 = 持续时间 */
+.evo-tb rect {
+  transform-box: fill-box;
+  transform-origin: left center;
+  stroke-width: 1.2;
+  animation: evo-grow linear both;
+}
+
+.evo-tb text {
+  fill: var(--ink);
+  font-size: 10.5px;
+  font-weight: 650;
+  animation: evo-fade 0.2s ease both;
+}
+
+.evo-tb.queue rect { fill: color-mix(in srgb, var(--muted) 22%, transparent); stroke: var(--axis); }
+.evo-tb.transfer rect { fill: color-mix(in srgb, var(--series-4) 30%, transparent); stroke: var(--series-4); }
+.evo-tb.compute rect { fill: var(--series-1); stroke: var(--series-1); }
+.evo-tb.compute text { fill: var(--accent-ink); }
+
+.evo-replay {
+  font-size: var(--evo-xs);
+  color: var(--ink-2);
+  border: 1px solid var(--grid);
+  border-radius: 999px;
+  padding: 0.14rem 0.62rem;
+  background: transparent;
+  cursor: pointer;
+}
+
+.evo-replay:hover { border-color: var(--accent); }
+
+@media (prefers-reduced-motion: reduce) {
+  .evo-tb rect,
+  .evo-tb text { animation: none; }
+}

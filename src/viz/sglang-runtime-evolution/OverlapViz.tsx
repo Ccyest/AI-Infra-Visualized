@@ -2,12 +2,14 @@ import { useState } from "react";
 import Legend from "../../components/core/Legend";
 import type { Locale } from "../../lib/i18n";
 import { OVERLAP } from "./strings";
+import { Bar, Frame, Scene } from "./scene";
 import { Fig, Tabs } from "./ui";
 import "./styles.css";
 
 /* 讲座第 66、68 页:串行时每批耗时 CPU + GPU;overlap 之后稳态是 max(CPU, GPU)。
    CPU 2 / GPU 6:8 → 6。CPU 8 / GPU 6:14 → 8,这时 CPU 决定节奏,GPU 每批空等 2。
-   调度规则:C(i+1) 在 G(i) 启动时开始;G(i) 要等 C(i) 和 G(i-1) 都结束。 */
+   调度规则:C(i+1) 在 G(i) 启动时开始;G(i) 要等 C(i) 和 G(i-1) 都结束。
+   拖动滑块时,时间线上的块会滑到新的位置。 */
 
 const BATCHES = 3;
 
@@ -32,43 +34,43 @@ function schedule(cpu: number, gpu: number, overlapped: boolean): { cpu: Block[]
   return { cpu: c, gpu: g };
 }
 
+const W = 820;
+const H = 214;
+const X0 = 70;
+const SPAN_PX = 720;
+const ROW_H = 22;
+
 export default function OverlapViz({ lang = "zh" }: { lang?: Locale }) {
   const [cpu, setCpu] = useState(2);
   const [gpu, setGpu] = useState(6);
   const span = BATCHES * (cpu + gpu);
+  const unit = SPAN_PX / span;
   const preset: Preset = cpu === 2 && gpu === 6 ? "cold" : cpu === 8 && gpu === 6 ? "warm" : "custom";
 
-  const panel = (overlapped: boolean) => {
+  const panel = (overlapped: boolean, y: number) => {
     const s = schedule(cpu, gpu, overlapped);
     const per = overlapped ? Math.max(cpu, gpu) : cpu + gpu;
-    const row = (blocks: Block[], cls: string) => (
-      <div className="evo-track">
-        {blocks.map((b) => (
-          <span
-            className={`evo-block ${cls}`}
-            key={b.label}
-            style={{ left: `${(b.start / span) * 100}%`, width: `${(b.len / span) * 100}%` }}
-          >
-            {b.label}
-          </span>
-        ))}
-      </div>
-    );
+    const row = (blocks: Block[], ry: number, tone: "warn" | "fix") =>
+      blocks.map((b) => (
+        <g className="evo-slide" key={b.label} style={{ transform: `translateX(${X0 + b.start * unit}px)` }}>
+          <Bar x={0} y={ry} w={b.len * unit - 2} h={ROW_H} tone={tone} look="solid" label={b.label} />
+        </g>
+      ));
     return (
-      <div className="evo-lane">
-        <div className="evo-lane-head">
-          <b>{overlapped ? OVERLAP.overlapped[lang] : OVERLAP.serial[lang]}</b>
-          <span aria-live="polite">
-            {per} ms {OVERLAP.perBatch[lang]}
-          </span>
-        </div>
-        <div className="evo-tracks">
-          <span className="evo-rowhead">CPU</span>
-          {row(s.cpu, "cpu")}
-          <span className="evo-rowhead">GPU</span>
-          {row(s.gpu, "gpu")}
-        </div>
-      </div>
+      <g>
+        <Frame x={6} y={y} w={W - 12} h={98} label={overlapped ? OVERLAP.overlapped[lang] : OVERLAP.serial[lang]} />
+        <text key={per} className={`evo-stat-text evo-pop${overlapped ? " good" : ""}`} x={W - 20} y={y + 21} textAnchor="end" aria-live="polite">
+          {per} ms {OVERLAP.perBatch[lang]}
+        </text>
+        <text className="evo-lbl" x={22} y={y + 48}>
+          CPU
+        </text>
+        <text className="evo-lbl" x={22} y={y + 76}>
+          GPU
+        </text>
+        {row(s.cpu, y + 32, "warn")}
+        {row(s.gpu, y + 60, "fix")}
+      </g>
     );
   };
 
@@ -114,10 +116,10 @@ export default function OverlapViz({ lang = "zh" }: { lang?: Locale }) {
           <input type="range" min={1} max={10} step={1} value={gpu} onChange={(e) => setGpu(Number(e.target.value))} />
         </label>
       </div>
-      <div className="evo-lanes single">
-        {panel(false)}
-        {panel(true)}
-      </div>
+      <Scene w={W} h={H} label={OVERLAP.title[lang]}>
+        {panel(false, 6)}
+        {panel(true, 110)}
+      </Scene>
     </Fig>
   );
 }

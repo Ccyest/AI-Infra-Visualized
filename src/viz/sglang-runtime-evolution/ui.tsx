@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { useAppear } from "./scene";
 
 /** 静态图的外壳:与 VizStage 同款卡片,但没有播放控件 */
 export function Fig({
@@ -14,8 +15,9 @@ export function Fig({
   footer?: ReactNode;
   children: ReactNode;
 }) {
+  const ref = useAppear<HTMLElement>();
   return (
-    <figure className="viz-stage evo-viz" style={{ margin: "1.6rem 0" }} aria-label={title}>
+    <figure className="viz-stage evo-viz" style={{ margin: "1.6rem 0" }} aria-label={title} ref={ref}>
       <div className="viz-head">
         <span className="viz-title">{title}</span>
         {subtitle && <span className="viz-subtitle">{subtitle}</span>}

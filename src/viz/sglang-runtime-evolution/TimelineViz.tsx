@@ -10,7 +10,7 @@ export default function TimelineViz({ lang = "zh" }: { lang?: Locale }) {
     <Fig title={TIMELINE.title[lang]} subtitle={TIMELINE.subtitle[lang]}>
       <ol className="evo-timeline">
         {MILESTONES.map((m) => (
-          <li className="evo-milestone" key={m.name}>
+          <li className="evo-milestone evo-stag" key={m.name}>
             <span className="evo-milestone-date">{m.date[lang]}</span>
             <span className="evo-milestone-dot" aria-hidden="true" />
             <b>{m.name}</b>

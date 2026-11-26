@@ -15,7 +15,7 @@ export default function DeclareViz({ lang = "zh" }: { lang?: Locale }) {
             <span className="evo-declare-label app">{DECLARE.appRow[lang]}</span>
             <ul>
               {col.app.map((item) => (
-                <li className="app" key={item.en}>
+                <li className="app evo-stag" key={item.en}>
                   {item[lang]}
                 </li>
               ))}
@@ -23,7 +23,7 @@ export default function DeclareViz({ lang = "zh" }: { lang?: Locale }) {
             <span className="evo-declare-label runtime">{DECLARE.runtimeRow[lang]}</span>
             <ul>
               {col.runtime.map((item) => (
-                <li className="runtime" key={item.en}>
+                <li className="runtime evo-stag" key={item.en}>
                   {item[lang]}
                 </li>
               ))}

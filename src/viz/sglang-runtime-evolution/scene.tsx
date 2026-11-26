@@ -1,4 +1,5 @@
-import type { CSSProperties, ReactNode } from "react";
+import { useEffect, useRef } from "react";
+import type { CSSProperties, ReactNode, RefObject } from "react";
 
 /* SVG 场景小工具,画法对齐 HiSparse 那篇:
    用带标签的框表示「地方」(GPU、主机内存、引擎……),用方块表示数据,
@@ -15,6 +16,23 @@ export type Look = "soft" | "solid" | "reuse" | "ghost" | "gone";
 
 export const centerOf = (x: number, y: number, w: number, h: number): Pt => ({ x: x + w / 2, y: y + h / 2 });
 
+/** 入场动画:组件激活(滚动到可见)时,把场景里现有的元素按文档顺序错开弹出一次。
+    之后 evo-first 被摘掉,不影响每一步自己的动画。 */
+export function useAppear<T extends HTMLElement>(): RefObject<T | null> {
+  const ref = useRef<T>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    el.querySelectorAll<HTMLElement | SVGElement>(".evo-blk, .evo-g, .evo-stag").forEach((node, i) => {
+      node.style.setProperty("--i", String(Math.min(i, 28)));
+    });
+    el.classList.add("evo-first");
+    const id = window.setTimeout(() => el.classList.remove("evo-first"), 2600);
+    return () => window.clearTimeout(id);
+  }, []);
+  return ref;
+}
+
 export function Scene({
   w,
   h,
@@ -28,8 +46,9 @@ export function Scene({
   minWidth?: number;
   children: ReactNode;
 }) {
+  const ref = useAppear<HTMLDivElement>();
   return (
-    <div className="evo-scroll">
+    <div className="evo-scroll" ref={ref}>
       <svg viewBox={`0 0 ${w} ${h}`} role="img" aria-label={label} style={{ minWidth }}>
         {children}
       </svg>
@@ -164,4 +183,59 @@ export function Chips({ items, active }: { items: string[]; active: number }) {
       ))}
     </div>
   );
+}
+
+/** 横条:宽度变化时平滑过渡,入场时从左侧生长 */
+export function Bar({
+  x,
+  y,
+  w,
+  h = 26,
+  tone = "other",
+  look = "soft",
+  label,
+  className = "",
+}: {
+  x: number;
+  y: number;
+  w: number;
+  h?: number;
+  tone?: Tone;
+  look?: Look;
+  label?: string;
+  className?: string;
+}) {
+  return (
+    <g className={`evo-blk evo-bar ${tone} ${look} ${className}`}>
+      <rect className="evo-g" x={x} y={y} width={Math.max(w, 0)} height={h} rx={5} />
+      {label && w > label.length * 6.2 + 10 && (
+        <text x={x + 8} y={y + h / 2 + 4}>
+          {label}
+        </text>
+      )}
+    </g>
+  );
+}
+
+/** 一条会「画出来」的连线 */
+export function Draw({ d, className = "", delay = 0 }: { d: string; className?: string; delay?: number }) {
+  return <path className={`evo-edge evo-draw ${className}`} d={d} pathLength={1} style={{ animationDelay: `${delay}s` }} />;
+}
+
+/** 给 SVG 里的可点击区域补上键盘操作 */
+export function clickable(onActivate: () => void, label: string, pressed?: boolean) {
+  return {
+    role: "button",
+    tabIndex: 0,
+    "aria-label": label,
+    "aria-pressed": pressed,
+    onClick: onActivate,
+    onKeyDown: (e: { key: string; preventDefault: () => void }) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        onActivate();
+      }
+    },
+    style: { cursor: "pointer" },
+  } as const;
 }
