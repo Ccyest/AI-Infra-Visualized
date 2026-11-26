@@ -39,11 +39,6 @@ import RadixTreeViz from "../../../viz/sglang-runtime-evolution/RadixTreeViz";
 import ScheduleViz from "../../../viz/sglang-runtime-evolution/ScheduleViz";
 import JumpForwardViz from "../../../viz/sglang-runtime-evolution/JumpForwardViz";
 import TimelineViz from "../../../viz/sglang-runtime-evolution/TimelineViz";
-import WindowViz from "../../../viz/sglang-runtime-evolution/WindowViz";
-import CheckpointViz from "../../../viz/sglang-runtime-evolution/CheckpointViz";
-import StateCopyViz from "../../../viz/sglang-runtime-evolution/StateCopyViz";
-import ResumePointViz from "../../../viz/sglang-runtime-evolution/ResumePointViz";
-import LockViz from "../../../viz/sglang-runtime-evolution/LockViz";
 import HitTtftViz from "../../../viz/sglang-runtime-evolution/HitTtftViz";
 import OverlapViz from "../../../viz/sglang-runtime-evolution/OverlapViz";
 import FutureSlotViz from "../../../viz/sglang-runtime-evolution/FutureSlotViz";
@@ -137,7 +132,7 @@ Three kinds of structure show where a declaration is needed.
 
 Not all of the original design survived.
 
-- **Stayed: automatic prefix reuse.** It is on by default. One prefix tree now covers full KV, sliding-window KV, and recurrent state.
+- **Stayed: automatic prefix reuse.** It is on by default. The unified radix tree now covers full KV, sliding-window KV, and recurrent state.
 - **Changed: scheduling and the entry point.** The default queue order is first come, first served. Applications call an OpenAI-compatible server instead of the frontend language.
 - **Stepping stone: jump-forward.** It was removed in 2025. Token masking by a grammar backend stayed, with xgrammar as the default.
 
@@ -155,35 +150,11 @@ Every layer type has to answer the same five questions. The original design answ
 4. **Memory.** Which pool holds the state?
 5. **Movement.** Where does it live beyond the GPU?
 
-### Sliding window
+### Unified radix tree
 
-A sliding-window layer attends only to recent tokens, so it keeps only recent KV. With a 4-token window, resuming after token N needs KV for tokens N−3 to N. Older KV can be evicted. Which KV counts as old depends on the request, because a request that matches fewer tokens needs an earlier window. In the figure, click a block to evict or restore it.
+Hybrid models mix three layer types, and each keeps different state. Full attention keeps KV for every token, so a request can resume after any matched token. A sliding-window layer keeps only the KV of its recent window. A recurrent layer keeps one state, saved only at some tokens, and each request works on its own copy.
 
-<WindowViz client:visible lang="en" />
-
-### Recurrent state
-
-A recurrent layer keeps one state for all tokens. Full-attention KV has one entry per token, so a request can resume after any matched token. A recurrent state folds the tokens together and cannot be rolled back. A request can only resume where a copy of the state was saved, and it recomputes from there.
-
-Where states are saved decides how much is recomputed. By default SGLang saves them at request ends and where requests diverge. A denser level also saves one per prefill chunk. More saved states mean less recompute, but each one is a full copy of the state.
-
-<CheckpointViz client:visible lang="en" />
-
-A recurrent state also changes as tokens are processed, so two requests cannot share one. Each request copies the saved state when it matches the prefix, and then advances its own copy. Full-attention KV is shared, not copied.
-
-<StateCopyViz client:visible lang="en" />
-
-### One tree
-
-A hybrid model mixes these layer types, and all of them live on one radix tree. The same 8 tokens on one tree path mean 8 KV entries for full attention, 4 for a sliding window, and 1 saved state for a recurrent layer.
-
-A request resumes where every layer type has usable state. That is the deepest position all of them allow, not the longest match of any single one. In the figure, click a token in the recurrent row to save a state there.
-
-<ResumePointViz client:visible lang="en" />
-
-Protection differs in the same way. A running request needs the whole path for full attention, one window for a sliding-window layer, and one state for a recurrent layer. Evicting full KV on a node also evicts its window KV and recurrent state, but not the other way round. [Unified Radix Cache in SGLang](https://yichizhang.dev/AI-Infra-Visualized/en/lessons/unified-radix-cache/) covers the tree in detail.
-
-<LockViz client:visible lang="en" />
+SGLang puts all three on one unified radix tree. A request resumes at the deepest token where every layer type has usable state, and recomputes the rest. Locks and eviction also follow each layer type's own rule. See [Unified Radix Cache in SGLang](https://yichizhang.dev/AI-Infra-Visualized/en/lessons/unified-radix-cache/) for the tree and its reuse rules.
 
 ### Unified memory
 
@@ -227,7 +198,7 @@ SGLang prepares the next batch while the GPU runs the current one. With 2 ms of 
 
 <OverlapViz client:visible lang="en" />
 
-One dependency stands in the way. The input of batch N+1 is the token sampled by batch N, and waiting for it would undo the overlap. So the CPU never waits for the token. It names a slot in a GPU buffer of sampled tokens as the input, and the GPU fills the slot.
+One dependency stands in the way. The input of batch N+1 is the token sampled by batch N, and waiting for it would undo the overlap. So the CPU never waits for the token. It names a slot in a GPU buffer of sampled tokens as the input, and the GPU fills the slot. In the code this mechanism is `FutureMap`.
 
 <FutureSlotViz client:visible lang="en" />
 
@@ -235,11 +206,11 @@ Overlap has a limit. A step costs max(CPU, GPU) instead of their sum. With 8 ms 
 
 ### Less CPU work
 
-When overlap is not enough, the remaining lever is to shrink the CPU work. With short prefills, kernel launches and tree operations dominate.
+When overlap is not enough, the remaining lever is to shrink the CPU work. With short prefills, kernel launches and radix tree operations dominate.
 
 An eager forward launches every kernel from the CPU. A CUDA graph replays captured kernels instead, but some operations cannot be captured. A breakable graph runs such an operation between two captured segments. Graph A replays, the operation runs and writes a fixed buffer, and graph B replays and reads that buffer. On gpt-oss-120b with TP4 on 4× GB300, prefill is 1.70× faster than eager. See [Breakable CUDA Graph in SGLang](https://yichizhang.dev/AI-Infra-Visualized/en/lessons/breakable-cuda-graph/).
 
-The radix tree's match, insert, and evict operations run in Rust, and Python only orchestrates the cache. The Rust tree prototype lowers TTFT by up to 38%.
+The radix tree's match, insert, and evict operations run in Rust, and Python only orchestrates the cache. The Rust radix tree prototype lowers TTFT by up to 38%.
 
 ## Workloads
 

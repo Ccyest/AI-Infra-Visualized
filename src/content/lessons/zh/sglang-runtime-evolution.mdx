@@ -39,11 +39,6 @@ import RadixTreeViz from "../../../viz/sglang-runtime-evolution/RadixTreeViz";
 import ScheduleViz from "../../../viz/sglang-runtime-evolution/ScheduleViz";
 import JumpForwardViz from "../../../viz/sglang-runtime-evolution/JumpForwardViz";
 import TimelineViz from "../../../viz/sglang-runtime-evolution/TimelineViz";
-import WindowViz from "../../../viz/sglang-runtime-evolution/WindowViz";
-import CheckpointViz from "../../../viz/sglang-runtime-evolution/CheckpointViz";
-import StateCopyViz from "../../../viz/sglang-runtime-evolution/StateCopyViz";
-import ResumePointViz from "../../../viz/sglang-runtime-evolution/ResumePointViz";
-import LockViz from "../../../viz/sglang-runtime-evolution/LockViz";
 import HitTtftViz from "../../../viz/sglang-runtime-evolution/HitTtftViz";
 import OverlapViz from "../../../viz/sglang-runtime-evolution/OverlapViz";
 import FutureSlotViz from "../../../viz/sglang-runtime-evolution/FutureSlotViz";
@@ -111,7 +106,7 @@ RadixAttention 把缓存的前缀存在一棵 radix tree 里。每个节点存�
 
 ### 调度
 
-请求的顺序决定缓存能省下多少 prefill。假设缓存能放 6 个 token，有两对请求，每对共享 4 个 token 的前缀。在两对之间交替服务，要计算 24 个 token。按前缀分组后只要 16 个。对离线的一批请求，按深度优先的顺序走树就能得到最小值。每个节点的 token 只算一次，放到本文的例子里是 4 + 2 + 1 + 3 = 10 个 token。
+请求的顺序决定缓存能省下多少 prefill。假设缓存能放 6 个 token，有两对请求，每对共享 4 个 token 的前缀。在两对之间交替服务，要计算 24 个 token。按前缀分组后只要 16 个。对离线的一批请求，按深度优先的顺序遍历 radix tree 就能得到最小值。每个节点的 token 只算一次，放到本文的例子里是 4 + 2 + 1 + 3 = 10 个 token。
 
 在线服务要为此付出代价。最长前缀优先会把没有缓存的请求排到队尾。调度器也能在没有前端的情况下发现 fork。当队列里两个请求共享一段还没有任何请求缓存过的前缀时，它让其中一个延后一个批次。第一个请求把前缀放进缓存，第二个直接复用。
 
@@ -137,7 +132,7 @@ RadixAttention 把缓存的前缀存在一棵 radix tree 里。每个节点存�
 
 原始设计并没有全部保留下来。
 
-- **保留：自动前缀复用**。它默认开启。现在一棵前缀树同时覆盖 full KV、sliding-window KV 和 recurrent state。
+- **保留：自动前缀复用**。它默认开启。现在 unified radix tree 同时覆盖 full KV、sliding-window KV 和 recurrent state。
 - **改变：调度和入口**。默认的排队顺序是先到先服务。应用调用的是 OpenAI 兼容的服务端，不再是那门前端语言。
 - **过渡方案：jump-forward**。它在 2025 年被移除。由语法后端做 token masking 的方式保留了下来，默认后端是 xgrammar。
 
@@ -155,35 +150,11 @@ RadixAttention 把缓存的前缀存在一棵 radix tree 里。每个节点存�
 4. **内存**：状态放在哪个池里？
 5. **搬运**：离开 GPU 之后它放在哪里？
 
-### Sliding window
+### Unified radix tree
 
-Sliding-window 层只看最近的 token，所以只保留最近的 KV。窗口为 4 个 token 时，从 token N 之后恢复需要 token N−3 到 N 的 KV。更早的 KV 可以驱逐。哪些 KV 算“更早”取决于请求，因为匹配 token 数较少的请求需要的是更靠前的窗口。在图里点击某一段，可以驱逐或恢复它。
+混合模型把三种层类型混在一起，每种保留的状态不同。Full attention 为每个 token 保存 KV，所以请求可以从任意一个匹配到的 token 之后恢复。Sliding-window 层只保留最近一个窗口的 KV。Recurrent 层只有一份状态，而且只在部分 token 处保存，每个请求在自己的副本上继续计算。
 
-<WindowViz client:visible />
-
-### Recurrent state
-
-Recurrent 层用一份状态代表所有 token。Full-attention 的 KV 每个 token 一条，所以请求可以从任意一个匹配到的 token 之后恢复。Recurrent state 把 token 折叠在一起，无法回退。请求只能从保存过状态副本的位置恢复，再从那里开始重算。
-
-状态保存在哪里，决定了要重算多少。SGLang 默认在请求结束处和请求分叉处保存。更密的一档还会在每个 prefill chunk 保存一份。保存得越多重算越少，但每一份都是状态的完整副本。
-
-<CheckpointViz client:visible />
-
-Recurrent state 还会随着 token 的处理而变化，所以两个请求不能共用一份。每个请求在匹配到前缀时复制一份保存的状态，然后推进自己的副本。Full-attention 的 KV 是共享的，不需要复制。
-
-<StateCopyViz client:visible />
-
-### 一棵树
-
-混合模型把这几种层类型混在一起，它们都放在同一棵 radix tree 上。同一条路径上的 8 个 token，对 full attention 是 8 条 KV，对 sliding window 是 4 条，对 recurrent 层是 1 份保存的状态。
-
-请求从所有层类型都有可用状态的位置恢复。这是所有层都允许的最深位置，而不是其中某一层能匹配到的最长位置。在图里点击 recurrent 一行的某个 token，就可以在那里保存一个状态。
-
-<ResumePointViz client:visible />
-
-保护的方式也同样各不相同。运行中的请求对 full attention 需要整条路径，对 sliding-window 层需要一个窗口，对 recurrent 层需要一份状态。驱逐某个节点的 full KV 时，会连带驱逐它的 window KV 和 recurrent state，反过来则不会。这棵树的细节见 [SGLang 里的 Unified Radix Cache](https://yichizhang.dev/AI-Infra-Visualized/lessons/unified-radix-cache/)。
-
-<LockViz client:visible />
+SGLang 把这三种层都放在同一棵 unified radix tree 上。请求从所有层类型都有可用状态的最深位置恢复，其余部分重算。加锁和驱逐也按各层类型自己的规则来。Unified radix tree 和它的复用规则见 [SGLang 里的 Unified Radix Cache](https://yichizhang.dev/AI-Infra-Visualized/lessons/unified-radix-cache/)。
 
 ### Unified memory
 
@@ -217,29 +188,29 @@ Unified Memory（`--enable-unified-memory`）用一个所有 KV 池和状态池�
 
 ### 命中率与 TTFT
 
-命中率提高，首 token 时间并不会等比例下降。命中率数的是 token：复用的 token 数除以输入的 token 数。TTFT 数的是时间：排队等待，匹配前缀和组 batch 的 CPU 工作，以及对新 token 做的 GPU prefill。命中只缩短最后一段。CPU 时间不变，所占的比例变大，于是节奏开始由 CPU 决定。
+命中率提高，TTFT 并不会等比例下降。命中率数的是 token：复用的 token 数除以输入的 token 数。TTFT 数的是时间：排队等待，匹配前缀和组 batch 的 CPU 工作，以及对新 token 做的 GPU prefill。命中只缩短最后一段。CPU 时间不变，所占的比例变大，于是节奏开始由 CPU 决定。
 
 <HitTtftViz client:visible />
 
-### Overlap 调度
+### Overlap scheduling
 
-GPU 运行当前这一批时，SGLang 同时准备下一批。每批 CPU 工作 2 ms、GPU 工作 6 ms 时，串行的循环每批要 8 ms。重叠之后每批只要 6 ms，因为 GPU 不再等 CPU。
+GPU 运行当前这一批时，SGLang 同时准备下一批。每批 CPU 工作 2 ms、GPU 工作 6 ms 时，串行的循环每批要 8 ms。开启 overlap 之后每批只要 6 ms，因为 GPU 不再等 CPU。
 
 <OverlapViz client:visible />
 
-这里有一个依赖关系挡在中间。第 N+1 批的输入是第 N 批采样出的 token，等它出来就等于放弃了重叠。所以 CPU 不等这个 token。它把 GPU 采样 token 缓冲区里的一个槽位指定为输入，由 GPU 之后把槽位填上。
+这里有一个依赖关系挡在中间。第 N+1 批的输入是第 N 批采样出的 token，等它出来就等于放弃了 overlap。所以 CPU 不等这个 token。它把 GPU 采样 token 缓冲区里的一个槽位指定为输入，由 GPU 之后把槽位填上。这个机制在代码里叫 `FutureMap`。
 
 <FutureSlotViz client:visible />
 
-Overlap 有它的上限。每一步的耗时是 max(CPU, GPU)，而不是两者之和。每批 CPU 8 ms、GPU 6 ms 时，串行的一步要 14 ms，重叠之后要 8 ms，其中 GPU 空闲 2 ms。前缀命中让 GPU 这一步变短，一旦 CPU 这一步更长，节奏就由 CPU 决定。
+Overlap 有它的上限。每一步的耗时是 max(CPU, GPU)，而不是两者之和。每批 CPU 8 ms、GPU 6 ms 时，串行的一步要 14 ms，开启 overlap 之后要 8 ms，其中 GPU 空闲 2 ms。前缀命中让 GPU 这一步变短，一旦 CPU 这一步更长，节奏就由 CPU 决定。
 
 ### 减少 CPU 工作
 
-当 overlap 不够用时，剩下的办法就是压缩 CPU 工作本身。Prefill 很短时，kernel 的发起和树操作占了大头。
+当 overlap 不够用时，剩下的办法就是压缩 CPU 工作本身。Prefill 很短时，kernel 的发起和 radix tree 操作占了大头。
 
 Eager 模式的 forward 要从 CPU 逐个发起 kernel。CUDA graph 改为回放捕获好的 kernel，但有些操作无法被捕获。Breakable graph 把这样的操作夹在两段捕获好的图之间运行。先回放 graph A，再运行这个操作并把结果写进一块固定的缓冲区，最后回放 graph B 来读这块缓冲区。在 gpt-oss-120b、TP4、4× GB300 上，prefill 比 eager 快 1.70×。详见 [SGLang 里的 Breakable CUDA Graph](https://yichizhang.dev/AI-Infra-Visualized/lessons/breakable-cuda-graph/)。
 
-Radix tree 的匹配、插入和驱逐操作改在 Rust 里运行，Python 只负责编排缓存。Rust 版树的原型把 TTFT 最多降低 38%。
+Radix tree 的匹配、插入和驱逐操作改在 Rust 里运行，Python 只负责编排缓存。Rust 版 radix tree 的原型把 TTFT 最多降低 38%。
 
 ## 负载
 

@@ -51,7 +51,7 @@ export const TREE = {
 
 export const TREE_STEPS: Localized[] = [
   { en: "The cache holds Fix bug and Fix bug: turn 2.", zh: "缓存里已有 Fix bug 和 Fix bug 第 2 轮。" },
-  { en: "Write tests arrives and walks the tree from the root.", zh: "Write tests 到达，从根开始走树。" },
+  { en: "Write tests arrives and walks the tree from the root.", zh: "Write tests 到达，从 radix tree 的根开始匹配。" },
   { en: "The walk stops at the first token that differs: reuse 4, compute 3.", zh: "走到第一个不同的 token 停下：复用 4，计算 3。" },
   { en: "A new branch is inserted. The running request locks its path.", zh: "插入新分支。运行中的请求给整条路径加锁。" },
   { en: "Write tests finishes. Fix bug: turn 2 is running and locks its own path.", zh: "Write tests 结束。Fix bug 第 2 轮正在运行，锁住自己的路径。" },
@@ -175,29 +175,8 @@ export const MILESTONES: Milestone[] = [
   },
 ];
 
-export const RESUME = {
-  title: { en: "Resume point", zh: "恢复点" },
-  subtitle: {
-    en: "4-token window · window KV for tokens 1–4 evicted",
-    zh: "窗口 4 tokens · token 1–4 的 window KV 已驱逐",
-  },
-  matchLen: { en: "Matched tokens", zh: "匹配的 token 数" },
-  layers: { en: "Layer types", zh: "层类型" },
-  full: { en: "Full KV", zh: "Full KV" },
-  window: { en: "Window KV", zh: "Window KV" },
-  recurrent: { en: "Recurrent state", zh: "Recurrent state" },
-  resumeAfter: { en: "Resume after token", zh: "恢复点：token" },
-  reuse: { en: "Reuse", zh: "复用" },
-  recompute: { en: "Recompute", zh: "重算" },
-  usable: { en: "Can resume here", zh: "可从此处恢复" },
-  evicted: { en: "KV evicted", zh: "KV 已驱逐" },
-  saved: { en: "Saved state", zh: "已保存的状态" },
-  savedBeyond: { en: "Saved state beyond the match", zh: "匹配范围之外的已保存状态" },
-  toggleSave: { en: "Toggle a saved state after token", zh: "切换是否在此 token 后保存状态：token" },
-} satisfies Record<string, Localized>;
-
 export const OVERLAP = {
-  title: { en: "Overlap scheduling", zh: "Overlap 调度" },
+  title: { en: "Overlap scheduling", zh: "Overlap scheduling" },
   subtitle: {
     en: "Ci prepares batch i · Gi runs it · ideal steady state",
     zh: "Ci 准备第 i 批 · Gi 执行第 i 批 · 理想稳态",
@@ -315,66 +294,12 @@ export const PAGES = {
   pages: { en: "pages", zh: "页" },
 } satisfies Record<string, Localized>;
 
-export const WINDOW = {
-  title: { en: "Sliding window", zh: "Sliding window" },
-  subtitle: { en: "4-token window · window KV for 12 tokens", zh: "窗口 4 tokens · 12 个 token 的 window KV" },
-  kv: { en: "Window KV", zh: "Window KV" },
-  reqA: { en: "Request A · matches 12", zh: "请求 A · 匹配 12" },
-  reqB: { en: "Request B · matches 8", zh: "请求 B · 匹配 8" },
-  evicted: { en: "evicted", zh: "已驱逐" },
-  kept: { en: "cached", zh: "在缓存" },
-  canResume: { en: "can resume", zh: "可以恢复" },
-  cannotResume: { en: "cannot resume", zh: "无法恢复" },
-  toggle: { en: "Evict or restore tokens", zh: "驱逐或恢复 token" },
-} satisfies Record<string, Localized>;
-
-export const CKPT = {
-  title: { en: "Saved states", zh: "保存的状态" },
-  subtitle: { en: "A match resumes at the deepest saved state", zh: "匹配从最深的已保存状态恢复" },
-  matchLen: { en: "Matched tokens", zh: "匹配的 token 数" },
-  every4: { en: "Saved every 4 tokens", zh: "每 4 个 token 保存一次" },
-  every8: { en: "Saved every 8 tokens", zh: "每 8 个 token 保存一次" },
-  reuse: { en: "reuse", zh: "复用" },
-  recompute: { en: "recompute", zh: "重算" },
-  copies: { en: "state copies", zh: "份状态副本" },
-  saved: { en: "Saved state", zh: "已保存的状态" },
-} satisfies Record<string, Localized>;
-
-export const STATECOPY = {
-  title: { en: "Private copies", zh: "私有副本" },
-  subtitle: { en: "Recurrent state saved after token 8", zh: "token 8 之后保存的 recurrent state" },
-  unchanged: { en: "unchanged", zh: "保持不变" },
-  copyOf: { en: "copy of S8", zh: "S8 的副本" },
-  advanced: { en: "advanced with its own tokens", zh: "已随自己的 token 推进" },
-} satisfies Record<string, Localized>;
-
-export const STATECOPY_STEPS: Localized[] = [
-  { en: "The cache holds one state, saved after token 8.", zh: "缓存里有一份状态，保存于 token 8 之后。" },
-  { en: "Fix bug matches the prefix and takes a copy.", zh: "Fix bug 匹配到这段前缀，拿到一份副本。" },
-  { en: "Fix bug advances its copy with its own tokens.", zh: "Fix bug 用自己的 token 推进这份副本。" },
-  { en: "Write tests takes its own copy of the same S8.", zh: "Write tests 从同一个 S8 再拿一份副本。" },
-  { en: "Both copies have moved on. S8 itself never changed.", zh: "两份副本都已推进。S8 本身始终没变。" },
-];
-
-export const LOCKS = {
-  title: { en: "Locks by layer type", zh: "各层类型的加锁范围" },
-  subtitle: { en: "A request running at node D", zh: "一个请求运行在节点 D" },
-  full: { en: "Full attention", zh: "Full attention" },
-  window: { en: "Sliding window", zh: "Sliding window" },
-  recurrent: { en: "Recurrent state", zh: "Recurrent state" },
-  locks5: { en: "locks 5 nodes", zh: "锁 5 个节点" },
-  locks2: { en: "locks 2: one window", zh: "锁 2 个：一个窗口" },
-  locks1: { en: "locks 1 node", zh: "锁 1 个节点" },
-  locked: { en: "Locked", zh: "已加锁" },
-  evictable: { en: "Can be evicted", zh: "可驱逐" },
-} satisfies Record<string, Localized>;
-
 export const HIT = {
   title: { en: "Hit rate and TTFT", zh: "命中率与 TTFT" },
   subtitle: { en: "Schematic · not measurements", zh: "示意图 · 非实测" },
   hitRate: { en: "Prefix hit rate", zh: "前缀命中率" },
   tokensRow: { en: "Input tokens", zh: "输入 token" },
-  timeRow: { en: "Time to first token", zh: "首 token 时间" },
+  timeRow: { en: "Time to first token", zh: "TTFT" },
   cached: { en: "Cached prefix: reused", zh: "已缓存前缀：复用" },
   newTokens: { en: "New tokens", zh: "新 token" },
   queue: { en: "Queue", zh: "排队" },
@@ -383,7 +308,7 @@ export const HIT = {
 } satisfies Record<string, Localized>;
 
 export const FUTURE = {
-  title: { en: "Future token slot", zh: "未来 token 的槽位" },
+  title: { en: "FutureMap", zh: "FutureMap" },
   subtitle: { en: "Slot k: the request's row in a GPU buffer of sampled tokens", zh: "Slot k：该请求在 GPU 采样 token 缓冲区里的那一行" },
   prepare: { en: "Prepare batch N+1 · input = slot k", zh: "准备第 N+1 批 · 输入 = slot k" },
   forwardN: { en: "Batch N: forward, sample token", zh: "第 N 批：forward，采样 token" },
@@ -417,10 +342,10 @@ export const WEIGHTS = {
 } satisfies Record<string, Localized>;
 
 export const AFFINITY = {
-  title: { en: "Session affinity", zh: "Session 亲和" },
+  title: { en: "Session affinity", zh: "Session affinity" },
   subtitle: { en: "Three turns of one session · each engine has its own cache", zh: "同一个 session 的三轮 · 每个引擎有自己的缓存" },
-  without: { en: "Without affinity", zh: "没有亲和" },
-  with: { en: "With affinity", zh: "有亲和" },
+  without: { en: "Without affinity", zh: "没有 affinity" },
+  with: { en: "With affinity", zh: "有 affinity" },
   turn: { en: "Turn", zh: "第" },
   turnTail: { en: "", zh: " 轮" },
   engine: { en: "Engine", zh: "引擎" },
@@ -480,8 +405,6 @@ export const SCENE = {
   kvCache: { en: "KV cache", zh: "KV 缓存" },
   empty: { en: "empty", zh: "空" },
   radixTree: { en: "Radix tree", zh: "Radix tree" },
-  cache: { en: "Cache", zh: "缓存" },
-  running: { en: "Running requests", zh: "运行中的请求" },
   token: { en: "token", zh: "token" },
   gpuCache: { en: "GPU cache", zh: "GPU 缓存" },
   incoming: { en: "Another request", zh: "另一个请求" },
@@ -548,8 +471,6 @@ export const QUEUE = {
 } satisfies Record<string, Localized>;
 
 export const EXTRA = {
-  needs: { en: "needs", zh: "需要" },
-  resumeHere: { en: "resume", zh: "恢复点" },
   router: { en: "Router", zh: "Router" },
   request: { en: "Next agent turn", zh: "下一轮 agent 请求" },
   newWeights: { en: "new weights", zh: "新权重" },
