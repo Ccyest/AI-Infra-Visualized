@@ -1,0 +1,822 @@
+/* sglang-runtime-evolution:13 张图共用一套样式。
+   三档字号,取色只用全局 CSS 变量;分支颜色跟着分支本身走。 */
+.evo-viz {
+  --evo-xs: 0.7rem;
+  --evo-sm: 0.76rem;
+  --evo-body: 0.84rem;
+  --evo-ctx: var(--series-2);
+  --evo-fix: var(--series-1);
+  --evo-turn: var(--series-7);
+  --evo-tests: var(--series-3);
+  --evo-other: var(--muted);
+  --evo-hatch: repeating-linear-gradient(45deg, transparent 0 3px, var(--axis) 3px 4.5px);
+}
+
+.evo-viz .evo-hide { visibility: hidden; }
+
+/* ---------------- 通用:切换按钮、行、token 段 ---------------- */
+
+.evo-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+.evo-tab {
+  font-size: var(--evo-xs);
+  color: var(--muted);
+  border: 1px solid var(--grid);
+  border-radius: 999px;
+  padding: 0.14rem 0.62rem;
+  background: transparent;
+  cursor: pointer;
+  transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+}
+
+.evo-tab:hover { border-color: var(--accent); }
+
+.evo-tab.active {
+  color: var(--accent-ink);
+  background: var(--accent);
+  border-color: var(--accent);
+  font-weight: 650;
+}
+
+.evo-row {
+  display: flex;
+  align-items: stretch;
+  gap: 3px;
+  min-width: 0;
+  min-height: 1.9rem;
+}
+
+.evo-row.evo-empty {
+  border: 1px dashed var(--grid);
+  border-radius: 5px;
+}
+
+.evo-seg {
+  --c: var(--evo-other);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  min-height: 1.9rem;
+  padding: 0 0.35rem;
+  border-radius: 5px;
+  border: 1px solid color-mix(in srgb, var(--c) 55%, var(--grid));
+  background: color-mix(in srgb, var(--c) 16%, var(--surface));
+  color: var(--ink);
+  font-size: var(--evo-xs);
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: background 0.3s ease, opacity 0.3s ease;
+}
+
+.evo-seg.ctx { --c: var(--evo-ctx); }
+.evo-seg.fix { --c: var(--evo-fix); }
+.evo-seg.turn { --c: var(--evo-turn); }
+.evo-seg.tests { --c: var(--evo-tests); }
+.evo-seg.other,
+.evo-seg.other2 { --c: var(--evo-other); }
+
+.evo-seg.compute { background: color-mix(in srgb, var(--c) 42%, var(--surface)); }
+
+.evo-seg.reuse {
+  border-style: dashed;
+  background: repeating-linear-gradient(
+    45deg,
+    color-mix(in srgb, var(--c) 30%, transparent) 0 3px,
+    transparent 3px 7px
+  );
+}
+
+.evo-seg.wait {
+  border-style: dashed;
+  background: transparent;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.evo-rowhead {
+  color: var(--ink-2);
+  font-size: var(--evo-sm);
+  font-weight: 600;
+  white-space: nowrap;
+  align-self: center;
+}
+
+.evo-rowhead.off { opacity: 0.4; }
+
+.evo-requests {
+  display: grid;
+  gap: 0.45rem;
+  margin: 0.5rem 0;
+}
+
+.evo-request {
+  display: grid;
+  grid-template-columns: 6.2rem minmax(0, 1fr);
+  gap: 0.6rem;
+  align-items: center;
+}
+
+.evo-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem 1.1rem;
+  margin-top: 0.6rem;
+  color: var(--ink-2);
+  font-size: var(--evo-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.evo-stats b {
+  color: var(--ink);
+  font-weight: 650;
+}
+
+.evo-stats .good b { color: var(--good); }
+.evo-stats .bad b { color: var(--series-8); }
+
+.evo-step {
+  margin-top: 0.8rem;
+  font-size: var(--evo-body);
+  color: var(--ink);
+  border-left: 3px solid var(--accent);
+  padding: 0.25rem 0 0.25rem 0.7rem;
+  min-height: 2.6em;
+}
+
+.evo-tag {
+  font-size: var(--evo-xs);
+  color: var(--muted);
+  border: 1px solid var(--grid);
+  border-radius: 999px;
+  padding: 0 0.45rem;
+  white-space: nowrap;
+  align-self: center;
+}
+
+.evo-tag.good {
+  color: var(--good);
+  border-color: color-mix(in srgb, var(--good) 50%, var(--grid));
+}
+
+/* ---------------- 通用:滑块与勾选 ---------------- */
+
+.evo-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 0.6rem 1.4rem;
+  margin: 0.5rem 0 0.8rem;
+}
+
+.evo-controls.two {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+
+.evo-slider {
+  display: grid;
+  gap: 0.25rem;
+  flex: 1 1 14rem;
+  font-size: var(--evo-sm);
+  color: var(--ink-2);
+}
+
+.evo-slider b {
+  color: var(--ink);
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+.evo-slider input {
+  width: 100%;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.evo-checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem 0.9rem;
+  font-size: var(--evo-sm);
+  color: var(--ink-2);
+}
+
+.evo-checks label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  cursor: pointer;
+}
+
+.evo-checks input { accent-color: var(--accent); margin: 0; }
+
+/* ---------------- 通用:左右两栏对比 ---------------- */
+
+.evo-lanes {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  margin: 0.5rem 0;
+}
+
+.evo-lanes.single { grid-template-columns: 1fr; }
+
+.evo-lane {
+  display: grid;
+  gap: 0.35rem;
+  align-content: start;
+  min-width: 0;
+}
+
+.evo-lane-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.2rem 0.7rem;
+  color: var(--muted);
+  font-size: var(--evo-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.evo-lane-head b {
+  color: var(--ink);
+  font-size: var(--evo-body);
+  font-weight: 650;
+}
+
+/* ---------------- ProgramViz ---------------- */
+
+.evo-program-tree {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  grid-template-rows: 1.9rem 1.9rem;
+  gap: 0.5rem 3px;
+  margin: 0.6rem 0 0.3rem;
+}
+
+.evo-program-tree .evo-seg { min-height: 100%; }
+
+/* ---------------- RadixTreeViz ---------------- */
+
+.evo-tree-request {
+  display: grid;
+  grid-template-columns: 6.2rem minmax(0, 1fr);
+  gap: 0.6rem;
+  align-items: center;
+  margin: 0.5rem 0 0.9rem;
+}
+
+.evo-differs {
+  position: relative;
+  flex: none;
+  width: 0;
+}
+
+.evo-differs i {
+  position: absolute;
+  top: -5px;
+  bottom: -5px;
+  left: -2.5px;
+  border-left: 2px solid var(--series-8);
+}
+
+.evo-differs small {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  font-size: var(--evo-xs);
+  color: var(--series-8);
+}
+
+.evo-tree {
+  display: grid;
+  gap: 0.4rem;
+  margin-top: 1.5rem;
+  min-height: 10.6rem;
+  align-content: start;
+}
+
+.evo-node-line {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.evo-elbow {
+  flex: none;
+  width: 0.9rem;
+  height: 1.1rem;
+  margin-top: -1.1rem;
+  border-left: 1.5px solid var(--axis);
+  border-bottom: 1.5px solid var(--axis);
+  border-bottom-left-radius: 4px;
+}
+
+.evo-node {
+  --c: var(--evo-other);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 0.8rem;
+  min-width: 0;
+  flex: 1 1 auto;
+  max-width: 30rem;
+  padding: 0.35rem 0.6rem;
+  border-radius: 7px;
+  border: 1px solid color-mix(in srgb, var(--c) 55%, var(--grid));
+  background: color-mix(in srgb, var(--c) 14%, var(--surface));
+  font-size: var(--evo-sm);
+  outline: 2px solid transparent;
+  outline-offset: 1px;
+  transition: outline-color 0.3s ease, opacity 0.3s ease;
+}
+
+.evo-node.ctx { --c: var(--evo-ctx); }
+.evo-node.fix { --c: var(--evo-fix); }
+.evo-node.turn { --c: var(--evo-turn); }
+.evo-node.tests { --c: var(--evo-tests); }
+
+.evo-node.matched { outline-color: var(--accent); }
+
+.evo-node.evicted {
+  opacity: 0.5;
+  border-style: dashed;
+  background: transparent;
+}
+
+.evo-node.evicted b { text-decoration: line-through; }
+
+.evo-node b { font-weight: 650; color: var(--ink); }
+
+.evo-node-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.2rem 0.7rem;
+  margin-left: auto;
+  color: var(--ink-2);
+  font-size: var(--evo-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.evo-lock {
+  border-radius: 999px;
+  padding: 0 0.4rem;
+  border: 1px solid var(--grid);
+}
+
+.evo-lock.on {
+  color: var(--ink);
+  font-weight: 650;
+  border-color: var(--series-4);
+  background: color-mix(in srgb, var(--series-4) 35%, var(--surface));
+}
+
+.evo-chip-evicted { color: var(--series-8); font-weight: 650; }
+
+/* ---------------- ScheduleViz ---------------- */
+
+.evo-slot {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.evo-slot-label {
+  min-width: 1.1rem;
+  color: var(--muted);
+  font-size: var(--evo-xs);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.evo-slot-bars {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+/* ---------------- JumpForwardViz ---------------- */
+
+.evo-tokens {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  min-height: 1.9rem;
+}
+
+.evo-tok {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.5rem;
+  height: 1.9rem;
+  padding: 0 0.4rem;
+  border-radius: 5px;
+  font-size: var(--evo-sm);
+  color: var(--ink);
+  white-space: pre;
+}
+
+.evo-tok.forced {
+  border: 1px solid var(--series-2);
+  background: color-mix(in srgb, var(--series-2) 22%, var(--surface));
+}
+
+.evo-tok.sampled {
+  border: 1px solid var(--series-1);
+  background: color-mix(in srgb, var(--series-1) 22%, var(--surface));
+  color: var(--ink-2);
+}
+
+/* ---------------- TimelineViz ---------------- */
+
+.evo-timeline {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 0.4rem;
+  list-style: none;
+  margin: 0.8rem 0 0.2rem;
+  padding: 0;
+}
+
+.evo-milestone {
+  position: relative;
+  display: grid;
+  align-content: start;
+  gap: 0.2rem;
+  margin: 0;
+  padding: 0;
+  font-size: var(--evo-xs);
+  color: var(--ink-2);
+}
+
+.evo-milestone::before {
+  content: "";
+  position: absolute;
+  top: calc(1.35rem + 4px);
+  left: 0;
+  right: -0.4rem;
+  border-top: 1.5px solid var(--axis);
+}
+
+.evo-milestone:last-child::before { right: 0; }
+
+.evo-milestone-date {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.35rem;
+  white-space: nowrap;
+}
+
+.evo-milestone-dot {
+  position: relative;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--accent);
+  margin-bottom: 0.25rem;
+}
+
+.evo-milestone b {
+  color: var(--ink);
+  font-size: var(--evo-sm);
+  font-weight: 650;
+  line-height: 1.25;
+}
+
+.evo-milestone-why { line-height: 1.35; }
+
+.evo-milestone a { font-variant-numeric: tabular-nums; }
+
+/* ---------------- ResumePointViz ---------------- */
+
+.evo-resume-grid {
+  display: grid;
+  grid-template-columns: 7.2rem repeat(16, minmax(0, 1fr));
+  gap: 4px 2px;
+  align-items: center;
+}
+
+.evo-rcell {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 1.6rem;
+  padding: 0;
+  border-radius: 3px;
+  border: 1px solid transparent;
+  background: color-mix(in srgb, var(--grid) 45%, transparent);
+  font-size: var(--evo-xs);
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+  transition: background 0.25s ease, opacity 0.25s ease;
+}
+
+.evo-rcell.head { background: transparent; height: 1.2rem; }
+.evo-rcell.head.resume { color: var(--accent); font-weight: 700; }
+.evo-rcell.ok { background: color-mix(in srgb, var(--series-3) 45%, var(--surface)); }
+.evo-rcell.evicted { background: var(--evo-hatch); border-color: var(--grid); }
+.evo-rcell.beyond { opacity: 0.45; }
+.evo-rcell.off { opacity: 0.2; }
+.evo-rcell.resume:not(.head) { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+
+.evo-rcell.btn { cursor: pointer; font: inherit; }
+.evo-rcell.btn:hover { border-color: var(--series-7); }
+
+.evo-rcell.btn i {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--series-7);
+}
+
+/* ---------------- PoolSplitViz ---------------- */
+
+.evo-pool {
+  display: flex;
+  gap: 4px;
+  margin: 0.4rem 0;
+}
+
+.evo-pool-part {
+  display: grid;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.evo-pool-name {
+  color: var(--ink-2);
+  font-size: var(--evo-xs);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.evo-pool-bar {
+  display: flex;
+  height: 2rem;
+  border: 1px solid var(--grid);
+  border-radius: 5px;
+  background: var(--page-2);
+  overflow: hidden;
+}
+
+.evo-pool-bar i { transition: width 0.3s ease; }
+.evo-pool-bar i.full { background: var(--series-1); }
+.evo-pool-bar i.window { background: var(--series-3); }
+
+/* ---------------- RestoreViz / RouterViz 的横条 ---------------- */
+
+.evo-hbars {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.45rem 0.7rem;
+  align-items: center;
+}
+
+.evo-hbar-track {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  height: 1.7rem;
+  min-width: 0;
+}
+
+.evo-hbar-track i {
+  height: 100%;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--muted) 45%, var(--surface));
+  transition: width 0.3s ease, background 0.3s ease;
+}
+
+.evo-hbar-track i.win { background: var(--series-3); }
+.evo-hbar-track.stacked i { border-radius: 0; }
+.evo-hbar-track.stacked i.queue { background: var(--axis); border-radius: 4px 0 0 4px; }
+.evo-hbar-track.stacked i.work { background: var(--series-1); border-radius: 0 4px 4px 0; }
+
+.evo-hbar-track b {
+  margin-left: 0.5rem;
+  color: var(--ink);
+  font-size: var(--evo-sm);
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.evo-engines {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.evo-engine {
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.5rem 0.7rem;
+  border: 1px solid var(--grid);
+  border-radius: 8px;
+  transition: border-color 0.3s ease;
+}
+
+.evo-engine.win { border-color: var(--good); }
+
+/* ---------------- OverlapViz ---------------- */
+
+.evo-tracks {
+  display: grid;
+  grid-template-columns: 2.4rem minmax(0, 1fr);
+  gap: 3px 0.5rem;
+  align-items: center;
+}
+
+.evo-track {
+  position: relative;
+  height: 1.6rem;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--grid) 40%, transparent);
+}
+
+.evo-block {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  border: 1px solid var(--surface);
+  border-radius: 4px;
+  font-size: var(--evo-xs);
+  font-weight: 650;
+  color: var(--ink);
+  overflow: hidden;
+  transition: left 0.3s ease, width 0.3s ease;
+}
+
+.evo-block.cpu { background: color-mix(in srgb, var(--series-4) 60%, var(--surface)); }
+.evo-block.gpu { background: color-mix(in srgb, var(--series-1) 50%, var(--surface)); }
+
+/* ---------------- SessionViz ---------------- */
+
+.evo-phases {
+  display: grid;
+  grid-template-columns: 1fr 2fr 1fr;
+  gap: 3px;
+  margin: 0.5rem 0 0.7rem;
+}
+
+.evo-phases.n4 { grid-template-columns: 1fr 2fr 1fr 1fr; }
+
+.evo-phase {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 1.8rem;
+  padding: 0.1rem 0.3rem;
+  border: 1px solid var(--grid);
+  border-radius: 5px;
+  color: var(--muted);
+  font-size: var(--evo-xs);
+  text-align: center;
+  transition: background 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+}
+
+.evo-phase.tool { border-style: dashed; }
+
+.evo-phase.active {
+  color: var(--ink);
+  font-weight: 650;
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface));
+}
+
+.evo-kv {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 4px;
+  margin-bottom: 0.7rem;
+}
+
+.evo-kv-entry {
+  --c: var(--evo-other);
+  display: grid;
+  gap: 0.1rem;
+  padding: 0.4rem 0.6rem;
+  min-height: 2.9rem;
+  align-content: center;
+  border-radius: 7px;
+  border: 1px solid color-mix(in srgb, var(--c) 55%, var(--grid));
+  background: color-mix(in srgb, var(--c) 14%, var(--surface));
+  font-size: var(--evo-sm);
+  transition: opacity 0.3s ease, background 0.3s ease;
+}
+
+.evo-kv-entry.session { --c: var(--evo-ctx); }
+.evo-kv-entry b { font-weight: 650; color: var(--ink); }
+.evo-kv-entry small { font-size: var(--evo-xs); color: var(--ink-2); min-height: 1.1em; }
+
+.evo-kv-entry.inUse,
+.evo-kv-entry.kept,
+.evo-kv-entry.reused { background: color-mix(in srgb, var(--c) 34%, var(--surface)); }
+
+.evo-kv-entry.evicted {
+  border-style: dashed;
+  background: transparent;
+  opacity: 0.55;
+}
+
+.evo-kv-entry.evicted b { text-decoration: line-through; }
+.evo-kv-entry.evicted small { color: var(--series-8); font-weight: 650; }
+
+/* ---------------- DeclareViz ---------------- */
+
+.evo-declare {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.6rem;
+  margin: 0.5rem 0 0.2rem;
+}
+
+.evo-declare-col {
+  display: grid;
+  align-content: start;
+  gap: 0.35rem;
+  padding: 0.6rem 0.7rem 0.7rem;
+  border: 1px solid var(--grid);
+  border-radius: 8px;
+}
+
+.evo-declare-col.next { border-style: dashed; }
+
+.evo-declare-col h4 {
+  margin: 0 0 0.2rem;
+  font-size: var(--evo-body);
+  font-weight: 650;
+  color: var(--ink);
+}
+
+.evo-declare-label {
+  font-size: var(--evo-xs);
+  color: var(--muted);
+}
+
+.evo-declare-col ul {
+  display: grid;
+  gap: 3px;
+  list-style: none;
+  margin: 0 0 0.3rem;
+  padding: 0;
+}
+
+.evo-declare-col li {
+  --c: var(--series-2);
+  margin: 0;
+  padding: 0.25rem 0.5rem;
+  border-radius: 5px;
+  border: 1px solid color-mix(in srgb, var(--c) 45%, var(--grid));
+  background: color-mix(in srgb, var(--c) 14%, var(--surface));
+  font-size: var(--evo-sm);
+  color: var(--ink);
+  line-height: 1.35;
+}
+
+.evo-declare-col li.runtime { --c: var(--series-1); }
+
+/* ---------------- 窄屏 ---------------- */
+
+@media (max-width: 640px) {
+  .evo-lanes { grid-template-columns: 1fr; }
+  .evo-controls.two { grid-template-columns: 1fr; }
+  .evo-request,
+  .evo-tree-request { grid-template-columns: 1fr; gap: 0.2rem; }
+  .evo-declare { grid-template-columns: 1fr; }
+  .evo-resume-grid { grid-template-columns: 5.4rem repeat(16, minmax(0, 1fr)); gap: 4px 1px; }
+  .evo-resume-grid .evo-rowhead { font-size: var(--evo-xs); }
+  .evo-rcell.head { font-size: 0.58rem; }
+  .evo-node-meta { margin-left: 0; }
+
+  .evo-timeline { grid-template-columns: 1fr; gap: 0.7rem; }
+  .evo-milestone {
+    grid-template-columns: 5.4rem 9px minmax(0, 1fr);
+    column-gap: 0.6rem;
+    align-items: baseline;
+  }
+  .evo-milestone::before { display: none; }
+  .evo-milestone-dot { margin: 0; align-self: center; }
+  .evo-milestone b { grid-column: 3; }
+  .evo-milestone-why,
+  .evo-milestone a { grid-column: 3; }
+  .evo-milestone-date { grid-row: 1; grid-column: 1; }
+  .evo-milestone-dot { grid-row: 1; grid-column: 2; }
+}
