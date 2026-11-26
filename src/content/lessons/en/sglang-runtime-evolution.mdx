@@ -44,15 +44,6 @@ import CheckpointViz from "../../../viz/sglang-runtime-evolution/CheckpointViz";
 import StateCopyViz from "../../../viz/sglang-runtime-evolution/StateCopyViz";
 import ResumePointViz from "../../../viz/sglang-runtime-evolution/ResumePointViz";
 import LockViz from "../../../viz/sglang-runtime-evolution/LockViz";
-import ShareViz from "../../../viz/sglang-runtime-evolution/ShareViz";
-import PoolSplitViz from "../../../viz/sglang-runtime-evolution/PoolSplitViz";
-import CompactionViz from "../../../viz/sglang-runtime-evolution/CompactionViz";
-import DeferredFreeViz from "../../../viz/sglang-runtime-evolution/DeferredFreeViz";
-import TierViz from "../../../viz/sglang-runtime-evolution/TierViz";
-import BackupViz from "../../../viz/sglang-runtime-evolution/BackupViz";
-import RestoreViz from "../../../viz/sglang-runtime-evolution/RestoreViz";
-import HideTransferViz from "../../../viz/sglang-runtime-evolution/HideTransferViz";
-import SparseViz from "../../../viz/sglang-runtime-evolution/SparseViz";
 import HitTtftViz from "../../../viz/sglang-runtime-evolution/HitTtftViz";
 import OverlapViz from "../../../viz/sglang-runtime-evolution/OverlapViz";
 import FutureSlotViz from "../../../viz/sglang-runtime-evolution/FutureSlotViz";
@@ -196,59 +187,17 @@ Protection differs in the same way. A running request needs the whole path for f
 
 ### Unified memory
 
-Every new layer type brought its own memory pool, sized at startup. Each state type needs a different amount of memory, and demand shifts with the workload. Full KV grows with the retained context. Window KV depends on the window size and the active branches. Recurrent state depends on the running requests and the saved states. On Reflection Beam, a hybrid-attention model, longer contexts need a smaller share for window KV.
+Every new layer type brought its own memory pool, sized at startup. Demand shifts with the workload, so a fixed split strands memory. On Reflection Beam, a hybrid-attention model, the default split gives window KV 80% of KV memory, while agent traffic needs 9%. The full-attention pool runs out while the window pool sits idle.
 
-<ShareViz client:visible lang="en" />
-
-The default split gives window KV 80% of KV memory, and agent traffic needs 9%. With long contexts, the full-attention pool runs out while the window pool sits idle.
-
-<PoolSplitViz client:visible lang="en" />
-
-Unified Memory (`--enable-unified-memory`) replaces the fixed splits with one arena. Full-attention KV, window KV, recurrent state, and draft-model KV all share it, and free pages serve whichever pool needs them. On 4× B300, Reflection Beam fits 4.7× as many concurrent long-context requests as with the default split. In a 64-session agent replay, median TTFT falls from 688 ms to 462 ms, and the prefix-cache hit rate rises from 87% to 95%.
-
-Pools that share one arena fragment its free space, so pages have to move. A request holds a page id, and a page table maps the id to a physical slot. To move a page, the runtime copies its data and changes one table entry. The request never sees the move.
-
-<CompactionViz client:visible lang="en" />
-
-The old slot cannot be reused right away, and neither can the slots of a finished request. With overlap scheduling, the CPU frees a finished request while a GPU forward is still running and may still read those slots. Freeing is therefore split into two stages. The page id is free at once, and the physical slot waits until the forward ends. [Unified Memory in SGLang](https://yichizhang.dev/AI-Infra-Visualized/en/lessons/unified-memory/) covers the allocator.
-
-<DeferredFreeViz client:visible lang="en" />
+Unified Memory (`--enable-unified-memory`) replaces the fixed splits with one arena that every KV and state pool shares. On 4× B300, Reflection Beam fits 4.7× as many concurrent long-context requests. See [Unified Memory in SGLang](https://yichizhang.dev/AI-Infra-Visualized/en/lessons/unified-memory/) for how pages are shared, moved, and freed.
 
 ### HiCache
 
-Cached state no longer fits on the GPU. HiCache keeps evicted state in host memory and in optional shared storage, and loads it back on a hit. On Inkling-Small with 8× H200 and a 500 GiB storage tier, effective input throughput rises from 15.5K tokens/s with the GPU cache alone to 67.1K.
-
-One index covers GPU and host memory, and storage is queried on demand. Attention reads only from GPU memory, so a hit lower down needs a transfer first. The deeper the hit, the more copies before the request can run.
-
-<TierViz client:visible lang="en" />
-
-Each layer type is backed up differently, and only the full-attention copy grows with the node. On restore, a recurrent state comes back only where one was backed up, and later tokens are recomputed.
-
-<BackupViz client:visible lang="en" />
-
-A transfer is not always worth it. Restoring 1 GiB of KV at 50 GiB/s with a 2 ms fixed cost takes 22 ms. If recomputing takes 35 ms, restoring wins. If it takes 12 ms, recomputing wins. By default SGLang recomputes host hits under 10 tokens and skips storage prefetches under 256.
-
-<RestoreViz client:visible lang="en" />
-
-When a restore is worth it, SGLang hides it in time the request already spends. It prefetches from storage while the request waits in the queue. It also pipelines the load with the compute, so each layer's compute waits only for its own layer's load. The copy still happens, but the request no longer waits for it.
-
-<HideTransferViz client:visible lang="en" />
-
-State in shared storage raises one more question: what identifies it? A page is reusable only if three things match the reader.
-
-- **Input identity:** token ids, positions, and any additional model inputs.
-- **Model identity:** weights, adapters, and a compatible model configuration.
-- **Storage format:** state type, dtype, layout, and GPU sharding.
-
-Token matching cannot see model identity, and the RL section returns to this. [HiCache in SGLang](https://yichizhang.dev/AI-Infra-Visualized/en/lessons/hicache/) covers the tiers and transfers.
+Cached state no longer fits on the GPU. HiCache keeps evicted state in host memory and in optional shared storage, and loads it back on a hit. On Inkling-Small with 8× H200 and a 500 GiB storage tier, effective input throughput rises from 15.5K tokens/s with the GPU cache alone to 67.1K. See [HiCache in SGLang](https://yichizhang.dev/AI-Infra-Visualized/en/lessons/hicache/) for the tiers and transfers, and [Storage hardware behind SGLang HiCache](https://yichizhang.dev/AI-Infra-Visualized/en/lessons/hicache-storage/) for when restoring beats recomputing.
 
 ### Sparse attention
 
-Sparse attention reads only a few KV entries per step, yet a GPU-only cache still holds the full context. HiSparse keeps the full KV in host memory and only the selected entries on the GPU. At each decode step, only the selected misses move from host to GPU.
-
-<SparseViz client:visible lang="en" />
-
-The freed GPU memory fits larger decode batches. With GLM-5.1-FP8 on one 8× H200 server, at 256 concurrent requests with 32K input and 8K output tokens, decode throughput is more than 3× higher. At low concurrency the swap-in overhead can hurt. See [HiSparse in SGLang](https://yichizhang.dev/AI-Infra-Visualized/en/lessons/hisparse/).
+Sparse attention reads only a few KV entries per step, yet a GPU-only cache still holds the full context. HiSparse keeps the full KV in host memory and only the selected entries on the GPU, which frees GPU memory for larger decode batches. With GLM-5.1-FP8 on one 8× H200 server, decode throughput at 256 concurrent requests is more than 3× higher. See [HiSparse in SGLang](https://yichizhang.dev/AI-Infra-Visualized/en/lessons/hisparse/).
 
 ### Answers by layer type
 

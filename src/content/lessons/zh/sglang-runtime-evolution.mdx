@@ -44,15 +44,6 @@ import CheckpointViz from "../../../viz/sglang-runtime-evolution/CheckpointViz";
 import StateCopyViz from "../../../viz/sglang-runtime-evolution/StateCopyViz";
 import ResumePointViz from "../../../viz/sglang-runtime-evolution/ResumePointViz";
 import LockViz from "../../../viz/sglang-runtime-evolution/LockViz";
-import ShareViz from "../../../viz/sglang-runtime-evolution/ShareViz";
-import PoolSplitViz from "../../../viz/sglang-runtime-evolution/PoolSplitViz";
-import CompactionViz from "../../../viz/sglang-runtime-evolution/CompactionViz";
-import DeferredFreeViz from "../../../viz/sglang-runtime-evolution/DeferredFreeViz";
-import TierViz from "../../../viz/sglang-runtime-evolution/TierViz";
-import BackupViz from "../../../viz/sglang-runtime-evolution/BackupViz";
-import RestoreViz from "../../../viz/sglang-runtime-evolution/RestoreViz";
-import HideTransferViz from "../../../viz/sglang-runtime-evolution/HideTransferViz";
-import SparseViz from "../../../viz/sglang-runtime-evolution/SparseViz";
 import HitTtftViz from "../../../viz/sglang-runtime-evolution/HitTtftViz";
 import OverlapViz from "../../../viz/sglang-runtime-evolution/OverlapViz";
 import FutureSlotViz from "../../../viz/sglang-runtime-evolution/FutureSlotViz";
@@ -196,59 +187,17 @@ Recurrent state 还会随着 token 的处理而变化，所以两个请求不能
 
 ### Unified memory
 
-每种新的层类型都带来了自己的内存池，大小在启动时定好。各类状态需要的内存不一样，需求还会随负载变化。Full KV 随保留的上下文增长。Window KV 取决于窗口大小和活跃的分支数。Recurrent state 取决于运行中的请求数和保存的状态数。Reflection Beam 是一个混合注意力模型，在它上面，上下文越长，window KV 需要的占比越小。
+每种新的层类型都带来了自己的内存池，大小在启动时定好。需求会随负载变化，固定切分就会让一部分内存用不上。Reflection Beam 是一个混合注意力模型，默认切分把 80% 的 KV 内存给了 window KV，而 agent 流量只需要 9%。结果是 full-attention 池用光了，window 池还闲着。
 
-<ShareViz client:visible />
-
-默认切分把 80% 的 KV 内存给了 window KV，而 agent 流量只需要 9%。上下文很长时，full-attention 池用光了，window 池还闲着。
-
-<PoolSplitViz client:visible />
-
-Unified Memory（`--enable-unified-memory`）用一个 arena 取代固定切分。Full-attention KV、window KV、recurrent state 和 draft 模型的 KV 都共用它，空闲的页谁需要就给谁。在 4× B300 上，Reflection Beam 能同时放下的长上下文请求数是默认切分的 4.7×。在 64 个 session 的 agent 回放中，TTFT 中位数从 688 ms 降到 462 ms，前缀缓存命中率从 87% 升到 95%。
-
-多个池共用一个 arena，空闲空间会变得零碎，所以页需要能搬动。请求持有的是页号，页表把页号映射到物理 slot。搬动一页时，runtime 复制它的数据，再改掉页表里的一项。请求全程察觉不到这次搬动。
-
-<CompactionViz client:visible />
-
-旧的 slot 不能马上复用，已结束请求的 slot 也一样。在 overlap 调度下，CPU 释放一个已结束的请求时，GPU 上可能还有一次 forward 在运行，并且仍然会读这些 slot。因此释放被拆成两个阶段。页号立即空闲，物理 slot 要等这次 forward 结束才释放。分配器的细节见 [SGLang 里的 Unified Memory](https://yichizhang.dev/AI-Infra-Visualized/lessons/unified-memory/)。
-
-<DeferredFreeViz client:visible />
+Unified Memory（`--enable-unified-memory`）用一个所有 KV 池和状态池共用的 arena 取代固定切分。在 4× B300 上，Reflection Beam 能同时放下的长上下文请求数是原来的 4.7×。页如何共享、搬动和释放，见 [SGLang 里的 Unified Memory](https://yichizhang.dev/AI-Infra-Visualized/lessons/unified-memory/)。
 
 ### HiCache
 
-缓存的状态在 GPU 上已经放不下了。HiCache 把被驱逐的状态存到主机内存和可选的共享存储里，命中时再加载回来。在 Inkling-Small、8× H200、500 GiB 存储层的配置下，有效输入吞吐从只用 GPU 缓存时的 15.5K tokens/s 提升到 67.1K。
-
-GPU 和主机内存由同一份索引覆盖，存储则按需查询。Attention 只从 GPU 显存读取，所以命中在更下层时要先做传输。命中得越深，请求运行前要做的拷贝越多。
-
-<TierViz client:visible />
-
-每种层类型的备份方式不同，只有 full-attention 的拷贝量随节点长度增长。恢复时，recurrent state 只能恢复到备份过的位置，后面的 token 要重算。
-
-<BackupViz client:visible />
-
-传输并不总是划算。以 50 GiB/s 的速度恢复 1 GiB 的 KV，加上 2 ms 的固定开销，需要 22 ms。如果重算要 35 ms，恢复更快。如果重算只要 12 ms，重算更快。SGLang 默认对少于 10 个 token 的主机内存命中直接重算，对少于 256 个 token 的存储命中不做预取。
-
-<RestoreViz client:visible />
-
-当恢复确实划算时，SGLang 把它藏进请求本来就要花的时间里。请求还在排队时，就开始从存储预取。加载和计算也做成流水线，每一层的计算只等自己这一层的加载。拷贝仍然发生，但请求不再为它等待。
-
-<HideTransferViz client:visible />
-
-状态放进共享存储之后，还多出一个问题：用什么来标识它？只有下面三项都和读取方一致，一页才能复用。
-
-- **输入身份**：token id、位置，以及其他附加的模型输入。
-- **模型身份**：权重、adapter，以及兼容的模型配置。
-- **存储格式**：状态类型、dtype、布局，以及 GPU 分片方式。
-
-Token 匹配看不到模型身份，RL 一节会回到这个问题。分层和传输的细节见 [SGLang 里的 HiCache](https://yichizhang.dev/AI-Infra-Visualized/lessons/hicache/)。
+缓存的状态在 GPU 上已经放不下了。HiCache 把被驱逐的状态存到主机内存和可选的共享存储里，命中时再加载回来。在 Inkling-Small、8× H200、500 GiB 存储层的配置下，有效输入吞吐从只用 GPU 缓存时的 15.5K tokens/s 提升到 67.1K。分层和传输的细节见 [SGLang 里的 HiCache](https://yichizhang.dev/AI-Infra-Visualized/lessons/hicache/)，什么时候恢复比重算划算见 [SGLang HiCache 的存储硬件](https://yichizhang.dev/AI-Infra-Visualized/lessons/hicache-storage/)。
 
 ### 稀疏注意力
 
-稀疏注意力每一步只读少数几条 KV，但只用 GPU 的缓存仍然保存着完整的上下文。HiSparse 把完整的 KV 放在主机内存里，GPU 上只留被选中的条目。每个 decode 步里，只有被选中但未命中的条目需要从主机内存搬到 GPU。
-
-<SparseViz client:visible />
-
-腾出的显存可以放下更大的 decode batch。用 GLM-5.1-FP8 在一台 8× H200 服务器上测试，256 并发、输入 32K、输出 8K tokens 时，decode 吞吐提升到 3× 以上。并发较低时，换入的开销可能反而拖慢速度。详见 [SGLang 里的 HiSparse](https://yichizhang.dev/AI-Infra-Visualized/lessons/hisparse/)。
+稀疏注意力每一步只读少数几条 KV，但只用 GPU 的缓存仍然保存着完整的上下文。HiSparse 把完整的 KV 放在主机内存里，GPU 上只留被选中的条目，腾出的显存可以放下更大的 decode batch。用 GLM-5.1-FP8 在一台 8× H200 服务器上测试，256 并发时 decode 吞吐提升到 3× 以上。详见 [SGLang 里的 HiSparse](https://yichizhang.dev/AI-Infra-Visualized/lessons/hisparse/)。
 
 ### 各层类型的答案
 

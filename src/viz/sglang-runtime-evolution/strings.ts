@@ -20,7 +20,6 @@ export const COMMON = {
 export const PROGRAM = {
   title: { en: "Program and requests", zh: "程序与请求" },
   subtitle: { en: "Block width = token count", zh: "块宽 = token 数" },
-  tabs: { en: "View", zh: "视角" },
   app: { en: "What the application knows", zh: "应用知道的" },
   server: { en: "What the server receives", zh: "服务端收到的" },
   request: { en: "Request", zh: "请求" },
@@ -32,7 +31,6 @@ export const FORK = {
   tabs: { en: "Mode", zh: "模式" },
   without: { en: "Without the hint", zh: "没有提示" },
   with: { en: "With the hint", zh: "有提示" },
-  sentFirst: { en: "Sent first", zh: "先行发送" },
   ctxComputed: { en: "Shared context computed", zh: "共享上下文计算次数" },
   ctxReused: { en: "reused", zh: "复用" },
 } satisfies Record<string, Localized>;
@@ -85,8 +83,6 @@ export const SCHED = {
   noDefer: { en: "Without deferral", zh: "不延后" },
   withDefer: { en: "With deferral", zh: "延后" },
   batch: { en: "Batch", zh: "批次" },
-  served: { en: "Served", zh: "第" },
-  servedTail: { en: "", zh: " 个服务" },
   arrivedFirst: { en: "arrived first", zh: "最先到达" },
   testsWaits: { en: "Write tests waits", zh: "Write tests 等待" },
   computeTotal: { en: "Tokens computed", zh: "已计算 tokens" },
@@ -190,7 +186,6 @@ export const RESUME = {
   full: { en: "Full KV", zh: "Full KV" },
   window: { en: "Window KV", zh: "Window KV" },
   recurrent: { en: "Recurrent state", zh: "Recurrent state" },
-  token: { en: "Token", zh: "Token" },
   resumeAfter: { en: "Resume after token", zh: "恢复点：token" },
   reuse: { en: "Reuse", zh: "复用" },
   recompute: { en: "Recompute", zh: "重算" },
@@ -199,45 +194,6 @@ export const RESUME = {
   saved: { en: "Saved state", zh: "已保存的状态" },
   savedBeyond: { en: "Saved state beyond the match", zh: "匹配范围之外的已保存状态" },
   toggleSave: { en: "Toggle a saved state after token", zh: "切换是否在此 token 后保存状态：token" },
-} satisfies Record<string, Localized>;
-
-export const POOL = {
-  title: { en: "KV memory split", zh: "KV 内存切分" },
-  subtitle: {
-    en: "100 GiB KV budget · weights excluded · window KV uses 10 GiB",
-    zh: "KV 预算 100 GiB · 不含权重 · window KV 占用 10 GiB",
-  },
-  tabs: { en: "Allocator", zh: "分配方式" },
-  fixed: { en: "Fixed split 20 / 80", zh: "固定切分 20 / 80" },
-  unified: { en: "Unified Memory", zh: "Unified Memory" },
-  demand: { en: "Full-attention KV needed", zh: "full-attention KV 需求" },
-  fullPool: { en: "Full pool", zh: "Full 池" },
-  windowPool: { en: "Window pool", zh: "Window 池" },
-  arena: { en: "One arena", zh: "同一个 arena" },
-  fullUsed: { en: "Full-attention KV", zh: "Full-attention KV" },
-  windowUsed: { en: "Window KV", zh: "Window KV" },
-  idle: { en: "Idle", zh: "闲置" },
-  free: { en: "Free, any pool", zh: "空闲，任何池可用" },
-  short: { en: "Short", zh: "缺口" },
-  fits: { en: "Fits", zh: "放得下" },
-} satisfies Record<string, Localized>;
-
-export const RESTORE = {
-  title: { en: "Restore or recompute", zh: "恢复还是重算" },
-  subtitle: {
-    en: "Illustrative · 50 GiB/s transfer · 2 ms fixed cost",
-    zh: "示意数值 · 传输 50 GiB/s · 固定开销 2 ms",
-  },
-  size: { en: "KV to restore", zh: "要恢复的 KV" },
-  recomputeTime: { en: "Time to recompute", zh: "重算耗时" },
-  restore: { en: "Restore", zh: "恢复" },
-  recompute: { en: "Recompute", zh: "重算" },
-  presets: { en: "Preset", zh: "预设" },
-  slow: { en: "Slow to recompute", zh: "重算慢" },
-  fast: { en: "Fast to recompute", zh: "重算快" },
-  restoreSaves: { en: "Restore saves", zh: "恢复省下" },
-  recomputeSaves: { en: "Recompute saves", zh: "重算省下" },
-  tie: { en: "Same cost", zh: "两者持平" },
 } satisfies Record<string, Localized>;
 
 export const OVERLAP = {
@@ -268,13 +224,8 @@ export const SESSION = {
   closed: { en: "Session closed", zh: "Session 关闭" },
   sessionKv: { en: "Session A's KV", zh: "Session A 的 KV" },
   otherKv: { en: "Other KV", zh: "其他 KV" },
-  inUse: { en: "in use", zh: "使用中" },
-  looksUnused: { en: "looks unused", zh: "看起来没人用" },
-  kept: { en: "kept: evicted last", zh: "保留：最后才驱逐" },
   unused: { en: "unused", zh: "没人用" },
   evicted: { en: "evicted", zh: "已驱逐" },
-  reused: { en: "reused", zh: "已复用" },
-  evictable: { en: "evictable", zh: "可驱逐" },
   history: { en: "History", zh: "历史" },
   newTokens: { en: "New tokens", zh: "新 token" },
 } satisfies Record<string, Localized>;
@@ -370,9 +321,6 @@ export const WINDOW = {
   kv: { en: "Window KV", zh: "Window KV" },
   reqA: { en: "Request A · matches 12", zh: "请求 A · 匹配 12" },
   reqB: { en: "Request B · matches 8", zh: "请求 B · 匹配 8" },
-  needed: { en: "needed", zh: "需要" },
-  evictable: { en: "evictable", zh: "可驱逐" },
-  notUsed: { en: "not used", zh: "用不到" },
   evicted: { en: "evicted", zh: "已驱逐" },
   kept: { en: "cached", zh: "在缓存" },
   canResume: { en: "can resume", zh: "可以恢复" },
@@ -395,10 +343,7 @@ export const CKPT = {
 export const STATECOPY = {
   title: { en: "Private copies", zh: "私有副本" },
   subtitle: { en: "Recurrent state saved after token 8", zh: "token 8 之后保存的 recurrent state" },
-  cached: { en: "Cached state S8", zh: "缓存的状态 S8" },
   unchanged: { en: "unchanged", zh: "保持不变" },
-  fixCopy: { en: "Fix bug: own copy", zh: "Fix bug：自己的副本" },
-  testsCopy: { en: "Write tests: own copy", zh: "Write tests：自己的副本" },
   copyOf: { en: "copy of S8", zh: "S8 的副本" },
   advanced: { en: "advanced with its own tokens", zh: "已随自己的 token 推进" },
 } satisfies Record<string, Localized>;
@@ -424,121 +369,6 @@ export const LOCKS = {
   evictable: { en: "Can be evicted", zh: "可驱逐" },
 } satisfies Record<string, Localized>;
 
-export const SHARE = {
-  title: { en: "Window KV share needed", zh: "Window KV 所需占比" },
-  subtitle: { en: "Reflection Beam · TP4 · BF16 KV · no drafter", zh: "Reflection Beam · TP4 · BF16 KV · 无 drafter" },
-  defaultSplit: { en: "Default split: 80%", zh: "默认切分：80%" },
-} satisfies Record<string, Localized>;
-
-export const SHARE_ROWS: { name: Localized; sub: Localized; pct: number }[] = [
-  { name: { en: "Math", zh: "数学" }, sub: { en: "~400 input · 4K output tokens", zh: "输入约 400 · 输出 4K tokens" }, pct: 53 },
-  { name: { en: "Benchmark", zh: "Benchmark" }, sub: { en: "8K input · 1K output tokens", zh: "输入 8K · 输出 1K tokens" }, pct: 28 },
-  { name: { en: "Agents", zh: "Agent" }, sub: { en: "~60K input · ~100 output tokens", zh: "输入约 60K · 输出约 100 tokens" }, pct: 9 },
-];
-
-export const COMPACT = {
-  title: { en: "Compaction", zh: "压实" },
-  subtitle: { en: "Move A from slot 1 to slot 3", zh: "把 A 从 slot 1 搬到 slot 3" },
-  request: { en: "Request", zh: "请求" },
-  pageId: { en: "page id A", zh: "页号 A" },
-  pageTable: { en: "Page table", zh: "页表" },
-  slot: { en: "slot", zh: "slot" },
-  slots: { en: "Physical slots", zh: "物理 slot" },
-  free: { en: "Free", zh: "空闲" },
-  oldA: { en: "Old A", zh: "旧 A" },
-} satisfies Record<string, Localized>;
-
-export const COMPACT_STEPS: Localized[] = [
-  { en: "A sits in slot 1, between two free slots.", zh: "A 在 slot 1，夹在两个空闲 slot 之间。" },
-  { en: "A is copied to slot 3 and the table entry changes. A reader may still use the old slot.", zh: "A 被复制到 slot 3，页表的这一项随之改变。旧 slot 可能还有读者在用。" },
-  { en: "After the last read, the old slot is freed. Slots 0 and 1 are one free range.", zh: "最后一次读取结束后，旧 slot 被释放。Slot 0 和 1 连成一段空闲区。" },
-];
-
-export const FREE = {
-  title: { en: "Freeing a slot", zh: "释放 slot" },
-  subtitle: { en: "Request X finishes while a forward still reads slot 7", zh: "请求 X 结束时，还有一次 forward 在读 slot 7" },
-  tabs: { en: "Mode", zh: "模式" },
-  atOnce: { en: "Free at once", zh: "立即释放" },
-  twoStage: { en: "Two-stage free", zh: "两阶段释放" },
-  p1: { en: "Forward starts", zh: "Forward 开始" },
-  p2: { en: "Request X finishes", zh: "请求 X 结束" },
-  p3: { en: "Forward ends", zh: "Forward 结束" },
-  forward: { en: "GPU forward", zh: "GPU forward" },
-  slot: { en: "Slot 7", zh: "Slot 7" },
-  pageId: { en: "Page id", zh: "页号" },
-  reads: { en: "reads slot 7", zh: "读 slot 7" },
-  readsBad: { en: "reads overwritten data", zh: "读到被覆盖的数据" },
-  done: { en: "done", zh: "已结束" },
-  held: { en: "held by X", zh: "X 持有" },
-  given: { en: "given to Y: overwritten", zh: "分给 Y：被覆盖" },
-  pending: { en: "pending: not reusable", zh: "待释放：不可复用" },
-  freeY: { en: "free: Y may write", zh: "空闲：Y 可以写入" },
-  freeNow: { en: "free at once", zh: "立即空闲" },
-} satisfies Record<string, Localized>;
-
-export const TIER = {
-  title: { en: "Memory tiers", zh: "内存分层" },
-  subtitle: { en: "Attention reads only from GPU memory", zh: "attention 只从 GPU 显存读取" },
-  tabs: { en: "Where the hit is", zh: "命中位置" },
-  hitGpu: { en: "Hit on GPU", zh: "命中在 GPU" },
-  hitHost: { en: "Hit on host", zh: "命中在主机内存" },
-  hitStorage: { en: "Hit in storage", zh: "命中在存储" },
-  gpu: { en: "GPU memory", zh: "GPU 显存" },
-  host: { en: "Host memory", zh: "主机内存" },
-  storage: { en: "Shared storage", zh: "共享存储" },
-  kv: { en: "cached KV", zh: "缓存的 KV" },
-  copies: { en: "Copies before the request runs", zh: "请求运行前的拷贝次数" },
-} satisfies Record<string, Localized>;
-
-export const BACKUP = {
-  title: { en: "Backup by layer type", zh: "各层类型的备份" },
-  subtitle: { en: "One node copied to host memory · 4-token window", zh: "一个节点备份到主机内存 · 窗口 4 tokens" },
-  nodeLen: { en: "Tokens in the node", zh: "节点里的 token 数" },
-  full: { en: "Full attention", zh: "Full attention" },
-  window: { en: "Sliding window", zh: "Sliding window" },
-  recurrent: { en: "Recurrent", zh: "Recurrent" },
-  copied: { en: "Copied", zh: "已拷贝" },
-  notCopied: { en: "Not copied", zh: "不拷贝" },
-  tokens: { en: "tokens", zh: "tokens" },
-  oneState: { en: "1 state", zh: "1 份状态" },
-} satisfies Record<string, Localized>;
-
-export const HIDE = {
-  title: { en: "Hidden transfers", zh: "隐藏传输" },
-  subtitle: { en: "Schematic time units · 3 layers", zh: "示意时间单位 · 3 层" },
-  queued: { en: "While queued", zh: "排队期间" },
-  compute: { en: "During compute", zh: "计算期间" },
-  fetchAfter: { en: "Fetch after waiting", zh: "排完队再取" },
-  prefetch: { en: "Prefetch while queued", zh: "排队时预取" },
-  loadAll: { en: "Load all, then compute", zh: "全部加载完再计算" },
-  pipelined: { en: "Pipelined", zh: "流水线" },
-  startsAt: { en: "starts at", zh: "开始于" },
-  units: { en: "units", zh: "个单位" },
-  qLabel: { en: "queued", zh: "排队" },
-  fLabel: { en: "fetch", zh: "取" },
-  rLabel: { en: "run", zh: "运行" },
-  legendTransfer: { en: "Transfer", zh: "传输" },
-  legendCompute: { en: "Compute", zh: "计算" },
-  legendQueue: { en: "Waiting in the queue", zh: "排队等待" },
-} satisfies Record<string, Localized>;
-
-export const SPARSE = {
-  title: { en: "Sparse working set", zh: "稀疏工作集" },
-  subtitle: { en: "12 KV entries · the GPU buffer holds 4", zh: "12 条 KV · GPU 缓冲区放 4 条" },
-  host: { en: "Host: full history", zh: "主机内存：完整历史" },
-  gpu: { en: "GPU: KV buffer", zh: "GPU：KV 缓冲区" },
-  selected: { en: "Selected this step", zh: "这一步选中" },
-  loaded: { en: "Loaded from host", zh: "从主机内存加载" },
-  hits: { en: "Reused in place", zh: "原地复用" },
-  loads: { en: "Loaded", zh: "加载" },
-} satisfies Record<string, Localized>;
-
-export const SPARSE_STEPS: Localized[] = [
-  { en: "Step N selects entries 2, 5, 9, and 11. All four are in the GPU buffer.", zh: "第 N 步选中 2、5、9、11，四条都在 GPU 缓冲区里。" },
-  { en: "Step N+1 selects 2, 5, 9, and 12. Three are hits; 12 is a miss.", zh: "第 N+1 步选中 2、5、9、12。三条命中，12 未命中。" },
-  { en: "Entry 12 is loaded from host memory into the slot of 11, the least recently used.", zh: "12 从主机内存加载，放进最久未用的 11 所在的槽位。" },
-];
-
 export const HIT = {
   title: { en: "Hit rate and TTFT", zh: "命中率与 TTFT" },
   subtitle: { en: "Schematic · not measurements", zh: "示意图 · 非实测" },
@@ -557,7 +387,6 @@ export const FUTURE = {
   subtitle: { en: "Slot k: the request's row in a GPU buffer of sampled tokens", zh: "Slot k：该请求在 GPU 采样 token 缓冲区里的那一行" },
   prepare: { en: "Prepare batch N+1 · input = slot k", zh: "准备第 N+1 批 · 输入 = slot k" },
   forwardN: { en: "Batch N: forward, sample token", zh: "第 N 批：forward，采样 token" },
-  write: { en: "Write token to slot k", zh: "把 token 写进 slot k" },
   read: { en: "Batch N+1: read slot k", zh: "第 N+1 批：读 slot k" },
   slotEmpty: { en: "slot k: empty", zh: "slot k：空" },
   slotFilled: { en: "slot k: token", zh: "slot k：已有 token" },
@@ -630,7 +459,6 @@ export const TOKENIZE = {
   once: { en: "Router tokenizes once", zh: "Router 只 tokenize 一次" },
   router: { en: "Router", zh: "Router" },
   engine: { en: "Engine", zh: "引擎" },
-  both: { en: "Router and engine", zh: "Router 和引擎" },
   matched: { en: "Tokens that match on both sides", zh: "两边一致的 token 数" },
   differs: { en: "first difference", zh: "第一个不同处" },
 } satisfies Record<string, Localized>;
@@ -639,8 +467,6 @@ export const PD = {
   title: { en: "Prefill/decode transfer", zh: "Prefill/decode 传输" },
   subtitle: { en: "384-token input · 64 tokens per page", zh: "输入 384 tokens · 每页 64 tokens" },
   have: { en: "Tokens already on decode", zh: "decode 上已有的 token 数" },
-  onDecode: { en: "Already on decode", zh: "decode 上已有" },
-  sent: { en: "Sent by prefill", zh: "由 prefill 发送" },
   reuse: { en: "Reuse", zh: "复用" },
   transfer: { en: "Transfer", zh: "传输" },
   locked: { en: "Locked until the request finishes or fails", zh: "加锁，直到请求完成或失败" },
@@ -654,15 +480,8 @@ export const SCENE = {
   kvCache: { en: "KV cache", zh: "KV 缓存" },
   empty: { en: "empty", zh: "空" },
   radixTree: { en: "Radix tree", zh: "Radix tree" },
-  gpuBuffer: { en: "GPU: KV buffer", zh: "GPU：KV 缓冲区" },
-  hostFull: { en: "Host memory: full KV", zh: "主机内存：完整 KV" },
-  pending: { en: "pending", zh: "待释放" },
-  freeRange: { en: "one free range", zh: "一段连续的空闲区" },
-  pointsHere: { en: "page id A points here", zh: "页号 A 指向这里" },
   cache: { en: "Cache", zh: "缓存" },
   running: { en: "Running requests", zh: "运行中的请求" },
-  ready: { en: "ready to read", zh: "可以读取" },
-  copyStays: { en: "copy kept", zh: "副本保留" },
   token: { en: "token", zh: "token" },
   gpuCache: { en: "GPU cache", zh: "GPU 缓存" },
   incoming: { en: "Another request", zh: "另一个请求" },
@@ -676,7 +495,6 @@ export const SCENE = {
   recompute: { en: "recompute P", zh: "重算 P" },
   prefillWorker: { en: "Prefill worker", zh: "Prefill worker" },
   decodeWorker: { en: "Decode worker", zh: "Decode worker" },
-  lockedTag: { en: "locked", zh: "已加锁" },
   mode: { en: "Mode", zh: "模式" },
   pSuffix: { en: "P + suffix", zh: "P + 后缀" },
 } satisfies Record<string, Localized>;
@@ -694,12 +512,6 @@ export const FORK_STEPS = {
     { en: "Write tests does the same.", zh: "Write tests 同样如此。" },
   ],
 } satisfies Record<string, Localized[]>;
-
-export const TIER_STEPS = {
-  gpu: { en: "The KV is already in GPU memory. The request runs with no copy.", zh: "KV 已经在 GPU 显存里。请求不需要拷贝就能运行。" },
-  host: { en: "One copy, host to GPU, before the request can run.", zh: "请求运行前要做一次拷贝：主机内存到 GPU。" },
-  storage: { en: "Two copies: storage to host, then host to GPU.", zh: "要做两次拷贝：存储到主机内存，再从主机内存到 GPU。" },
-} satisfies Record<string, Localized>;
 
 export const AFFINITY_STEPS = {
   without: [
@@ -736,21 +548,10 @@ export const QUEUE = {
 } satisfies Record<string, Localized>;
 
 export const EXTRA = {
-  needed: { en: "KV needed", zh: "KV 需求" },
-  memory: { en: "KV memory", zh: "KV 内存" },
-  gib: { en: "GiB", zh: "GiB" },
-  nodeOnGpu: { en: "Node on the GPU", zh: "GPU 上的节点" },
-  hostCopy: { en: "Copy in host memory", zh: "主机内存里的副本" },
-  resumesAfter: { en: "resumes after", zh: "恢复到 token" },
   needs: { en: "needs", zh: "需要" },
   resumeHere: { en: "resume", zh: "恢复点" },
-  replay: { en: "Replay", zh: "重播" },
-  saves: { en: "saves", zh: "省下" },
   router: { en: "Router", zh: "Router" },
   request: { en: "Next agent turn", zh: "下一轮 agent 请求" },
-  engineSide: { en: "Engine", zh: "引擎" },
   newWeights: { en: "new weights", zh: "新权重" },
   engineFrame: { en: "Engine", zh: "引擎" },
-  flushed: { en: "flushed", zh: "已清空" },
-  ids: { en: "ids", zh: "id" },
 } satisfies Record<string, Localized>;
