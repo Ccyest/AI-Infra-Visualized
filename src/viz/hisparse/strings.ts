@@ -91,14 +91,16 @@ export const INDEXER = {
     en: "Schematic · bracket numbers are the real sizes in DeepSeek-V3.2 · blue is positive, gray is negative",
   },
   current: { zh: "当前 token 的隐状态", en: "Current hidden state" },
-  queries: { zh: "Query · 每个 head 一列", en: "Queries · one column per head" },
+  perHead: { zh: "每个 head 一列", en: "One column per head" },
+  toQuery: { zh: "压缩，× W_Q", en: "compress, × W_Q" },
   keys: { zh: "Index key = 隐状态 × W_K", en: "Index keys = hidden state × W_K" },
   score: { zh: "分数", en: "Score" },
 } satisfies Record<string, Localized>;
 
-/** 时间轴上的五个阶段(第 2 个阶段占 3 格,每个 head 一格) */
+/** 时间轴上的六个阶段(「点积」占 3 格,每个 head 一格) */
 export const INDEXER_PHASES: Localized[] = [
-  { zh: "算 query 和权重", en: "Queries and weights" },
+  { zh: "算 query", en: "Queries" },
+  { zh: "算权重", en: "Weights" },
   { zh: "点积", en: "Dot products" },
   { zh: "ReLU", en: "ReLU" },
   { zh: "加权求和", en: "Weighted sum" },
@@ -113,10 +115,14 @@ export const INDEXER_STEPS = {
       "When each earlier token was processed, its hidden state was multiplied by the indexer's key matrix W_K. The result is its index key, stored one row per token.",
   },
   query: {
-    zh: () =>
-      "当前 token 的隐状态乘上 query 矩阵 W_Q，输出切成 3 段，每个 head 一个 query。另一个矩阵 W_w 给每个 head 算一个权重 w。",
+    zh: () => "隐状态先被压缩，再乘上 query 矩阵 W_Q。输出切成 3 段，每个 head 一个 query。",
     en: () =>
-      "The current hidden state is multiplied by the query matrix W_Q. The output is cut into 3 parts, one query per head. Another matrix, W_w, gives one weight w per head.",
+      "The hidden state is compressed, then multiplied by the query matrix W_Q. The output is cut into 3 parts, one query per head.",
+  },
+  weights: {
+    zh: () => "权重是另外算的。隐状态乘上 W_w，每个 head 得到一个数。它不参与点积，到加权求和时才用。",
+    en: () =>
+      "The weights are computed separately. The hidden state is multiplied by W_w, which gives one number per head. They take no part in the dot products and are used only in the weighted sum.",
   },
   head: {
     zh: (head: number, example: string) =>

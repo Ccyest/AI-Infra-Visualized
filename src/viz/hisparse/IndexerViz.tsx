@@ -5,14 +5,13 @@ import { INDEXER, INDEXER_PHASES, INDEXER_STEPS } from "./strings";
 import { HBracket, VBracket, htmlSubs, svgSubs } from "./svgHelpers";
 import "./styles.css";
 
-/* indexer 打分的矩阵走查(示意:3 个 head、key 维度 4、8 个历史 token、top-k = 3)。
-   括号上的数字是 DeepSeek-V3.2 的真实尺寸(config.json:index_n_heads = 64、
-   index_head_dim = 128、index_topk = 2048)。
-     score = ReLU(K · Qᵀ) · w
-   - K(8×4):每个历史 token 一行 index key,算一次后存下
-   - Qᵀ(4×3):当前 token 现算的 query,每个 head 一列
-   - w(3):当前 token 现算的 head 权重
-   时间轴:1 出 Q 和 w → 2~4 逐个 head 做矩阵乘 → 5 ReLU → 6 加权求和 → 7 取 top-k。
+/* indexer 打分的矩阵走查:score = ReLU(K · Qᵀ) · w
+   - K:每个历史 token 一行 index key,算一次后存下
+   - Qᵀ:当前 token 现算的 query,每个 head 一列
+   - w:当前 token 现算的 head 权重,和 query 分开算,只在最后加权求和时用
+   图里画的是缩小版(3 个 head、key 4 维、8 个 token、top-k 3);括号上的数字是
+   DeepSeek-V3.2 的真实尺寸(config.json:index_n_heads 64、index_head_dim 128、index_topk 2048)。
+   时间轴:1 算 query → 2 算权重 → 3~5 逐个 head 做点积 → 6 ReLU → 7 加权求和 → 8 取 top-k。
    K 和 Q 是手工设计的字面量,其余数值都由它们算出来。 */
 
 const K: readonly (readonly number[])[] = [
@@ -25,7 +24,7 @@ const K: readonly (readonly number[])[] = [
   [-0.1, 0.8, 0.3, -0.1],
   [-0.3, 0.2, -0.3, -0.2],
 ];
-/** 每个 head 一个 query(这里取 0 / ±1,方便心算) */
+/** 每个 head 一个 query(取 0 / ±1,方便心算) */
 const Q: readonly (readonly number[])[] = [
   [1, 0, 1, 0],
   [0, 1, 0, -1],
@@ -33,24 +32,31 @@ const Q: readonly (readonly number[])[] = [
 ];
 const WEIGHTS = [0.5, 0.3, 0.2] as const;
 const TOPK = 3;
-const TOTAL = 7;
-/** DeepSeek-V3.2 的真实尺寸,标在括号上 */
 const REAL = { keyDim: 128, heads: 64, topk: 2048 } as const;
 
 const HEADS = Q.length;
 const DIM = 4;
+const T_QUERY = 1;
+const T_WEIGHTS = 2;
+const T_FIRST_HEAD = 3;
+const T_RELU = T_FIRST_HEAD + HEADS;
+const T_SUM = T_RELU + 1;
+const T_TOPK = T_SUM + 1;
+
 const round1 = (value: number) => Math.round(value * 10) / 10;
-const dot = (key: readonly number[], query: readonly number[]) =>
-  round1(key.reduce((sum, value, i) => sum + value * (query[i] ?? 0), 0));
-/** DOTS[token][head] = k_token · q_head */
-const DOTS = K.map((key) => Q.map((query) => dot(key, query)));
 const relu = (value: number) => Math.max(0, value);
+/** DOTS[token][head] = k_token · q_head */
+const DOTS = K.map((key) =>
+  Q.map((query) => round1(key.reduce((sum, value, i) => sum + value * (query[i] ?? 0), 0))),
+);
 const SCORES = DOTS.map((row) =>
   row.reduce((sum, value, head) => sum + (WEIGHTS[head] ?? 0) * relu(value), 0),
 );
 const MAX_SCORE = Math.max(...SCORES);
-const RANKED = SCORES.map((score, token) => ({ score, token })).sort((a, b) => b.score - a.score);
-const TOP = RANKED.slice(0, TOPK).map((entry) => entry.token);
+const TOP = SCORES.map((score, token) => ({ score, token }))
+  .sort((a, b) => b.score - a.score)
+  .slice(0, TOPK)
+  .map((entry) => entry.token);
 
 const SUB = ["₁", "₂", "₃"] as const;
 const num = (value: number) => {
@@ -59,7 +65,7 @@ const num = (value: number) => {
 };
 const paren = (value: number) => (value < 0 ? `(${num(value)})` : num(value));
 
-/** 第 1 行(t1)在某个 head 上的点积算式,作为每一格的例子 */
+/** 第一行(t1)在某个 head 上的点积算式 */
 function dotExample(head: number): string {
   const key = K[0] ?? [];
   const query = Q[head] ?? [];
@@ -67,30 +73,37 @@ function dotExample(head: number): string {
   return `k₁ · q${SUB[head]} = ${terms} = ${num(DOTS[0]?.[head] ?? 0)}`;
 }
 
+/** 第一行(t1)的加权求和算式 */
 function sumExample(): string {
-  const row = DOTS[0] ?? [];
-  const terms = row.map((value, head) => `${WEIGHTS[head]}×${num(relu(value))}`).join(" + ");
+  const terms = (DOTS[0] ?? [])
+    .map((value, head) => `${WEIGHTS[head]}×${num(relu(value))}`)
+    .join(" + ");
   return `t1: ${terms} = ${(SCORES[0] ?? 0).toFixed(2)}`;
 }
 
 /* ---------------- 版面 ---------------- */
 
 const W = 820;
-const H = 376;
-const ROW_Y = 124;
-const ROW_H = 24;
+const H = 378;
+const CELL_H = 24;
 const K_X = 64;
 const K_W = 36;
 const Q_X = 268;
 const Q_W = 46;
-const Q_Y = 32;
+const W_ROW_Y = 20;
+const W_ROW_H = 22;
+const Q_Y = 62;
 const Q_H = 20;
-const W_Y = ROW_Y + K.length * ROW_H + 10;
+const ROW_Y = 156;
+const ROWS_BOTTOM = ROW_Y + K.length * CELL_H;
+const HEADS_RIGHT = Q_X + HEADS * Q_W;
 const SCORE_X = 446;
 const SCORE_MAX = 220;
 const COMB_X = 776;
-const rowCenter = (token: number) => ROW_Y + token * ROW_H + ROW_H / 2;
-const TOKEN_BOX = { x: K_X, y: Q_Y + 22, w: 150, h: 30 };
+const TOKEN_BOX = { x: K_X, y: 58, w: 150, h: 30 };
+const ELBOW_X = TOKEN_BOX.x + TOKEN_BOX.w + 26;
+const rowY = (token: number) => ROW_Y + token * CELL_H;
+const rowCenter = (token: number) => rowY(token) + CELL_H / 2;
 
 function tint(value: number): { fill: string; fillOpacity: number } {
   if (value === 0) return { fill: "var(--grid)", fillOpacity: 1 };
@@ -100,25 +113,26 @@ function tint(value: number): { fill: string; fillOpacity: number } {
   };
 }
 
-function Cell({
-  x,
-  y,
-  w,
-  h,
-  value,
-  className = "",
-  delay,
-}: {
+interface CellProps {
   x: number;
   y: number;
   w: number;
   h: number;
-  value: number;
+  /** 不传值就画一个虚线空格 */
+  value?: number;
   className?: string;
   delay?: number;
-}) {
+}
+
+function Cell({ x, y, w, h, value, className = "", delay }: CellProps) {
+  if (value === undefined) {
+    return <rect className="hsp-mx-empty" x={x + 1} y={y + 1} width={w - 2} height={h - 2} rx={3} />;
+  }
   return (
-    <g className={`hsp-mx-cell ${className}`} style={delay === undefined ? undefined : { animationDelay: `${delay}ms` }}>
+    <g
+      className={`hsp-mx-cell ${className}`}
+      style={delay === undefined ? undefined : { animationDelay: `${delay}ms` }}
+    >
       <rect x={x + 1} y={y + 1} width={w - 2} height={h - 2} rx={3} {...tint(value)} />
       <text x={x + w / 2} y={y + h / 2 + 3.5} textAnchor="middle">
         {num(value)}
@@ -127,24 +141,58 @@ function Cell({
   );
 }
 
+/** 从隐状态方框拐到右侧某一行的箭头,标签写在拐角左边 */
+function Elbow({ fromY, toY, label }: { fromY: number; toY: number; label: string }) {
+  const startX = TOKEN_BOX.x + TOKEN_BOX.w + 6;
+  return (
+    <g className="hsp-pop">
+      <path
+        className="hsp-mx-arrow"
+        d={`M${startX} ${fromY} H${ELBOW_X} V${toY} H${Q_X - 10} m-6 -4 l6 4 l-6 4`}
+      />
+      <text
+        className="hsp-mx-head"
+        x={ELBOW_X - 6}
+        y={toY < fromY ? toY + 9 : toY + 4}
+        textAnchor="end"
+      >
+        {svgSubs(label)}
+      </text>
+    </g>
+  );
+}
+
 export default function IndexerViz({ lang = "zh" }: { lang?: Locale }) {
-  const player = useSimPlayer(TOTAL, 0.5);
+  const player = useSimPlayer(T_TOPK, 0.5);
   const { t } = player;
 
-  const hasQuery = t >= 1;
-  /** 已经算完的 head 数;t = 2..4 时正在算第 t-1 个 */
-  const headsDone = Math.max(0, Math.min(HEADS, t - 1));
-  const activeHead = t >= 2 && t <= 4 ? t - 2 : -1;
-  const rectified = t >= 5;
-  const summed = t >= 6;
-  const ranked = t >= 7;
+  const hasQuery = t >= T_QUERY;
+  const hasWeights = t >= T_WEIGHTS;
+  const activeHead = t >= T_FIRST_HEAD && t < T_RELU ? t - T_FIRST_HEAD : -1;
+  const headsDone = Math.max(0, Math.min(HEADS, t - T_FIRST_HEAD + 1));
+  const rectified = t >= T_RELU;
+  const summed = t >= T_SUM;
+  const ranked = t >= T_TOPK;
+
+  const phaseActive = [
+    t === T_QUERY,
+    t === T_WEIGHTS,
+    activeHead >= 0,
+    t === T_RELU,
+    t === T_SUM,
+    t === T_TOPK,
+  ];
 
   const description = (() => {
     if (activeHead >= 0) return INDEXER_STEPS.head[lang](activeHead + 1, dotExample(activeHead));
-    if (t === 6) return INDEXER_STEPS.sum[lang](sumExample());
-    if (t === 7) return INDEXER_STEPS.topk[lang](TOP.map((token) => `t${token + 1}`).join(lang === "zh" ? "、" : ", "));
-    if (t === 5) return INDEXER_STEPS.relu[lang]();
-    if (t === 1) return INDEXER_STEPS.query[lang]();
+    if (t === T_QUERY) return INDEXER_STEPS.query[lang]();
+    if (t === T_WEIGHTS) return INDEXER_STEPS.weights[lang]();
+    if (t === T_RELU) return INDEXER_STEPS.relu[lang]();
+    if (t === T_SUM) return INDEXER_STEPS.sum[lang](sumExample());
+    if (t === T_TOPK) {
+      const names = TOP.map((token) => `t${token + 1}`).join(lang === "zh" ? "、" : ", ");
+      return INDEXER_STEPS.topk[lang](names);
+    }
     return INDEXER_STEPS.start[lang]();
   })();
 
@@ -157,21 +205,18 @@ export default function IndexerViz({ lang = "zh" }: { lang?: Locale }) {
       className="hsp-viz"
     >
       <div className="hsp-phases">
-        {INDEXER_PHASES.map((phase, i) => {
-          const active = [t === 1, t >= 2 && t <= 4, t === 5, t === 6, t === 7][i];
-          return (
-            <span className={`hsp-phase${active ? " active" : ""}`} key={phase.en}>
-              {i + 1} · {phase[lang]}
-            </span>
-          );
-        })}
+        {INDEXER_PHASES.map((phase, i) => (
+          <span className={`hsp-phase${phaseActive[i] ? " active" : ""}`} key={phase.en}>
+            {i + 1} · {phase[lang]}
+          </span>
+        ))}
       </div>
 
       <div className="hsp-scroll">
         <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={INDEXER.title[lang]}>
-          {/* 当前 token → Q 与 w */}
+          {/* 当前 token 的隐状态:query 和权重各走一条路 */}
           <rect
-            className={`hsp-mx-token${t === 1 ? " active" : ""}`}
+            className={`hsp-mx-token${t === T_QUERY || t === T_WEIGHTS ? " active" : ""}`}
             x={TOKEN_BOX.x}
             y={TOKEN_BOX.y}
             width={TOKEN_BOX.w}
@@ -187,63 +232,78 @@ export default function IndexerViz({ lang = "zh" }: { lang?: Locale }) {
             {INDEXER.current[lang]}
           </text>
           {hasQuery && (
-            <g>
-              <path
-                className="hsp-mx-arrow"
-                d={`M${TOKEN_BOX.x + TOKEN_BOX.w + 6} ${TOKEN_BOX.y + TOKEN_BOX.h / 2} H${Q_X - 10} m-6 -4 l6 4 l-6 4`}
-              />
-              <text
-                className="hsp-mx-head"
-                x={(TOKEN_BOX.x + TOKEN_BOX.w + Q_X) / 2 - 2}
-                y={TOKEN_BOX.y + TOKEN_BOX.h / 2 - 8}
-                textAnchor="middle"
-              >
-                {svgSubs("× W_Q")}
-              </text>
-            </g>
+            <Elbow
+              key={t === T_QUERY ? "query-new" : "query"}
+              fromY={TOKEN_BOX.y + TOKEN_BOX.h - 8}
+              toY={Q_Y + (DIM * Q_H) / 2}
+              label={INDEXER.toQuery[lang]}
+            />
+          )}
+          {hasWeights && (
+            <Elbow
+              key={t === T_WEIGHTS ? "weights-new" : "weights"}
+              fromY={TOKEN_BOX.y + 8}
+              toY={W_ROW_Y + W_ROW_H / 2}
+              label="× W_w"
+            />
+          )}
+
+          {/* w:每个 head 一个权重,由隐状态单独算出 */}
+          <text className="hsp-label" x={Q_X} y={12}>
+            {INDEXER.perHead[lang]}
+          </text>
+          {WEIGHTS.map((weight, head) => (
+            <Cell
+              key={head}
+              x={Q_X + head * Q_W}
+              y={W_ROW_Y}
+              w={Q_W}
+              h={W_ROW_H}
+              value={hasWeights ? weight : undefined}
+              className={t === T_WEIGHTS ? "pop" : t === T_SUM ? "on" : ""}
+              delay={t === T_WEIGHTS ? head * 90 : undefined}
+            />
+          ))}
+          <text className="hsp-mx-rowlabel" x={HEADS_RIGHT + 8} y={W_ROW_Y + 15}>
+            w
+          </text>
+          {t === T_SUM && (
+            <rect
+              className="hsp-mx-focus"
+              x={Q_X}
+              y={W_ROW_Y}
+              width={HEADS * Q_W}
+              height={W_ROW_H}
+              rx={4}
+            />
           )}
 
           {/* Qᵀ:每个 head 一列 */}
-          <text className="hsp-label" x={Q_X} y={12}>
-            {INDEXER.queries[lang]}
-          </text>
-          {Q.map((_, head) => (
-            <text
-              key={head}
-              className={`hsp-mx-head${head === activeHead ? " active" : ""}`}
-              x={Q_X + head * Q_W + Q_W / 2}
-              y={27}
-              textAnchor="middle"
-            >
-              q{SUB[head]}
-            </text>
-          ))}
-          {Q.map((query, head) =>
-            Array.from({ length: DIM }, (_, d) =>
-              hasQuery ? (
+          {Q.map((query, head) => (
+            <g key={head}>
+              <text
+                className={`hsp-mx-head${head === activeHead ? " active" : ""}`}
+                x={Q_X + head * Q_W + Q_W / 2}
+                y={Q_Y - 5}
+                textAnchor="middle"
+              >
+                q{SUB[head]}
+              </text>
+              {query.map((value, d) => (
                 <Cell
-                  key={`${head}-${d}`}
+                  key={d}
                   x={Q_X + head * Q_W}
                   y={Q_Y + d * Q_H}
                   w={Q_W}
                   h={Q_H}
-                  value={query[d] ?? 0}
-                  className={t === 1 ? "pop" : head === activeHead ? "on" : ""}
-                  delay={t === 1 ? head * 90 : undefined}
+                  value={hasQuery ? value : undefined}
+                  className={t === T_QUERY ? "pop" : head === activeHead ? "on" : ""}
+                  delay={t === T_QUERY ? head * 90 : undefined}
                 />
-              ) : (
-                <rect
-                  key={`${head}-${d}`}
-                  className="hsp-mx-empty"
-                  x={Q_X + head * Q_W + 1}
-                  y={Q_Y + d * Q_H + 1}
-                  width={Q_W - 2}
-                  height={Q_H - 2}
-                  rx={3}
-                />
-              ),
-            ),
-          )}
+              ))}
+            </g>
+          ))}
+          <VBracket x={HEADS_RIGHT + 4} y0={Q_Y} y1={Q_Y + DIM * Q_H} label={REAL.keyDim} />
           {activeHead >= 0 && (
             <rect
               className="hsp-mx-focus"
@@ -264,111 +324,62 @@ export default function IndexerViz({ lang = "zh" }: { lang?: Locale }) {
               <text
                 className={`hsp-mx-rowlabel${ranked && TOP.includes(token) ? " top" : ""}`}
                 x={K_X - 8}
-                y={ROW_Y + token * ROW_H + ROW_H / 2 + 3.5}
+                y={rowCenter(token) + 3.5}
                 textAnchor="end"
               >
                 t{token + 1}
               </text>
               {key.map((value, d) => (
-                <Cell
-                  key={d}
-                  x={K_X + d * K_W}
-                  y={ROW_Y + token * ROW_H}
-                  w={K_W}
-                  h={ROW_H}
-                  value={value}
-                />
+                <Cell key={d} x={K_X + d * K_W} y={rowY(token)} w={K_W} h={CELL_H} value={value} />
               ))}
             </g>
           ))}
+          <HBracket x0={K_X} x1={K_X + DIM * K_W} y={ROWS_BOTTOM + 4} label={REAL.keyDim} />
           {activeHead >= 0 && (
-            <rect className="hsp-mx-focus" x={K_X} y={ROW_Y} width={DIM * K_W} height={ROW_H} rx={4} />
+            <rect className="hsp-mx-focus" x={K_X} y={ROW_Y} width={DIM * K_W} height={CELL_H} rx={4} />
           )}
 
-          {/* 尺寸括号:数字是 DeepSeek-V3.2 的真实大小 */}
-          <HBracket x0={K_X} x1={K_X + DIM * K_W} y={ROW_Y + K.length * ROW_H + 4} label={REAL.keyDim} />
-          <VBracket x={Q_X + HEADS * Q_W + 4} y0={Q_Y} y1={Q_Y + DIM * Q_H} label={REAL.keyDim} />
-          <HBracket x0={Q_X} x1={Q_X + HEADS * Q_W} y={W_Y + 26} label={REAL.heads} />
-
           {/* K · Qᵀ:每行一个 token,每列一个 head */}
-          <text className="hsp-mx-op" x={(K_X + DIM * K_W + Q_X) / 2} y={ROW_Y + (K.length * ROW_H) / 2 + 5} textAnchor="middle">
+          <text
+            className="hsp-mx-op"
+            x={(K_X + DIM * K_W + Q_X) / 2}
+            y={(ROW_Y + ROWS_BOTTOM) / 2 + 5}
+            textAnchor="middle"
+          >
             ×
           </text>
           {DOTS.map((row, token) =>
-            row.map((value, head) =>
-              head < headsDone ? (
-                <Cell
-                  key={`${token}-${head}-${rectified ? "r" : "d"}`}
-                  x={Q_X + head * Q_W}
-                  y={ROW_Y + token * ROW_H}
-                  w={Q_W}
-                  h={ROW_H}
-                  value={rectified ? relu(value) : value}
-                  className={
-                    head === activeHead
-                      ? "pop"
-                      : t === 5 && value < 0
+            row.map((value, head) => (
+              <Cell
+                key={`${token}-${head}-${rectified ? "r" : "d"}`}
+                x={Q_X + head * Q_W}
+                y={rowY(token)}
+                w={Q_W}
+                h={CELL_H}
+                value={head < headsDone ? (rectified ? relu(value) : value) : undefined}
+                className={
+                  head === activeHead
+                    ? "pop"
+                    : rectified && value < 0
+                      ? t === T_RELU
                         ? "pop zeroed"
-                        : rectified && value < 0
-                          ? "zeroed"
-                          : ""
-                  }
-                  delay={head === activeHead ? token * 70 : undefined}
-                />
-              ) : (
-                <rect
-                  key={`${token}-${head}`}
-                  className="hsp-mx-empty"
-                  x={Q_X + head * Q_W + 1}
-                  y={ROW_Y + token * ROW_H + 1}
-                  width={Q_W - 2}
-                  height={ROW_H - 2}
-                  rx={3}
-                />
-              ),
-            ),
+                        : "zeroed"
+                      : ""
+                }
+                delay={head === activeHead ? token * 70 : undefined}
+              />
+            )),
           )}
+          <HBracket x0={Q_X} x1={HEADS_RIGHT} y={ROWS_BOTTOM + 4} label={REAL.heads} />
           {activeHead >= 0 && (
             <rect
               className="hsp-mx-focus"
               x={Q_X + activeHead * Q_W}
               y={ROW_Y}
               width={Q_W}
-              height={ROW_H}
+              height={CELL_H}
               rx={4}
             />
-          )}
-
-          {/* w:每个 head 一个权重 */}
-          <text className="hsp-mx-rowlabel" x={Q_X - 8} y={W_Y + 15} textAnchor="end">
-            w
-          </text>
-          {WEIGHTS.map((weight, head) =>
-            hasQuery ? (
-              <Cell
-                key={head}
-                x={Q_X + head * Q_W}
-                y={W_Y}
-                w={Q_W}
-                h={22}
-                value={weight}
-                className={t === 1 ? "pop" : t === 6 ? "on" : ""}
-                delay={t === 1 ? 300 + head * 90 : undefined}
-              />
-            ) : (
-              <rect
-                key={head}
-                className="hsp-mx-empty"
-                x={Q_X + head * Q_W + 1}
-                y={W_Y + 1}
-                width={Q_W - 2}
-                height={20}
-                rx={3}
-              />
-            ),
-          )}
-          {t === 6 && (
-            <rect className="hsp-mx-focus" x={Q_X} y={W_Y} width={HEADS * Q_W} height={22} rx={4} />
           )}
 
           {/* 分数与 top-k */}
@@ -378,23 +389,22 @@ export default function IndexerViz({ lang = "zh" }: { lang?: Locale }) {
           {SCORES.map((score, token) => {
             const top = ranked && TOP.includes(token);
             const width = summed ? (score / MAX_SCORE) * SCORE_MAX : 0;
-            const y = ROW_Y + token * ROW_H;
             return (
               <g key={token}>
                 <rect
                   className={`hsp-mx-bar${top ? " top" : ""}`}
                   x={SCORE_X}
-                  y={y + 5}
+                  y={rowY(token) + 5}
                   width={width}
-                  height={ROW_H - 10}
+                  height={CELL_H - 10}
                   rx={3}
                 />
                 {summed && (
                   <text
-                    key={t === 6 ? "pop" : "kept"}
-                    className={`hsp-mx-score${t === 6 ? " hsp-arrive" : ""}${top ? " top" : ""}`}
+                    key={t === T_SUM ? "new" : "kept"}
+                    className={`hsp-mx-score${t === T_SUM ? " hsp-arrive" : ""}${top ? " top" : ""}`}
                     x={SCORE_X + width + 7}
-                    y={y + ROW_H / 2 + 3.5}
+                    y={rowCenter(token) + 3.5}
                   >
                     {score.toFixed(2)}
                     {top ? "  · top-k" : ""}

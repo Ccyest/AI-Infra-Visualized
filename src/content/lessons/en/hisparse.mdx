@@ -55,8 +55,9 @@ fixed and does not grow with the context.
 The indexer answers one question: which earlier tokens are worth reading for
 the current token. It starts the way attention does. A query is compared with
 the key of every earlier token by a dot product, and a larger result means more
-relevant. The difference is that the indexer's keys and queries are much
-smaller. The numbers below are from DeepSeek-V3.2.
+relevant. But it only needs a score, so it has no values and no softmax, and
+its keys and queries are much smaller. The numbers below are from
+DeepSeek-V3.2.
 
 Start with the key. Each attention layer has an indexer, and it keeps a
 128-dimensional vector for every token, called an index key. A token's hidden
@@ -81,8 +82,10 @@ attention builds its queries the same way.
 <QueryBuildViz client:visible lang="en" />
 
 The results of the 64 heads have to be combined into one score, so each head
-also needs a weight that says how much it counts at this step. $W_w$ is a 64 ×
-7,168 matrix that turns the current token's hidden state into those 64 weights.
+also needs a weight that says how much it counts at this step. The weights are
+computed separately from the queries. $W_w$ is a 64 × 7,168 matrix that turns
+the current token's hidden state directly into those 64 weights. They take no
+part in the dot products and are used only when the score is put together.
 
 To score an earlier token, the indexer takes the dot product of its
 128-dimensional key with each of the 64 queries. That gives 64 numbers.
@@ -96,10 +99,6 @@ token stores just 128 numbers.
 A stored index key never changes. Only the queries and the weights are new at
 each step. The same token can therefore score high at one step and low at the
 next.
-
-Compared with attention, the indexer is lighter in two ways. It has no values
-and no softmax, because it only needs one score per token. It also reads only
-128 numbers for each token.
 
 ### The memory limit
 
@@ -141,10 +140,6 @@ steps select many of the same tokens. Most lookups therefore hit the buffer,
 and each step moves only a few KV entries instead of the whole top-k.
 
 <HiSparseFlowViz client:visible lang="en" />
-
-Nothing stored earlier is rewritten during a step. The KV and the index key of
-a token are computed once. Each step only appends one of each for the new
-token.
 
 With HiSparse, a request takes a fixed number of KV slots on the GPU, however
 long its context is. The same GPU holds many more requests, and the decode

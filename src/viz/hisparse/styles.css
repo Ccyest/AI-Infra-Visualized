@@ -179,12 +179,6 @@
   font-weight: 650;
 }
 
-.hsp-point-label {
-  fill: var(--ink-2);
-  font-size: 10.5px;
-  font-variant-numeric: tabular-nums;
-}
-
 .hsp-legend {
   display: flex;
   flex-wrap: wrap;
